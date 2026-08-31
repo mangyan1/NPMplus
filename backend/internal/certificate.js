@@ -27,7 +27,7 @@ const omissions = () => ["is_deleted", "owner.is_deleted", "meta.dns_provider_cr
 
 const internalCertificate = {
 	allowedSslFiles: ["certificate", "certificate_key"],
-	intervalTimeout: 1000 * 60 * 60 * Number.parseInt(process.env.CERTBOT_RUN_INTERVAL, 10),
+	intervalTimeout: 1000 * 60 * 60 * (Number.parseInt(process.env.CERTBOT_RUN_INTERVAL, 10) || 3),
 	interval: null,
 	intervalProcessing: false,
 

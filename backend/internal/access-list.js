@@ -35,7 +35,7 @@ const internalAccessList = {
 
 		// Items
 		await Promise.all(
-			data.items.map((item) =>
+			(data.items ?? []).map((item) =>
 				accessListAuthModel.query().insert({
 					access_list_id: row.id,
 					username: item.username,
@@ -110,13 +110,13 @@ const internalAccessList = {
 			);
 		}
 
-		// patch name if specified
-		if (typeof data.name !== "undefined" && data.name) {
-			await accessListModel.query().where({ id: data.id }).patch({
-				name: data.name,
-				satisfy_any: data.satisfy_any,
-				pass_auth: data.pass_auth,
-			});
+		// patch fields if specified
+		const patch = {};
+		if (typeof data.name !== "undefined" && data.name) patch.name = data.name;
+		if (typeof data.satisfy_any !== "undefined") patch.satisfy_any = data.satisfy_any;
+		if (typeof data.pass_auth !== "undefined") patch.pass_auth = data.pass_auth;
+		if (Object.keys(patch).length) {
+			await accessListModel.query().where({ id: data.id }).patch(patch);
 		}
 
 		// Check for items and add/update/remove them
