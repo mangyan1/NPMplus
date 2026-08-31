@@ -39,7 +39,8 @@ SITE_KEY=
 CAPTCHA_TEMPLATE_PATH=/data/crowdsec/captcha.html
 CAPTCHA_EXPIRATION=3600
 
-APPSEC_URL=http://127.0.0.1:7422
+APPSEC_URL=
+# point this at your appsec endpoint, e.g. http://127.0.0.1:7422, only if you run crowdsec appsec
 APPSEC_FAILURE_ACTION=passthrough
 APPSEC_CONNECT_TIMEOUT=
 APPSEC_SEND_TIMEOUT=
