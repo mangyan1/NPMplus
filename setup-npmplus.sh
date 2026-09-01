@@ -165,6 +165,7 @@ if [[ -s "$COMPOSE_FILE" ]]; then
 fi
 
 say "writing $COMPOSE_FILE"
+mkdir -p "$DATA_DIR"
 
 ENV_ADMIN=""
 if [[ -n "$ADMIN_EMAIL" ]]; then
