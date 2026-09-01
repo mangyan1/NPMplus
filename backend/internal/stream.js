@@ -10,6 +10,31 @@ import internalNginx from "./nginx.js";
 
 const omissions = () => ["is_deleted", "owner.is_deleted", "certificate.is_deleted"];
 
+/**
+ * A stream port must be a single valid port, must not collide with the ports
+ * NPMplus listens on itself and must not be taken by another stream
+ * @param {String|Number} incomingPort
+ * @param {Number} [ownId] id of the stream being updated, ignored when creating
+ */
+const validateIncomingPort = async (incomingPort, ownId) => {
+	const port = Number.parseInt(incomingPort, 10);
+	if (Number.isNaN(port) || String(port) !== String(incomingPort).trim() || port < 1 || port > 65535) {
+		throw new errs.ValidationError("Incoming port must be a single port between 1 and 65535");
+	}
+
+	const reserved = [process.env.HTTP_PORT, process.env.HTTPS_PORT, process.env.NPM_PORT]
+		.map((p) => Number.parseInt(p, 10))
+		.filter((p) => p === port);
+	if (reserved.length > 0) {
+		throw new errs.ValidationError(`Incoming port ${port} is reserved for NPMplus itself`);
+	}
+
+	const rows = await streamModel.query().where("is_deleted", 0).select("id", "incoming_port");
+	if (rows.some((row) => row.id !== ownId && Number.parseInt(row.incoming_port, 10) === port)) {
+		throw new errs.ValidationError(`Incoming port ${port} is already used by another stream`);
+	}
+};
+
 const internalStream = {
 	/**
 	 * @param   {Access}  access
@@ -25,6 +50,8 @@ const internalStream = {
 		}
 
 		await access.can("streams:create", thisData);
+
+		await validateIncomingPort(thisData.incoming_port);
 
 		thisData.owner_user_id = access.token.getUserId(1);
 
@@ -75,6 +102,10 @@ const internalStream = {
 		}
 
 		await access.can("streams:update", thisData.id);
+
+		if (typeof thisData.incoming_port !== "undefined") {
+			await validateIncomingPort(thisData.incoming_port, thisData.id);
+		}
 
 		const existingRow = await internalStream.get(access, { id: thisData.id });
 		if (existingRow.id !== thisData.id) {

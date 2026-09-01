@@ -114,11 +114,15 @@ const internalProxyHostAccessList = {
 		const lists = list || [];
 		const first = lists[0] || null; // satisfy any/pass auth need to be specified in the first acl
 
-		const last = (first?.clients || []).at(-1);
-		const catchAll =
-			last?.directive === "allow" && last?.address?.trim().toLowerCase() === "all"
-				? { directive: "allow", address: "all" }
-				: { directive: "deny", address: "all" };
+		// only allow everyone through when every attached list ends with "allow all",
+		// a single restrictive list must not be widened by the others
+		const allAllowed =
+			lists.length > 0 &&
+			lists.every((l) => {
+				const last = (l.clients || []).at(-1);
+				return last?.directive === "allow" && last?.address?.trim().toLowerCase() === "all";
+			});
+		const catchAll = allAllowed ? { directive: "allow", address: "all" } : { directive: "deny", address: "all" };
 
 		const specificRules = lists
 			.flatMap((l) => l.clients || [])

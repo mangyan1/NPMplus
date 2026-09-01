@@ -288,6 +288,22 @@ const internalNginx = {
 
 		if (host.locations) {
 			for (const location of host.locations) {
+				// inherit the host auth_request when the location doesn't specify its own
+				if (!location.npmplus_auth_request || location.npmplus_auth_request === "none") {
+					location.npmplus_auth_request = host.npmplus_auth_request;
+				}
+
+				// an alias location path must end in / or ../ escapes the alias (nginx alias traversal)
+				if (
+					location.forward_scheme === "path" &&
+					typeof location.forward_host === "string" &&
+					location.forward_host.endsWith("/") &&
+					typeof location.path === "string" &&
+					!location.path.endsWith("/")
+				) {
+					location.path = `${location.path}/`;
+				}
+
 				if (location.npmplus_access_list_type === "global") {
 					location.access_list = host.access_list;
 				} else if (location.npmplus_access_list_type === "custom") {
