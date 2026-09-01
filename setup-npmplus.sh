@@ -32,14 +32,24 @@ confirm() { # confirm "question" "y|n" -> 0 if yes
 
 [[ $EUID -eq 0 ]] || { echo "run as root (sudo)" >&2; exit 1; }
 
+fetch() { # fetch <url> [curl args] -> stdout, retries to survive network blips
+	local i
+	for i in 1 2 3 4 5; do
+		curl -sSfL "$@" && return 0
+		[[ $i -eq 5 ]] || sleep $((i * 2))
+	done
+	echo "giving up on: $*" >&2
+	return 1
+}
+
 anubis_latest_version() {
-	curl -sSfL https://api.github.com/repos/TecharoHQ/anubis/releases/latest | grep -oE '"tag_name": *"[^"]+"' | cut -d'"' -f4
+	fetch https://api.github.com/repos/TecharoHQ/anubis/releases/latest | grep -oE '"tag_name": *"[^"]+"' | cut -d'"' -f4
 }
 
 # fetch the bot policy for a given anubis release and adapt it for the auth_request
 # integration; refuses to deploy if upstream changed the policy format
 anubis_policy() { # anubis_policy <version> [challenge_all]
-	curl -sSfL "https://raw.githubusercontent.com/TecharoHQ/anubis/refs/tags/$1/data/botPolicies.yaml" -o /opt/anubis.yaml
+	fetch "https://raw.githubusercontent.com/TecharoHQ/anubis/refs/tags/$1/data/botPolicies.yaml" -o /opt/anubis.yaml
 	# auth_request needs 401/403 instead of anubis' scraper-friendly 200s
 	sed -E -i 's/^([[:space:]]*CHALLENGE:)[[:space:]]*.*/\1 401/; s/^([[:space:]]*DENY:)[[:space:]]*.*/\1 403/' /opt/anubis.yaml
 	# the docs advise against the memory store in production; bbolt survives restarts
