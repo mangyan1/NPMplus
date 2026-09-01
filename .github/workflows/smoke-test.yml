@@ -21,9 +21,9 @@ jobs:
       - name: verify the stack
         # sudo: the compose file is chmod 600 root, it holds the admin password
         run: |
-          stopped="$(sudo docker compose -f /opt/npmplus/compose.yaml ps -a --status dead exited restarting -q)"
+          stopped="$(sudo docker compose -f /opt/npmplus/compose.yaml ps -a --format '{{.State}}' | grep -vx running || true)"
           if [[ -n "$stopped" ]]; then
-            echo "containers not running: $stopped" >&2
+            echo "containers not running:" >&2
             sudo docker compose -f /opt/npmplus/compose.yaml ps -a
             exit 1
           fi
