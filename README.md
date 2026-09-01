@@ -1,5 +1,9 @@
 # NPMplus
 
+> [!IMPORTANT]
+> **This fork adds:** the 5 proxy/stream/access-list bypass fixes (#3806-#3810), a one-command hardened server setup (`setup-npmplus.sh`: UFW, crowdsec + anubis with auto-bans, auto-updates with rollback, daily backups), and a daily auto-sync with upstream.
+> Details: [Changes in this fork](#changes-in-this-fork-vs-zoeyvidnpmplus)
+
 If you don't need the web GUI of NPMplus, you may also have a look at caddy: https://caddyserver.com
 
 - [Compatibility (to Upstream)](#compatibility-to-upstream)
