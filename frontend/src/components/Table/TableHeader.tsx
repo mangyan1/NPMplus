@@ -20,7 +20,9 @@ function TableHeader<TFeatures extends TableFeatures, T extends RowData>(props: 
 							<th
 								key={header.id}
 								className={cn(className, canSort && "cursor-pointer")}
-								aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined}
+								aria-sort={
+									sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined
+								}
 								onClick={column.getToggleSortingHandler()}
 							>
 								<span className="d-inline-flex align-items-center gap-1">

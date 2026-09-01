@@ -24,7 +24,11 @@ export default function TableWrapper() {
 	}
 
 	if (isError) {
-		return <Alert variant="danger"><T id={error?.message || "error.unknown"} /></Alert>;
+		return (
+			<Alert variant="danger">
+				<T id={error?.message || "error.unknown"} />
+			</Alert>
+		);
 	}
 
 	let filtered: AuditLog[] | null = null;
