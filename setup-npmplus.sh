@@ -583,7 +583,9 @@ exec >>"$LOG" 2>&1
 
 log() { echo "$(date '+%F %T') $*"; }
 
+# the tars contain private keys and the database, so keep them root-only
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 
 # hot-copy the database with better-sqlite3 so a copy is never torn mid-write;
 # the plain live file is still in the tar as a fallback if this ever fails
@@ -596,6 +598,7 @@ files="opt/npmplus opt/crowdsec"
 ts=$(date +%F-%H%M%S)
 out="$BACKUP_DIR/npmplus-$ts.tar.gz"
 tar -czf "$out" -C / $files || { log "backup FAILED (tar)"; exit 1; }
+chmod 600 "$out"
 rm -f /opt/npmplus/npmplus/database.backup.sqlite
 log "backup ok: $out ($(du -h "$out" | cut -f1))"
 
