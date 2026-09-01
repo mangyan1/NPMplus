@@ -72,7 +72,7 @@ export default function Setup() {
 				</div>
 				<div className="card card-md">
 					<Alert variant="danger" show={Boolean(errorMsg)} onClose={() => setErrorMsg(null)} dismissible>
-						{errorMsg}
+						{errorMsg ? <T id={errorMsg} /> : null}
 					</Alert>
 					<Formik
 						initialValues={

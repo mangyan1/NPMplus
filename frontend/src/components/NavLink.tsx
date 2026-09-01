@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 
 interface Props {
 	children: React.ReactNode;
@@ -9,6 +9,8 @@ interface Props {
 }
 export function NavLink({ children, to, href, isDropdownItem, onClick }: Props) {
 	const navigate = useNavigate();
+	const location = useLocation();
+	const isActive = Boolean(to && location.pathname === to);
 
 	if (href) {
 		return (
@@ -26,8 +28,13 @@ export function NavLink({ children, to, href, isDropdownItem, onClick }: Props) 
 
 	return (
 		<a
-			className={isDropdownItem ? "dropdown-item" : "nav-link"}
+			className={
+				isDropdownItem
+					? "dropdown-item"
+					: `nav-link${isActive ? " active" : ""}`
+			}
 			href={to}
+			aria-current={isActive ? "page" : undefined}
 			onClick={(e) => {
 				e.preventDefault();
 				if (onClick) {

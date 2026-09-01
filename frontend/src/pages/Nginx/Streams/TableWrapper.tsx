@@ -30,7 +30,7 @@ export default function TableWrapper() {
 	}
 
 	if (isError) {
-		return <Alert variant="danger">{error?.message || "Unknown error"}</Alert>;
+		return <Alert variant="danger"><T id={error?.message || "error.unknown"} /></Alert>;
 	}
 
 	const handleDelete = async (id: number) => {

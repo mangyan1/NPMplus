@@ -45,7 +45,7 @@ export function SiteFooter() {
 								</a>
 							</li>
 							<li className="list-inline-item">
-								Theme by{" "}
+								<T id="theme-by" />{" "}
 								<a href="https://tabler.io" rel="noreferrer" target="_blank" className="link-secondary">
 									Tabler
 								</a>
@@ -68,7 +68,6 @@ export function SiteFooter() {
 										className="link-warning fw-bold"
 										target="_blank"
 										rel="noopener"
-										title={`New version ${versionData.latest} is available`}
 									>
 										<T id="update-available" data={{ latestVersion: versionData.latest }} />
 									</a>

@@ -1,4 +1,5 @@
 import type { Table as ReactTable, RowData, TableFeatures } from "@tanstack/react-table";
+import { T } from "src/locale";
 
 interface Props<TFeatures extends TableFeatures, TFields extends RowData> {
 	tableInstance: ReactTable<TFeatures, TFields>;
@@ -9,7 +10,9 @@ function EmptyRow<TFeatures extends TableFeatures, TFields extends RowData>({
 	return (
 		<tr>
 			<td colSpan={tableInstance.getAllFlatColumns().length}>
-				<p className="text-center">There are no items</p>
+				<p className="text-center">
+					<T id="table.no-items" />
+				</p>
 			</td>
 		</tr>
 	);

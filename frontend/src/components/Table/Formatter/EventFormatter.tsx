@@ -3,7 +3,7 @@ import cn from "clsx";
 import type { ReactNode } from "react";
 import type { AuditLog } from "src/api/backend";
 import { useLocaleState } from "src/context";
-import { formatDateTime, T } from "src/locale";
+import { formatDateTime, intl, T } from "src/locale";
 
 const getEventValue = (event: AuditLog) => {
 	switch (event.objectType) {
@@ -19,7 +19,7 @@ const getEventValue = (event: AuditLog) => {
 		case "certificate":
 			return event.meta?.domainNames?.join(", ") || event.meta?.niceName || "N/A";
 		default:
-			return `UNKNOWN EVENT TYPE: ${event.objectType}`;
+			return intl.formatMessage({ id: "auditlog.unknown-type" }, { type: event.objectType });
 	}
 };
 

@@ -24,7 +24,7 @@ export default function TableWrapper() {
 	}
 
 	if (isError) {
-		return <Alert variant="danger">{error?.message || "Unknown error"}</Alert>;
+		return <Alert variant="danger"><T id={error?.message || "error.unknown"} /></Alert>;
 	}
 
 	let filtered: AuditLog[] | null = null;
@@ -67,7 +67,12 @@ export default function TableWrapper() {
 						) : null}
 					</div>
 				</div>
-				<Table data={filtered ?? data ?? []} isFetching={isFetching} onSelectItem={showEventDetailsModal} />
+				<Table
+					data={filtered ?? data ?? []}
+					isFetching={isFetching}
+					search={search}
+					onSelectItem={showEventDetailsModal}
+				/>
 			</div>
 		</div>
 	);

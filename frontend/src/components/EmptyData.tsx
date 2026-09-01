@@ -40,18 +40,21 @@ function EmptyData<TFeatures extends TableFeatures, TFields extends RowData>({
 							<h2>
 								<T id="object.empty" tData={{ objects }} />
 							</h2>
-							<HasPermission section={permissionSection} permission={permission || MANAGE} hideError>
-								<p className="text-muted">
-									<T id="empty-subtitle" />
-								</p>
-								{customAddBtn ? (
-									customAddBtn
-								) : (
-									<Button className={cn("my-3", `btn-${color}`)} onClick={onNew}>
-										<T id="object.add" tData={{ object }} />
-									</Button>
-								)}
-							</HasPermission>
+							{/* tables without a create action (e.g. the audit log) only get the headline */}
+							{onNew || customAddBtn ? (
+								<HasPermission section={permissionSection} permission={permission || MANAGE} hideError>
+									<p className="text-muted">
+										<T id="empty-subtitle" />
+									</p>
+									{customAddBtn ? (
+										customAddBtn
+									) : (
+										<Button className={cn("my-3", `btn-${color}`)} onClick={onNew}>
+											<T id="object.add" tData={{ object }} />
+										</Button>
+									)}
+								</HasPermission>
+							) : null}
 						</>
 					)}
 				</div>

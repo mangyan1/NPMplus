@@ -43,14 +43,15 @@ function buildBody(data?: Record<string, any>): string | undefined {
 async function processResponse(response: Response, reload = true) {
 	const payload = await response.json();
 	if (!response.ok) {
-		if (response.status === 401 || response.status === 403) {
-			// Force logout user and reload the page if Unauthorized
+		if (response.status === 401 && reload) {
+			// Invalid or expired session: log out. Refresh attempts (reload=false)
+			// only throw, so a logged-out visitor does not fire token deletes or
+			// burn requests from the login rate limit on every render.
+			// 403 is an expected answer for restricted users, not a logout.
 			AuthStore.clear();
 			queryClient.clear();
 			await deleteToken().catch(() => {});
-			if (reload) {
-				window.location.reload();
-			}
+			window.location.reload();
 		}
 		const error = new Error(
 			typeof payload.error.messageI18n !== "undefined" ? payload.error.messageI18n : payload.error.message,

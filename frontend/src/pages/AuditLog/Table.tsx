@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-table";
 import { useMemo } from "react";
 import type { AuditLog } from "src/api/backend";
-import { EventFormatter, GravatarFormatter } from "src/components";
+import { EmptyData, EventFormatter, GravatarFormatter } from "src/components";
 import { TableLayout } from "src/components/Table/TableLayout";
 import { intl, T } from "src/locale";
 
@@ -23,9 +23,10 @@ const features = tableFeatures({
 interface Props {
 	data: AuditLog[];
 	isFetching?: boolean;
+	search?: string;
 	onSelectItem?: (id: number) => void;
 }
-export default function Table({ data, isFetching, onSelectItem }: Props) {
+export default function Table({ data, isFetching, search, onSelectItem }: Props) {
 	const columnHelper = createColumnHelper<typeof features, AuditLog>();
 	const columns = useMemo(
 		() => [
@@ -76,5 +77,17 @@ export default function Table({ data, isFetching, onSelectItem }: Props) {
 		enableSortingRemoval: false,
 	});
 
-	return <TableLayout tableInstance={tableInstance} />;
+	return (
+		<TableLayout
+			tableInstance={tableInstance}
+			emptyState={
+				<EmptyData
+					object="audit-log"
+					objects="audit-logs"
+					tableInstance={tableInstance}
+					isFiltered={Boolean(search)}
+				/>
+			}
+		/>
+	);
 }

@@ -1,5 +1,6 @@
 import { IconChevronDown, IconChevronUp } from "@tabler/icons-react";
 import type { RowData, TableFeatures } from "@tanstack/react-table";
+import cn from "clsx";
 import type { TableLayoutProps } from "src/components";
 
 function TableHeader<TFeatures extends TableFeatures, T extends RowData>(props: TableLayoutProps<TFeatures, T>) {
@@ -14,8 +15,14 @@ function TableHeader<TFeatures extends TableFeatures, T extends RowData>(props: 
 						const { column } = header;
 						const { className } = (column.columnDef.meta as any) ?? {};
 						const sorted = column.getIsSorted();
+						const canSort = column.getCanSort();
 						return (
-							<th key={header.id} className={className} onClick={column.getToggleSortingHandler()}>
+							<th
+								key={header.id}
+								className={cn(className, canSort && "cursor-pointer")}
+								aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined}
+								onClick={column.getToggleSortingHandler()}
+							>
 								<span className="d-inline-flex align-items-center gap-1">
 									{typeof column.columnDef.header === "string" ? `${column.columnDef.header}` : null}
 									{sorted === "asc" ? <IconChevronUp size={14} /> : null}
