@@ -37,6 +37,27 @@ If you don't need the web GUI of NPMplus, you may also have a look at caddy: htt
 - option to replace custom certs
 - many other things, see this README.md and the compose.yaml
 
+## Changes in this fork (vs ZoeyVid/NPMplus)
+
+Security fixes (filed as upstream issues #3806-#3810, fixed here first):
+
+- locations inherit the host auth_request unless they set their own, so a location can no longer be used to bypass SSO (authelia/authentik/anubis/etc)
+- nginx alias traversal fix: path locations get their trailing slash normalized, and control characters are rejected in location paths
+- multiple access lists per host: a single restrictive list is no longer widened into "allow all" by the other attached lists
+- stream (port forward) incoming ports are validated: 1-65535, no leading zeros, no collisions with other streams or with the http/https/admin ports
+- with `TRUST_CLOUDFLARE` unset, cloudflare IP ranges are not trusted (before, the real client IPs were lost, so bans and logs saw the CF edge IP)
+
+Automation, run `sudo bash setup-npmplus.sh` on a fresh host (or `--update` later):
+
+- generates the compose stack: npmplus, crowdsec with appsec + firewall bouncer, anubis (optional), caddy (optional)
+- UFW firewall: default deny, only 22/80/443 (+81 if you opt in), everything else on localhost
+- anubis: image and policy are pinned to the same release, status codes adjusted for auth_request, bbolt store instead of memory, honeypot IP logging, optional catch-all that challenges everything unmatched
+- honeypot to crowdsec bridge: IPs caught in anubis' honeypot are auto-banned for 24h via a 5 minute cron
+- monthly safe-update cron: snapshots the running image digests and configs, updates the stack, health checks it, and auto-reverts to the last good state if anything breaks
+- daily backup cron (keeps the last 7, root-only permissions): database (hot-copied so it is never torn mid-write), certificates, crowdsec config, anubis policy
+- unattended-upgrades for OS security patches
+- daily upstream sync workflow: merges ZoeyVid/NPMplus automatically and opens an issue with a resolve recipe if there is a conflict
+
 ## Compatibility (to Upstream)
 - Supported architectures: x86_64-v2/amd64v2 (check with `/lib/ld-linux-x86-64.so.2 --help`, plain x86-64 is not supported only v2 and up) and aarch64/arm64 (other archs (including 64-bit ones) and any 32-bit arch (like armhf/armv7 (dropped), armel/armv6) are not supported, because of the duration to compile).
 - I test NPMplus with docker, but podman should also work (I disrecommend you to run the NPMplus container inside an LXC container, it will work, but please don't do it, it will work better without, install docker/podman on the host or in a KVM and run NPMplus with this)
