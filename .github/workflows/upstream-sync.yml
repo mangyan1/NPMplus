@@ -1,0 +1,88 @@
+name: upstream sync
+
+# keeps the fork up to date with ZoeyVid/NPMplus.
+# clean merge -> pushed to develop automatically.
+# conflict -> an issue is opened listing the conflicted files,
+# with instructions to resolve. nothing is force-pushed, ever.
+
+on:
+  schedule:
+    # daily at 03:43 UTC, off the :00 mark to be nice to shared infra
+    - cron: "43 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: merge upstream develop
+        id: merge
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/ZoeyVid/NPMplus.git
+          git fetch upstream develop
+          if git merge --no-ff upstream/develop -m "merge upstream develop"; then
+            echo "conflict=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "conflicted files:"
+            git diff --name-only --diff-filter=U | tee conflict-files.txt
+            git merge --abort
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: push clean merge
+        if: steps.merge.outputs.conflict == 'false'
+        run: git push origin develop
+
+      - name: report conflict
+        if: steps.merge.outputs.conflict == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=$(cat conflict-files.txt)
+          body=$(cat <<EOF
+          The daily upstream sync could not merge cleanly.
+
+          Conflicted files:
+          \`\`\`
+          $files
+          \`\`\`
+
+          Most likely ZoeyVid/NPMplus fixed one of the issues we also patched
+          locally (#3806-#3810). If so, the local fix commits touching those
+          files are obsolete, drop them and take upstream's version:
+
+          \`\`\`bash
+          # find the local commits touching the conflicted files
+          git log --oneline upstream/develop..develop -- <files>
+
+          # drop them by deleting their lines in the editor, then save
+          git rebase -i upstream/develop
+
+          # then merge upstream and push
+          git merge upstream/develop && git push --force-with-lease origin develop
+          \`\`\`
+
+          Close this issue afterwards; the next scheduled run will find a clean tree.
+          EOF
+          )
+          existing=$(gh issue list --search 'in:title "upstream sync conflict" is:open' --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "upstream sync conflict with ZoeyVid/NPMplus" --body "$body"
+          fi
