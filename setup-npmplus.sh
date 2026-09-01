@@ -127,7 +127,6 @@ USE_FWBOUNCER="n"
 if [[ "$USE_CROWDSEC" == "y" ]]; then
 	confirm "Enable crowdsec appsec (WAF-style body inspection)?" "n" && USE_APPSEC="y"
 	confirm "Enable the crowdsec firewall bouncer (kernel-level IP bans via nftables)?" "y" && USE_FWBOUNCER="y"
-	confirm "Install the crowdsec WordPress collection (wp-login brute force, wpscan probes)?" "y" && USE_WPCOLLECTION="y"
 fi
 USE_ANUBIS="n"; confirm "Enable anubis (anti-bot proof-of-work)?" "y" && USE_ANUBIS="y"
 CHALLENGE_ALL="n"
@@ -467,15 +466,6 @@ EOF
 			chmod 600 "$CROWDSEC_DIR/conf/bouncers/crowdsec-firewall-bouncer.yaml"
 			echo "firewall bouncer: nftables bans (note: docker-published ports may need extra rules, see README crowdsec step 11)"
 		fi
-	fi
-
-	if [[ "$USE_WPCOLLECTION" == "y" ]]; then
-		say "installing the crowdsec WordPress collection"
-		# the hub index in the image may be stale, refresh it before installing;
-		# an already-installed collection is a no-op, so reruns are safe
-		docker exec crowdsec cscli hub update >/dev/null 2>&1 || true
-		docker exec crowdsec cscli collections install crowdsecurity/wordpress \
-			|| echo "wordpress collection install failed - retry with: docker exec crowdsec cscli collections install crowdsecurity/wordpress" >&2
 	fi
 fi
 
