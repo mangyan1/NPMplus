@@ -82,6 +82,7 @@ function AuthProvider({ children, tokenRefreshInterval = 5 * 60 * 1000 }: Props)
 		handleTokenUpdate(response);
 	};
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the refresh must fire once per auth-state change, not on every render (theme/locale switches re-render and would burn the login rate limit)
 	useEffect(() => {
 		if (!authenticated) {
 			if (totpChallenge) {
@@ -90,7 +91,6 @@ function AuthProvider({ children, tokenRefreshInterval = 5 * 60 * 1000 }: Props)
 			}
 			refresh(false).catch(() => {});
 		}
-		// biome-ignore lint/correctness/useExhaustiveDependencies: the refresh must fire once per auth-state change, not on every render (theme/locale switches re-render and would burn the login rate limit)
 	}, [authenticated, totpChallenge]);
 
 	useIntervalWhen(
