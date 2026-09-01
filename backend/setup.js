@@ -68,7 +68,7 @@ const setupDefaultUser = async () => {
 			access_lists: "manage",
 			certificates: "manage",
 		});
-		logger.info("Initial admin setup completed");
+		logger.info(`Initial admin user creation completed: ${initialAdminEmail}`);
 	}
 };
 
