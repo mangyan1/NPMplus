@@ -131,8 +131,9 @@ fi
 USE_ANUBIS="n"; confirm "Enable anubis (anti-bot proof-of-work)?" "y" && USE_ANUBIS="y"
 CHALLENGE_ALL="n"
 if [[ "$USE_ANUBIS" == "y" ]]; then
-	# strongest anti-bot, but breaks non-browser clients (APIs, RSS, uptime monitors)
-	confirm "Challenge everything not matched by any rule?" "n" && CHALLENGE_ALL="y"
+	# strongest anti-bot, but breaks non-browser clients (APIs, RSS, uptime
+	# monitors) - answer n if a protected host serves those
+	confirm "Challenge everything not matched by any rule?" "y" && CHALLENGE_ALL="y"
 fi
 USE_CADDY="n"; confirm "Enable caddy (port 80 -> https redirect, so NPMplus only serves https)?" "n" && USE_CADDY="y"
 
