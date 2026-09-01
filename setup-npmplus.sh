@@ -153,6 +153,8 @@ if command -v ufw >/dev/null; then
 		confirm "Open the admin UI port 81 to the internet?" "n" && EXPOSE_ADMIN="y"
 	fi
 fi
+# OS security patches; docker engine updates still need a manual apt upgrade
+USE_UNATTENDED="n"; confirm "Enable unattended-upgrades (automatic OS security updates)?" "y" && USE_UNATTENDED="y"
 
 if [[ -s "$COMPOSE_FILE" ]]; then
 	cp -a "$COMPOSE_FILE" "$COMPOSE_FILE.bak.$(date +%s)"
@@ -481,8 +483,94 @@ if [[ "$USE_UFW" == "y" ]]; then
 	echo "ufw active: $(ufw status | head -1)"
 fi
 
+if [[ "$USE_UNATTENDED" == "y" ]]; then
+	say "enabling unattended-upgrades"
+	apt-get install -y -qq unattended-upgrades
+	printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' >/etc/apt/apt.conf.d/20auto-upgrades
+fi
+
 say "deploying"
 docker compose -f "$COMPOSE_FILE" up -d
+
+say "installing monthly safe-update (snapshot -> update -> health check -> auto-revert)"
+# the cron needs the setup script at a known path; running via curl|bash has no file to copy
+if [[ -f "$0" ]]; then
+	cp -a "$0" "$DATA_DIR/setup-npmplus.sh"
+fi
+if [[ -s "$DATA_DIR/setup-npmplus.sh" ]]; then
+	cat >/usr/local/bin/npmplus-safe-update <<'EOF'
+#!/bin/bash
+# monthly npmplus update with a safety net: snapshots the running state,
+# runs the update, health-checks it, and reverts to the snapshot on failure
+set -euo pipefail
+
+COMPOSE_FILE=/opt/npmplus/compose.yaml
+SETUP=/opt/npmplus/setup-npmplus.sh
+BACKUP=/opt/npmplus/.last-good
+
+log() { echo "$(date '+%F %T') $*"; }
+
+revert() {
+	log "health check FAILED - reverting to the last good state"
+	cp -a "$BACKUP/compose.yaml" "$COMPOSE_FILE"
+	[[ -s "$BACKUP/anubis.yaml" ]] && cp -a "$BACKUP/anubis.yaml" /opt/anubis.yaml
+	# restore the crowdsec config incl. hub items so the signature update reverts too
+	[[ -d "$BACKUP/crowdsec-conf" ]] && cp -a "$BACKUP/crowdsec-conf/." /opt/crowdsec/conf/
+	if [[ -s "$BACKUP/override.yaml" ]]; then
+		# pin every service back to its exact pre-update image; --pull never keeps
+		# a bad :latest from sneaking back in
+		docker compose -f "$COMPOSE_FILE" -f "$BACKUP/override.yaml" up -d --pull never
+	else
+		docker compose -f "$COMPOSE_FILE" up -d --pull never
+	fi
+	log "reverted - the failed state is kept for inspection, next update overwrites it"
+	exit 1
+}
+
+# snapshot the currently running (presumed good) state
+mkdir -p "$BACKUP"
+cp -a "$COMPOSE_FILE" "$BACKUP/compose.yaml"
+cp -a /opt/anubis.yaml "$BACKUP/anubis.yaml" 2>/dev/null || rm -f "$BACKUP/anubis.yaml"
+rm -rf "$BACKUP/crowdsec-conf"
+cp -a /opt/crowdsec/conf "$BACKUP/crowdsec-conf" 2>/dev/null || true
+{
+	echo "services:"
+	while read -r svc id; do
+		echo "  $svc:"
+		echo "    image: \"$id\""
+	done < <(for s in $(docker compose -f "$COMPOSE_FILE" config --services); do
+		cid=$(docker compose -f "$COMPOSE_FILE" ps -q "$s" 2>/dev/null || true)
+		[[ -n "$cid" ]] && echo "$s $(docker inspect --format '{{.Image}}' "$cid")"
+	done)
+} >"$BACKUP/override.yaml"
+
+log "running update"
+"$SETUP" --update || revert
+
+# crowdsec hub: refresh the detection signatures (parsers/scenarios/collections);
+# a container image update alone never touches them and they live outside the image
+if docker compose -f "$COMPOSE_FILE" ps --status running --format '{{.Name}}' 2>/dev/null | grep -qx crowdsec; then
+	docker exec crowdsec cscli hub update
+	docker exec crowdsec cscli hub upgrade || log "cscli hub upgrade reported failures (kept, check: docker exec crowdsec cscli hub list)"
+fi
+
+# health check: no dead/exited/restarting containers and nginx answers on https
+check() {
+	local bad
+	bad=$(docker compose -f "$COMPOSE_FILE" ps -a --status dead --status exited --status restarting --format '{{.Name}}' 2>/dev/null | head -1)
+	[[ -z "$bad" ]] && curl -ksS -m 5 https://127.0.0.1/ >/dev/null 2>&1
+}
+sleep 30
+check || { sleep 60; check || revert; }
+log "update healthy - last good snapshot kept in $BACKUP"
+EOF
+	chmod +x /usr/local/bin/npmplus-safe-update
+	printf '37 4 1 * * root /usr/local/bin/npmplus-safe-update >>/var/log/npmplus-update.log 2>&1\n' >/etc/cron.d/npmplus-safe-update
+	chmod 644 /etc/cron.d/npmplus-safe-update
+	touch /var/log/npmplus-update.log && chmod 640 /var/log/npmplus-update.log
+else
+	echo "safe-update cron NOT installed: copy setup-npmplus.sh to $DATA_DIR/ manually, then rerun" >&2
+fi
 
 say "done"
 if [[ "$EXPOSE_ADMIN" == "y" ]]; then
@@ -497,6 +585,7 @@ if [[ "$USE_CADDY" == "y" ]]; then
 	echo "caddy: port 80 now redirects everything to https"
 fi
 echo "http/3: enable it per host in the UI; needs 443/udp reachable (ufw: done)"
+echo "safe-update: monthly cron, snapshots then updates, auto-reverts on failure (log: /var/log/npmplus-update.log)"
 if [[ "$USE_ANUBIS" == "y" ]]; then
 	echo "anubis: enable per-host via the Auth Request selection in the host form"
 fi
