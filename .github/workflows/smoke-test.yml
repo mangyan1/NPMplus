@@ -21,6 +21,9 @@ jobs:
       - name: verify the stack
         # sudo: the compose file is chmod 600 root, it holds the admin password
         run: |
+          for c in npmplus npmplus-anubis crowdsec; do
+            echo "--- $c logs:"; sudo docker logs --tail 40 "$c" 2>&1 || true
+          done
           stopped="$(sudo docker compose -f /opt/npmplus/compose.yaml ps -a --format '{{.State}}' | grep -vx running || true)"
           if [[ -n "$stopped" ]]; then
             echo "containers not running:" >&2
