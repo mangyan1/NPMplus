@@ -38,16 +38,35 @@ anubis_latest_version() {
 
 # fetch the bot policy for a given anubis release and adapt it for the auth_request
 # integration; refuses to deploy if upstream changed the policy format
-anubis_policy() { # anubis_policy <version>
+anubis_policy() { # anubis_policy <version> [challenge_all]
 	curl -sSfL "https://raw.githubusercontent.com/TecharoHQ/anubis/refs/tags/$1/data/botPolicies.yaml" -o /opt/anubis.yaml
 	# auth_request needs 401/403 instead of anubis' scraper-friendly 200s
 	sed -E -i 's/^([[:space:]]*CHALLENGE:)[[:space:]]*.*/\1 401/; s/^([[:space:]]*DENY:)[[:space:]]*.*/\1 403/' /opt/anubis.yaml
 	# the docs advise against the memory store in production; bbolt survives restarts
 	sed -E -i 's/^([[:space:]]*backend:)[[:space:]]*memory$/\1 bbolt/; s/^([[:space:]]*parameters:)[[:space:]]*\{\}$/\1\n      path: \/data\/anubis.bdb/' /opt/anubis.yaml
+	# log honeypot-caught IPs so the crowdsec bridge can ban them
+	sed -E -i 's/^([[:space:]]*implementation:)[[:space:]]*naive$/\1 naive\n  ip_log_file: \/data\/anubis\/honeypot.addrs/' /opt/anubis.yaml
+	if [[ "${2:-}" == "y" ]]; then
+		# challenge everything no other rule matched; appended as the last bot rule,
+		# so known-good crawlers and allowlisted paths still pass first
+		awk '
+			/^bots:/ {inb=1}
+			inb && !done && /^[A-Za-z]/ && !/^bots:/ {
+				print "  # challenge everything that no other rule matched"
+				print "  - name: everything-else"
+				print "    action: CHALLENGE"
+				print ""
+				done=1
+			}
+			{print}
+		' /opt/anubis.yaml >/opt/anubis.yaml.tmp && mv /opt/anubis.yaml.tmp /opt/anubis.yaml
+	fi
 	# a changed upstream format must fail loudly, not silently drop the protection
 	grep -q "CHALLENGE: 401" /opt/anubis.yaml || { echo "anubis policy $1: status code sed did not apply - upstream format changed" >&2; exit 1; }
 	grep -q "DENY: 403" /opt/anubis.yaml || { echo "anubis policy $1: deny code sed did not apply - upstream format changed" >&2; exit 1; }
 	grep -q "backend: bbolt" /opt/anubis.yaml || { echo "anubis policy $1: store sed did not apply - upstream format changed" >&2; exit 1; }
+	grep -q "ip_log_file:" /opt/anubis.yaml || { echo "anubis policy $1: honeypot sed did not apply - upstream format changed" >&2; exit 1; }
+	[[ "${2:-}" != "y" ]] || grep -q "name: everything-else" /opt/anubis.yaml || { echo "anubis policy $1: catchall rule did not apply - upstream format changed" >&2; exit 1; }
 }
 
 # --- dependencies (debian/ubuntu) ------------------------------------------------
@@ -86,8 +105,11 @@ if [[ "${1:-}" == "--update" ]]; then
 	if grep -q "npmplus-anubis" "$COMPOSE_FILE"; then
 		ANUBIS_VERSION=$(anubis_latest_version)
 		sed -i -E "s|(image: ghcr.io/techarohq/anubis:).*|\1$ANUBIS_VERSION|" "$COMPOSE_FILE"
+		# keep the catchall choice from the existing policy
+		CATCHALL="n"
+		grep -q "name: everything-else" /opt/anubis.yaml 2>/dev/null && CATCHALL="y"
 		say "anubis -> $ANUBIS_VERSION (policy refreshed)"
-		anubis_policy "$ANUBIS_VERSION"
+		anubis_policy "$ANUBIS_VERSION" "$CATCHALL"
 	fi
 	docker compose -f "$COMPOSE_FILE" pull
 	docker compose -f "$COMPOSE_FILE" up -d
@@ -107,6 +129,11 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 	confirm "Enable the crowdsec firewall bouncer (kernel-level IP bans via nftables)?" "y" && USE_FWBOUNCER="y"
 fi
 USE_ANUBIS="n"; confirm "Enable anubis (anti-bot proof-of-work)?" "y" && USE_ANUBIS="y"
+CHALLENGE_ALL="n"
+if [[ "$USE_ANUBIS" == "y" ]]; then
+	# strongest anti-bot, but breaks non-browser clients (APIs, RSS, uptime monitors)
+	confirm "Challenge everything not matched by any rule?" "n" && CHALLENGE_ALL="y"
+fi
 USE_CADDY="n"; confirm "Enable caddy (port 80 -> https redirect, so NPMplus only serves https)?" "n" && USE_CADDY="y"
 
 # HTTP/3 is always available in NPMplus (enable per host in the UI); it needs 443/udp.
@@ -285,8 +312,35 @@ mkdir -p "$DATA_DIR/nginx/logs"
 
 if [[ "$USE_ANUBIS" == "y" ]]; then
 	say "fetching anubis bot policy $ANUBIS_VERSION (status codes adjusted for auth_request)"
-	anubis_policy "$ANUBIS_VERSION"
-	mkdir -p /opt/anubis-data
+	anubis_policy "$ANUBIS_VERSION" "$CHALLENGE_ALL"
+	mkdir -p /opt/anubis-data/anubis # subdir holds the honeypot IP log
+fi
+
+if [[ "$USE_CROWDSEC" == "y" && "$USE_ANUBIS" == "y" ]]; then
+	say "installing honeypot -> crowdsec auto-ban (every 5 min via cron)"
+	cat >/usr/local/bin/anubis-honeypot-ban <<'EOF'
+#!/bin/bash
+# bans IPs caught in anubis' honeypot - those hits are proven malicious by
+# construction, so no false positives are possible
+set -euo pipefail
+LOG=/opt/anubis-data/anubis/honeypot.addrs
+STATE=/opt/anubis-data/anubis-honeypot.pos
+[ -s "$LOG" ] || exit 0
+pos=$(cat "$STATE" 2>/dev/null || echo 0)
+size=$(stat -c %s "$LOG")
+[ "$pos" -gt "$size" ] && pos=0 # anubis resets the file at 64k
+[ "$pos" -eq "$size" ] && exit 0
+tail -c +$((pos + 1)) "$LOG" | while read -r ip; do
+	case "$ip" in
+		*[!0-9a-fA-F.:]*) ;; # not an address, skip
+		*) docker exec crowdsec cscli decisions add --ip "$ip" --duration 24h --reason anubis-honeypot >/dev/null 2>&1 || true ;;
+	esac
+done
+echo "$size" >"$STATE"
+EOF
+	chmod +x /usr/local/bin/anubis-honeypot-ban
+	printf '*/5 * * * * root /usr/local/bin/anubis-honeypot-ban\n' >/etc/cron.d/anubis-honeypot
+	chmod 644 /etc/cron.d/anubis-honeypot
 fi
 
 if [[ "$USE_CROWDSEC" == "y" ]]; then
