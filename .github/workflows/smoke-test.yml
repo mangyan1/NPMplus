@@ -60,8 +60,8 @@ jobs:
         run: |
           code="000"
           for _ in $(seq 1 40); do
-            code="$(curl -sS -o /tmp/login.json -w '%{http_code}' -m 10 -H 'Content-Type: application/json' \
-              -d '{"identity":"admin@example.com","secret":"SmokeTest-Password-1"}' http://127.0.0.1:81/api/tokens || true)"
+            code="$(curl -ksS -o /tmp/login.json -w '%{http_code}' -m 10 -H 'Content-Type: application/json' \
+              -d '{"identity":"admin@example.com","secret":"SmokeTest-Password-1"}' https://127.0.0.1:81/api/tokens || true)"
             [[ "$code" == "200" ]] && break
             sleep 5
           done
