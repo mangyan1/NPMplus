@@ -32,6 +32,24 @@ confirm() { # confirm "question" "y|n" -> 0 if yes
 
 [[ $EUID -eq 0 ]] || { echo "run as root (sudo)" >&2; exit 1; }
 
+anubis_latest_version() {
+	curl -sSfL https://api.github.com/repos/TecharoHQ/anubis/releases/latest | grep -oE '"tag_name": *"[^"]+"' | cut -d'"' -f4
+}
+
+# fetch the bot policy for a given anubis release and adapt it for the auth_request
+# integration; refuses to deploy if upstream changed the policy format
+anubis_policy() { # anubis_policy <version>
+	curl -sSfL "https://raw.githubusercontent.com/TecharoHQ/anubis/refs/tags/$1/data/botPolicies.yaml" -o /opt/anubis.yaml
+	# auth_request needs 401/403 instead of anubis' scraper-friendly 200s
+	sed -E -i 's/^([[:space:]]*CHALLENGE:)[[:space:]]*.*/\1 401/; s/^([[:space:]]*DENY:)[[:space:]]*.*/\1 403/' /opt/anubis.yaml
+	# the docs advise against the memory store in production; bbolt survives restarts
+	sed -E -i 's/^([[:space:]]*backend:)[[:space:]]*memory$/\1 bbolt/; s/^([[:space:]]*parameters:)[[:space:]]*\{\}$/\1\n      path: \/data\/anubis.bdb/' /opt/anubis.yaml
+	# a changed upstream format must fail loudly, not silently drop the protection
+	grep -q "CHALLENGE: 401" /opt/anubis.yaml || { echo "anubis policy $1: status code sed did not apply - upstream format changed" >&2; exit 1; }
+	grep -q "DENY: 403" /opt/anubis.yaml || { echo "anubis policy $1: deny code sed did not apply - upstream format changed" >&2; exit 1; }
+	grep -q "backend: bbolt" /opt/anubis.yaml || { echo "anubis policy $1: store sed did not apply - upstream format changed" >&2; exit 1; }
+}
+
 # --- dependencies (debian/ubuntu) ------------------------------------------------
 if ! command -v curl >/dev/null; then
 	if confirm "curl is missing - install it via apt?" "y"; then
@@ -63,6 +81,14 @@ if [[ "${1:-}" == "--update" ]]; then
 		exit 1
 	fi
 	say "updating"
+	# anubis is release-pinned in the compose; move it to the latest release together
+	# with its policy file so the two can never disagree
+	if grep -q "npmplus-anubis" "$COMPOSE_FILE"; then
+		ANUBIS_VERSION=$(anubis_latest_version)
+		sed -i -E "s|(image: ghcr.io/techarohq/anubis:).*|\1$ANUBIS_VERSION|" "$COMPOSE_FILE"
+		say "anubis -> $ANUBIS_VERSION (policy refreshed)"
+		anubis_policy "$ANUBIS_VERSION"
+	fi
 	docker compose -f "$COMPOSE_FILE" pull
 	docker compose -f "$COMPOSE_FILE" up -d
 	say "update done - check: docker compose -f $COMPOSE_FILE ps"
@@ -181,7 +207,7 @@ ANUBIS_BLOCK=""
 if [[ "$USE_ANUBIS" == "y" ]]; then
 	# pin image and policy file to the same release so they cannot drift apart:
 	# a policy from main can be newer than the released image and fail to parse
-	ANUBIS_VERSION=$(curl -sSfL https://api.github.com/repos/TecharoHQ/anubis/releases/latest | grep -oE '"tag_name": *"[^"]+"' | cut -d'"' -f4)
+	ANUBIS_VERSION=$(anubis_latest_version)
 	read -r -d '' ANUBIS_BLOCK <<EOF || true
 
   anubis:
@@ -259,11 +285,7 @@ mkdir -p "$DATA_DIR/nginx/logs"
 
 if [[ "$USE_ANUBIS" == "y" ]]; then
 	say "fetching anubis bot policy $ANUBIS_VERSION (status codes adjusted for auth_request)"
-	curl -sSfL "https://raw.githubusercontent.com/TecharoHQ/anubis/refs/tags/$ANUBIS_VERSION/data/botPolicies.yaml" -o /opt/anubis.yaml
-	# auth_request needs 401/403 instead of anubis' scraper-friendly 200s
-	sed -E -i 's/^([[:space:]]*CHALLENGE:)[[:space:]]*.*/\1 401/; s/^([[:space:]]*DENY:)[[:space:]]*.*/\1 403/' /opt/anubis.yaml
-	# the docs advise against the memory store in production; bbolt survives restarts
-	sed -E -i 's/^([[:space:]]*backend:)[[:space:]]*memory$/\1 bbolt/; s/^([[:space:]]*parameters:)[[:space:]]*\{\}$/\1\n      path: \/data\/anubis.bdb/' /opt/anubis.yaml
+	anubis_policy "$ANUBIS_VERSION"
 	mkdir -p /opt/anubis-data
 fi
 
