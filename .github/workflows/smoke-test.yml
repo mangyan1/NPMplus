@@ -30,7 +30,13 @@ jobs:
             sudo docker compose -f /opt/npmplus/compose.yaml ps -a
             exit 1
           fi
-          code="$(curl -ksS -o /dev/null -w '%{http_code}' -m 10 https://127.0.0.1/ || true)"
+          # npmplus spends its first minute on apk add php-fpm before nginx binds 443
+          code="000"
+          for _ in $(seq 1 40); do
+            code="$(curl -ksS -o /dev/null -w '%{http_code}' -m 10 https://127.0.0.1/ || true)"
+            [[ "$code" != "000" ]] && break
+            sleep 5
+          done
           if [[ "$code" == "000" ]]; then
             echo "no https response from npmplus (code $code)" >&2
             exit 1
