@@ -23,10 +23,14 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      # with a PAT the push (and the runs it triggers) come from the user, not
+      # github-actions[bot], so no "Approve and run" is needed on bot-created
+      # commits. falls back to the bot token until the secret exists.
       - uses: actions/checkout@v4
         with:
           ref: develop
           fetch-depth: 0
+          token: ${{ secrets.GH_PAT || github.token }}
 
       - name: merge upstream develop
         id: merge

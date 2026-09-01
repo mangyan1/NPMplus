@@ -104,6 +104,7 @@ jobs:
           echo "version=$VER" >> $GITHUB_OUTPUT
       - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          token: ${{ secrets.GH_PAT || github.token }}
           signoff: true
           delete-branch: true
           commit-message: update ${{ matrix.name }} version to ${{ steps.update.outputs.version }}
@@ -133,6 +134,7 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/crowdsecurity/lua-cs-bouncer/refs/tags/"$LCSB_VER"/config_example.conf -o rootfs/etc/crowdsec.conf.original
       - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          token: ${{ secrets.GH_PAT || github.token }}
           signoff: true
           delete-branch: true
           commit-message: update lua-cs-bouncer version to ${{ steps.update.outputs.version }}
@@ -147,6 +149,7 @@ jobs:
         run: curl -sSfL https://raw.githubusercontent.com/crowdsecurity/cs-nginx-bouncer/main/nginx/crowdsec_nginx.conf -o rootfs/usr/local/nginx/conf/conf.d/crowdsec.conf.original
       - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          token: ${{ secrets.GH_PAT || github.token }}
           signoff: true
           delete-branch: true
           commit-message: update cs-nginx-bouncer config
@@ -184,6 +187,7 @@ jobs:
           sed -i "\|pull/${{ matrix.pull }}.patch|{n;s|[0-9a-f]\{64\}|$HASH|}" Dockerfile
       - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          token: ${{ secrets.GH_PAT || github.token }}
           signoff: true
           delete-branch: true
           commit-message: update ${{ matrix.name }} ${{ matrix.pull }} patch hash
@@ -212,6 +216,7 @@ jobs:
           echo "version=$DTR_VER" >> $GITHUB_OUTPUT
       - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          token: ${{ secrets.GH_PAT || github.token }}
           signoff: true
           delete-branch: true
           commit-message: update dynamic_tls_records version to ${{ steps.update.outputs.version }}
@@ -238,6 +243,7 @@ jobs:
           echo "version=$RCP_VER" >> $GITHUB_OUTPUT
       - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          token: ${{ secrets.GH_PAT || github.token }}
           signoff: true
           delete-branch: true
           commit-message: update resolver_conf_parsing version to ${{ steps.update.outputs.version }}
@@ -265,6 +271,7 @@ jobs:
           echo "version=$ZNP_VER" >> $GITHUB_OUTPUT
       - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          token: ${{ secrets.GH_PAT || github.token }}
           signoff: true
           delete-branch: true
           commit-message: update zlib-ng-patch version to ${{ steps.update.outputs.version }}
@@ -286,6 +293,7 @@ jobs:
           sed -i "\|raw.githubusercontent.com/tomwassenberg|{n;s|[0-9a-f]\{64\}|$COF_HASH|}" Dockerfile
       - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          token: ${{ secrets.GH_PAT || github.token }}
           signoff: true
           delete-branch: true
           commit-message: update certbot-ocsp-fetcher version
@@ -309,6 +317,7 @@ jobs:
           sed -i "\|nginxbeautifier/\"\$NBF_VER\"/nginxbeautifier.js|{n;s|[0-9a-f]\{64\}|$NBF_HASH|}" Dockerfile
       - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          token: ${{ secrets.GH_PAT || github.token }}
           signoff: true
           delete-branch: true
           commit-message: update nginxbeautifier version
@@ -328,6 +337,7 @@ jobs:
           echo "version=$(jq -r .last_update_utc /tmp/headers_remove.json)" >> $GITHUB_OUTPUT
       - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          token: ${{ secrets.GH_PAT || github.token }}
           signoff: true
           delete-branch: true
           commit-message: update owasp headers-remove list to ${{ steps.update.outputs.version }}
