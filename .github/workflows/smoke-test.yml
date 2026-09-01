@@ -19,11 +19,12 @@ jobs:
       - name: run setup-npmplus.sh end to end with defaults
         run: yes '' | sudo bash setup-npmplus.sh
       - name: verify the stack
+        # sudo: the compose file is chmod 600 root, it holds the admin password
         run: |
-          stopped="$(docker compose -f /opt/npmplus/compose.yaml ps -a --status dead exited restarting -q)"
+          stopped="$(sudo docker compose -f /opt/npmplus/compose.yaml ps -a --status dead exited restarting -q)"
           if [[ -n "$stopped" ]]; then
             echo "containers not running: $stopped" >&2
-            docker compose -f /opt/npmplus/compose.yaml ps -a
+            sudo docker compose -f /opt/npmplus/compose.yaml ps -a
             exit 1
           fi
           code="$(curl -ksS -o /dev/null -w '%{http_code}' -m 10 https://127.0.0.1/ || true)"
