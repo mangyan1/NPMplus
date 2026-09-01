@@ -4,7 +4,7 @@
 # bouncer, anubis, caddy), wires them together, optionally configures UFW, and starts
 # everything. Run as root on the Linux docker host.
 #
-# ponytail: deliberately only covers the common path; anything fancier -> edit the
+# deliberately only covers the common path; anything fancier -> edit the
 # generated compose.yaml yourself afterwards, every option is commented in there.
 
 set -euo pipefail
@@ -179,12 +179,15 @@ fi
 
 ANUBIS_BLOCK=""
 if [[ "$USE_ANUBIS" == "y" ]]; then
+	# pin image and policy file to the same release so they cannot drift apart:
+	# a policy from main can be newer than the released image and fail to parse
+	ANUBIS_VERSION=$(curl -sSfL https://api.github.com/repos/TecharoHQ/anubis/releases/latest | grep -oE '"tag_name": *"[^"]+"' | cut -d'"' -f4)
 	read -r -d '' ANUBIS_BLOCK <<EOF || true
 
   anubis:
     container_name: npmplus-anubis
     restart: unless-stopped
-    image: ghcr.io/techarohq/anubis:latest
+    image: ghcr.io/techarohq/anubis:$ANUBIS_VERSION
     pull_policy: always
     network_mode: bridge
     ports:
@@ -195,6 +198,7 @@ if [[ "$USE_ANUBIS" == "y" ]]; then
       - "POLICY_FNAME=/etc/botPolicies.yaml"
     volumes:
       - "/opt/anubis.yaml:/etc/botPolicies.yaml:ro"
+      - "/opt/anubis-data:/data"
 EOF
 fi
 
@@ -254,9 +258,13 @@ chmod 600 "$COMPOSE_FILE" # contains the admin password if one was set
 mkdir -p "$DATA_DIR/nginx/logs"
 
 if [[ "$USE_ANUBIS" == "y" ]]; then
-	say "fetching anubis bot policy (status codes adjusted for auth_request)"
-	curl -sSfL https://raw.githubusercontent.com/TecharoHQ/anubis/refs/heads/main/data/botPolicies.yaml -o /opt/anubis.yaml
+	say "fetching anubis bot policy $ANUBIS_VERSION (status codes adjusted for auth_request)"
+	curl -sSfL "https://raw.githubusercontent.com/TecharoHQ/anubis/refs/tags/$ANUBIS_VERSION/data/botPolicies.yaml" -o /opt/anubis.yaml
+	# auth_request needs 401/403 instead of anubis' scraper-friendly 200s
 	sed -E -i 's/^([[:space:]]*CHALLENGE:)[[:space:]]*.*/\1 401/; s/^([[:space:]]*DENY:)[[:space:]]*.*/\1 403/' /opt/anubis.yaml
+	# the docs advise against the memory store in production; bbolt survives restarts
+	sed -E -i 's/^([[:space:]]*backend:)[[:space:]]*memory$/\1 bbolt/; s/^([[:space:]]*parameters:)[[:space:]]*\{\}$/\1\n      path: \/data\/anubis.bdb/' /opt/anubis.yaml
+	mkdir -p /opt/anubis-data
 fi
 
 if [[ "$USE_CROWDSEC" == "y" ]]; then
