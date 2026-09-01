@@ -136,6 +136,9 @@ if [[ "$USE_ANUBIS" == "y" ]]; then
 	confirm "Challenge everything not matched by any rule?" "y" && CHALLENGE_ALL="y"
 fi
 USE_CADDY="n"; confirm "Enable caddy (port 80 -> https redirect, so NPMplus only serves https)?" "n" && USE_CADDY="y"
+# orange cloud only: with plain dns the visitor ips arrive directly and must NOT be
+# taken from cloudflare headers (spoofable by anyone then)
+USE_CF="n"; confirm "Are your sites proxied through Cloudflare (orange cloud)?" "y" && USE_CF="y"
 
 # HTTP/3 is always available in NPMplus (enable per host in the UI); it needs 443/udp.
 USE_UFW="n"
@@ -170,6 +173,9 @@ if [[ -n "$ADMIN_EMAIL" ]]; then
 fi
 # no IPv6 on the host, so stop nginx from listening on it entirely
 ENV_DISABLE_IPV6="      - \"DISABLE_IPV6=true\""
+# needed for real visitor ips in logs/crowdsec when cloudflare proxies the traffic
+ENV_CF=""
+[[ "$USE_CF" == "y" ]] && ENV_CF="      - \"TRUST_CLOUDFLARE=true\""
 ENV_ANUBIS=""
 if [[ "$USE_ANUBIS" == "y" ]]; then
 	ENV_ANUBIS="      - \"AUTH_REQUEST_ANUBIS_UPSTREAM=http://127.0.0.1:8923\""
@@ -298,6 +304,7 @@ $ENV_LOGROTATE
 $ENV_QUIC_BPF
 $ENV_DISABLE_HTTP
 $ENV_DISABLE_IPV6
+$ENV_CF
 $ENV_ANUBIS
 $CROWDSEC_BLOCK
 $FWBOUNCER_BLOCK
