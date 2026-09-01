@@ -193,7 +193,7 @@ ENV_QUIC_BPF="#      - \"NGINX_QUIC_BPF=true\""
 
 CROWDSEC_BLOCK=""
 if [[ "$USE_CROWDSEC" == "y" ]]; then
-	read -r -d '' CROWDSEC_BLOCK <<EOF || true
+	IFS= read -r -d '' CROWDSEC_BLOCK <<EOF || true
 
   crowdsec:
     container_name: crowdsec
@@ -217,7 +217,7 @@ fi
 
 FWBOUNCER_BLOCK=""
 if [[ "$USE_FWBOUNCER" == "y" ]]; then
-	read -r -d '' FWBOUNCER_BLOCK <<EOF || true
+	IFS= read -r -d '' FWBOUNCER_BLOCK <<EOF || true
 
   crowdsec-firewall-bouncer:
     container_name: crowdsec-firewall-bouncer
@@ -240,7 +240,7 @@ if [[ "$USE_ANUBIS" == "y" ]]; then
 	# pin image and policy file to the same release so they cannot drift apart:
 	# a policy from main can be newer than the released image and fail to parse
 	ANUBIS_VERSION=$(anubis_latest_version)
-	read -r -d '' ANUBIS_BLOCK <<EOF || true
+	IFS= read -r -d '' ANUBIS_BLOCK <<EOF || true
 
   anubis:
     container_name: npmplus-anubis
@@ -262,7 +262,7 @@ fi
 
 CADDY_BLOCK=""
 if [[ "$USE_CADDY" == "y" ]]; then
-	read -r -d '' CADDY_BLOCK <<EOF || true
+	IFS= read -r -d '' CADDY_BLOCK <<EOF || true
 
   npmplus-caddy:
     container_name: npmplus-caddy
