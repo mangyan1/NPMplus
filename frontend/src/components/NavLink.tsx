@@ -28,11 +28,7 @@ export function NavLink({ children, to, href, isDropdownItem, onClick }: Props) 
 
 	return (
 		<a
-			className={
-				isDropdownItem
-					? "dropdown-item"
-					: `nav-link${isActive ? " active" : ""}`
-			}
+			className={isDropdownItem ? "dropdown-item" : `nav-link${isActive ? " active" : ""}`}
 			href={to}
 			aria-current={isActive ? "page" : undefined}
 			onClick={(e) => {
