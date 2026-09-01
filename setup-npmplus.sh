@@ -64,6 +64,7 @@ anubis_policy() { # anubis_policy <version> [challenge_all]
 			inb && !done && /^[A-Za-z]/ && !/^bots:/ {
 				print "  # challenge everything that no other rule matched"
 				print "  - name: everything-else"
+				print "    user_agent_regex: \".*\""
 				print "    action: CHALLENGE"
 				print ""
 				done=1
