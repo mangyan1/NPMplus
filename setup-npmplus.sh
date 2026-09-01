@@ -572,6 +572,46 @@ else
 	echo "safe-update cron NOT installed: copy setup-npmplus.sh to $DATA_DIR/ manually, then rerun" >&2
 fi
 
+say "installing daily data backup (keeps the last 7)"
+cat >/usr/local/bin/npmplus-backup <<'EOF'
+#!/bin/bash
+# daily npmplus backup. the tar contains the data dir (database, certs, htpasswd
+# files), the crowdsec dir and the anubis policy. restores: untar into / and, if
+# present, copy npmplus/database.backup.sqlite over npmplus/database.sqlite (it
+# is the consistent copy, see below), then: docker compose up -d
+set -euo pipefail
+
+BACKUP_DIR=/var/backups/npmplus
+KEEP=7 # one week of daily backups
+LOG=/var/log/npmplus-backup.log
+exec >>"$LOG" 2>&1
+
+log() { echo "$(date '+%F %T') $*"; }
+
+mkdir -p "$BACKUP_DIR"
+
+# hot-copy the database with better-sqlite3 so a copy is never torn mid-write;
+# the plain live file is still in the tar as a fallback if this ever fails
+if ! docker exec npmplus node -e "const d=require('better-sqlite3')('/data/npmplus/database.sqlite',{readonly:true});d.backup('/data/npmplus/database.backup.sqlite').then(()=>d.close())" >/dev/null 2>&1; then
+	log "warning: consistent database copy failed, tar will contain the live file"
+fi
+
+files="opt/npmplus opt/crowdsec"
+[[ -f /opt/anubis.yaml ]] && files="$files opt/anubis.yaml"
+ts=$(date +%F-%H%M%S)
+out="$BACKUP_DIR/npmplus-$ts.tar.gz"
+tar -czf "$out" -C / $files || { log "backup FAILED (tar)"; exit 1; }
+rm -f /opt/npmplus/npmplus/database.backup.sqlite
+log "backup ok: $out ($(du -h "$out" | cut -f1))"
+
+# roll the oldest off, keep the last KEEP
+ls -1t "$BACKUP_DIR"/npmplus-*.tar.gz | tail -n +$((KEEP + 1)) | xargs -r rm -f
+EOF
+chmod +x /usr/local/bin/npmplus-backup
+printf '17 2 * * * root /usr/local/bin/npmplus-backup\n' >/etc/cron.d/npmplus-backup
+chmod 644 /etc/cron.d/npmplus-backup
+touch /var/log/npmplus-backup.log && chmod 640 /var/log/npmplus-backup.log
+
 say "done"
 if [[ "$EXPOSE_ADMIN" == "y" ]]; then
 	echo "admin UI: https://<host>:81"
@@ -586,6 +626,7 @@ if [[ "$USE_CADDY" == "y" ]]; then
 fi
 echo "http/3: enable it per host in the UI; needs 443/udp reachable (ufw: done)"
 echo "safe-update: monthly cron, snapshots then updates, auto-reverts on failure (log: /var/log/npmplus-update.log)"
+echo "backup: daily cron, 7 kept in /var/backups/npmplus (log: /var/log/npmplus-backup.log)"
 if [[ "$USE_ANUBIS" == "y" ]]; then
 	echo "anubis: enable per-host via the Auth Request selection in the host form"
 fi
