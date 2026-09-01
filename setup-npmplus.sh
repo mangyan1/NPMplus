@@ -14,20 +14,20 @@ CROWDSEC_DIR="/opt/crowdsec"
 
 say() { printf '\n\033[1;32m== %s\033[0m\n' "$*"; }
 ask() { # ask "question" "default" -> answer on stdout, default on empty enter
-	local q="$1" def="$2" ans
-	read -r -p "$(printf '\033[1m%s\033[0m [%s]: ' "$q" "$def")" ans || true
-	echo "${ans:-$def}"
+	local q="$1" def="$2" answer
+	read -r -p "$(printf '\033[1m%s\033[0m [%s]: ' "$q" "$def")" answer || true
+	echo "${answer:-$def}"
 }
 askpw() { # askpw "question" "default" -> answer, no default echoed for passwords
-	local q="$1" def="$2" ans
-	read -rs -p "$(printf '\033[1m%s\033[0m%s: ' "$q" "${def:+ [$def]}")" ans || true
+	local q="$1" def="$2" answer
+	read -rs -p "$(printf '\033[1m%s\033[0m%s: ' "$q" "${def:+ [$def]}")" answer || true
 	echo >&2
-	echo "${ans:-$def}"
+	echo "${answer:-$def}"
 }
 confirm() { # confirm "question" "y|n" -> 0 if yes
-	local ans
-	ans=$(ask "$1" "$2")
-	[[ "$ans" == "y" || "$ans" == "Y" || "$ans" == "yes" ]]
+	local answer
+	answer=$(ask "$1" "$2")
+	[[ "$answer" == "y" || "$answer" == "Y" || "$answer" == "yes" ]]
 }
 
 [[ $EUID -eq 0 ]] || { echo "run as root (sudo)" >&2; exit 1; }
@@ -167,11 +167,6 @@ ENV_ADMIN=""
 if [[ -n "$ADMIN_EMAIL" ]]; then
 	ENV_ADMIN="      - \"INITIAL_ADMIN_EMAIL=$ADMIN_EMAIL\""
 	[[ -n "$ADMIN_PASSWORD" ]] && ENV_ADMIN="$ENV_ADMIN"$'\n'"      - \"INITIAL_ADMIN_PASSWORD=$ADMIN_PASSWORD\""
-fi
-# hardening: keep the admin UI bound to localhost unless it is explicitly exposed
-ENV_LOCALHOST=""
-if [[ "$EXPOSE_ADMIN" != "y" ]]; then
-	ENV_LOCALHOST="      - \"NPM_LISTEN_LOCALHOST=true\""
 fi
 # no IPv6 on the host, so stop nginx from listening on it entirely
 ENV_DISABLE_IPV6="      - \"DISABLE_IPV6=true\""
