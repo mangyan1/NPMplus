@@ -49,7 +49,12 @@ const Content = () => {
 							<span className="text-secondary small me-2 my-auto">
 								<T id="crowdsec.live" />
 							</span>
-							<Button actionType="secondary" variant="outline" isLoading={isFetching} onClick={() => refetch()}>
+							<Button
+								actionType="secondary"
+								variant="outline"
+								isLoading={isFetching}
+								onClick={() => refetch()}
+							>
 								<IconRefresh size={16} className="me-1" />
 								<T id="crowdsec.refresh" />
 							</Button>
@@ -67,11 +72,21 @@ const Content = () => {
 						<table className="table card-table table-vh table-striped">
 							<thead>
 								<tr>
-									<th><T id="crowdsec.target" /></th>
-									<th><T id="crowdsec.reason" /></th>
-									<th><T id="crowdsec.origin" /></th>
-									<th><T id="crowdsec.action" /></th>
-									<th><T id="crowdsec.expires" /></th>
+									<th>
+										<T id="crowdsec.target" />
+									</th>
+									<th>
+										<T id="crowdsec.reason" />
+									</th>
+									<th>
+										<T id="crowdsec.origin" />
+									</th>
+									<th>
+										<T id="crowdsec.action" />
+									</th>
+									<th>
+										<T id="crowdsec.expires" />
+									</th>
 								</tr>
 							</thead>
 							<tbody>

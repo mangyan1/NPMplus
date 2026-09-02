@@ -1,9 +1,9 @@
 import {
 	IconBook,
-	IconGavel,
 	IconChartBar,
 	IconDeviceDesktop,
 	IconExternalLink,
+	IconGavel,
 	IconHome,
 	IconLock,
 	IconSettings,
