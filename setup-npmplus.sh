@@ -80,6 +80,16 @@ anubis_policy() { # anubis_policy <version> [challenge_all]
 	[[ "${2:-}" != "y" ]] || grep -q "name: everything-else" /opt/anubis.yaml || { echo "anubis policy $1: catchall rule did not apply - upstream format changed" >&2; exit 1; }
 }
 
+register_bouncer() { # $1 = name -> key on stdout (empty on failure)
+	local key="" _
+	for _ in $(seq 1 30); do
+		key=$(docker exec crowdsec cscli bouncers add "$1" --raw 2>/dev/null || true)
+		[[ -n "$key" ]] && { echo "$key"; return 0; }
+		sleep 2
+	done
+	return 1
+}
+
 # --- dependencies (debian/ubuntu) ------------------------------------------------
 if ! command -v curl >/dev/null; then
 	if confirm "curl is missing - install it via apt?" "y"; then
@@ -121,6 +131,17 @@ if [[ "${1:-}" == "--update" ]]; then
 		grep -q "name: everything-else" /opt/anubis.yaml 2>/dev/null && CATCHALL="y"
 		say "anubis -> $ANUBIS_VERSION (policy refreshed)"
 		anubis_policy "$ANUBIS_VERSION" "$CATCHALL"
+	fi
+	# installs made before the crowdsec UI page existed have no bouncer
+	# key for it - backfill instead of showing "not wired" in the admin UI
+	if grep -q "container_name: crowdsec" "$COMPOSE_FILE" && [[ ! -s "$DATA_DIR/crowdsec/lapi-ui.key" ]]; then
+		say "registering the admin UI bouncer (crowdsec live ban view)"
+		UIKEY=$(register_bouncer npmplus-ui || true)
+		if [[ -n "$UIKEY" ]]; then
+			mkdir -p "$DATA_DIR/crowdsec"
+			echo "$UIKEY" >"$DATA_DIR/crowdsec/lapi-ui.key"
+			chmod 600 "$DATA_DIR/crowdsec/lapi-ui.key"
+		fi
 	fi
 	docker compose -f "$COMPOSE_FILE" pull
 	docker compose -f "$COMPOSE_FILE" up -d
@@ -365,16 +386,6 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 	} >"$CROWDSEC_DIR/conf/acquis.d/npmplus.yaml"
 
 	# register bouncer keys (retry until the LAPI is up)
-	register_bouncer() { # $1 = name -> key on stdout (empty on failure)
-		local key="" _
-		for _ in $(seq 1 30); do
-			key=$(docker exec crowdsec cscli bouncers add "$1" --raw 2>/dev/null || true)
-			[[ -n "$key" ]] && { echo "$key"; return 0; }
-			sleep 2
-		done
-		return 1
-	}
-
 	say "registering nginx bouncer (waiting for crowdsec LAPI...)"
 	KEY=$(register_bouncer npmplus || true)
 	if [[ -z "$KEY" ]]; then
@@ -437,7 +448,8 @@ EOF
 	# dedicated read-only bouncer for the admin UI's live ban page; the backend
 	# reads the key file at request time, so re-runs rotating it need no restart
 	say "registering the admin UI bouncer (live ban view)"
-	UIKEY=$(register_bouncer npmplus-ui || true)
+	UIKEY=""
+	[[ -s "$DATA_DIR/crowdsec/lapi-ui.key" ]] || UIKEY=$(register_bouncer npmplus-ui || true)
 	if [[ -n "$UIKEY" ]]; then
 		echo "$UIKEY" >"$DATA_DIR/crowdsec/lapi-ui.key"
 		chmod 600 "$DATA_DIR/crowdsec/lapi-ui.key"
