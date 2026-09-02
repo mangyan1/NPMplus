@@ -63,6 +63,10 @@ Automation, run `sudo bash setup-npmplus.sh` on a fresh host (or `--update` late
 - unattended-upgrades for OS security patches
 - daily upstream sync workflow: merges ZoeyVid/NPMplus automatically and opens an issue with a resolve recipe if there is a conflict
 
+Admin UI fixes:
+
+- the admin UI's index.html is served with no-cache, so after an update the browser always picks up the new chunk names instead of half-loading stale chunks
+
 ## Compatibility (to Upstream)
 - Supported architectures: x86_64-v2/amd64v2 (check with `/lib/ld-linux-x86-64.so.2 --help`, plain x86-64 is not supported only v2 and up) and aarch64/arm64 (other archs (including 64-bit ones) and any 32-bit arch (like armhf/armv7 (dropped), armel/armv6) are not supported, because of the duration to compile).
 - I test NPMplus with docker, but podman should also work (I disrecommend you to run the NPMplus container inside an LXC container, it will work, but please don't do it, it will work better without, install docker/podman on the host or in a KVM and run NPMplus with this)
