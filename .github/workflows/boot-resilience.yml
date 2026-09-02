@@ -33,6 +33,11 @@ jobs:
           # owned by the uid it runs as (root, PUID 0) or every write fails -
           # setup-npmplus.sh does this chown on real installs
           sudo chown -R 0:0 /tmp/npmplus-ci-data
+          # bind-mount a resolv.conf we control: docker regenerates its own
+          # container resolv.conf from the host on every start, which would
+          # defeat the dns-race scenario below. this file is the container's
+          # actual /etc/resolv.conf
+          printf 'nameserver 127.0.0.53\n' >/tmp/npmplus-ci-resolv.conf
           cat >/tmp/compose-ci.yaml <<'EOF'
           services:
             npmplus:
@@ -50,6 +55,7 @@ jobs:
                 - no-new-privileges:true
               volumes:
                 - /tmp/npmplus-ci-data:/data
+                - /tmp/npmplus-ci-resolv.conf:/etc/resolv.conf
               environment:
                 TZ: UTC
                 LOGROTATE: "true"
@@ -87,11 +93,9 @@ jobs:
           echo "=== scenario 1: boot dns race (container starts before dns answers)"
           SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           docker stop npmplus >/dev/null
-          CID="$(docker inspect -f '{{.Id}}' npmplus)"
           # what the race leaves the container with: no nameservers at all.
-          # the redirect must run as root, sudo alone would open the file as
-          # the runner user first - truncate does the open under sudo itself
-          sudo truncate -s0 "/var/lib/docker/containers/$CID/resolv.conf"
+          # this is the bind-mounted file, so docker cannot regenerate it
+          : >/tmp/npmplus-ci-resolv.conf
           docker start npmplus >/dev/null
           # launch.sh retries nginx -tq and every failed retry logs the emerg
           # line - watch for it so the dns restore happens while the retry
@@ -106,7 +110,7 @@ jobs:
           done
           [ "$saw" = "1" ] || fail "scenario broken: nginx never reported missing nameservers"
           # dns comes back - the entrypoint must recover on its next retry
-          printf 'nameserver 8.8.8.8\nnameserver 8.8.4.4\n' | sudo tee "/var/lib/docker/containers/$CID/resolv.conf" >/dev/null
+          printf 'nameserver 8.8.8.8\nnameserver 8.8.4.4\n' >/tmp/npmplus-ci-resolv.conf
           wait_healthy 300 || fail "container did not recover from the dns race - the entrypoint nginx retry regressed"
           echo "dns race recovered"
 
