@@ -9,6 +9,10 @@
 
 set -euo pipefail
 
+# bump this on every meaningful change - the script compares it against the
+# copy on github at startup and tells the operator when theirs is stale
+SCRIPT_VERSION="1.1"
+
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
 
@@ -167,6 +171,17 @@ After=network-online.target systemd-resolved.service
 Wants=network-online.target
 UNIT
 	systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+
+# compare this file's version against the one on github - the safe-update and
+# key-heal crons run this script, so a stale local copy keeps deploying old
+# logic silently. best-effort: offline means no notice, never a hard failure
+latest_version=$(fetch "https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh" 2>/dev/null |
+	sed -n 's/^SCRIPT_VERSION="\([^"]*\)".*/\1/p' | head -1) || true
+if [[ -n "$latest_version" && "$latest_version" != "$SCRIPT_VERSION" ]]; then
+	say "notice: this script is v$SCRIPT_VERSION, the latest on github is v$latest_version"
+	echo "re-download it first, then run again:"
+	echo "  wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh"
 fi
 
 say "NPMplus interactive setup"
