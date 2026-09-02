@@ -29,6 +29,10 @@ jobs:
       - name: start the stack
         run: |
           mkdir -p /tmp/npmplus-ci-data
+          # the container drops every cap incl. dac_override, so /data must be
+          # owned by the uid it runs as (root, PUID 0) or every write fails -
+          # setup-npmplus.sh does this chown on real installs
+          sudo chown -R 0:0 /tmp/npmplus-ci-data
           cat >/tmp/compose-ci.yaml <<'EOF'
           services:
             npmplus:
