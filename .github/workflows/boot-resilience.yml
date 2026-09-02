@@ -1,0 +1,112 @@
+name: boot-resilience
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "rootfs/**"
+      - "backend/**"
+      - "frontend/**"
+      - "Dockerfile"
+      - "setup-npmplus.sh"
+      - ".github/workflows/boot-resilience.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  boot-resilience:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: build the image from this commit
+        run: docker build -t npmplus:ci .
+      - name: start the stack
+        run: |
+          mkdir -p /tmp/npmplus-ci-data
+          cat >/tmp/compose-ci.yaml <<'EOF'
+          services:
+            npmplus:
+              container_name: npmplus
+              restart: unless-stopped
+              image: npmplus:ci
+              pull_policy: never
+              network_mode: host
+              cap_drop:
+                - ALL
+              cap_add:
+                - NET_BIND_SERVICE
+                - SETGID
+              security_opt:
+                - no-new-privileges:true
+              volumes:
+                - /tmp/npmplus-ci-data:/data
+              environment:
+                TZ: UTC
+                LOGROTATE: "true"
+                DISABLE_IPV6: "true"
+          EOF
+          docker compose -p npmplus-ci -f /tmp/compose-ci.yaml up -d
+      # two scenarios that broke real installs: (1) the container starts while
+      # the host's dns is not up yet ("no name servers defined"), which must be
+      # survived by the entrypoint's nginx retry instead of sleeping forever,
+      # and (2) a reboot, where the restart policy alone must bring the stack
+      # back once the daemon returns
+      - name: boot resilience scenarios
+        run: |
+          wait_healthy() { # $1 = seconds budget
+            for _ in $(seq 1 $(( $1 / 10 ))); do
+              if [ "$(docker inspect -f '{{.State.Health.Status}}' npmplus 2>/dev/null || true)" = "healthy" ]; then
+                return 0
+              fi
+              sleep 10
+            done
+            return 1
+          }
+          fail() {
+            echo "$1" >&2
+            docker logs npmplus 2>&1 | tail -50
+            exit 1
+          }
+
+          echo "=== baseline: fresh container must go healthy"
+          wait_healthy 420 || fail "container never became healthy"
+          # the first start must also have finished the acme registration, so
+          # the dns-race start below skips it and reaches the nginx test
+          echo "baseline ok"
+
+          echo "=== scenario 1: boot dns race (container starts before dns answers)"
+          SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          docker stop npmplus >/dev/null
+          CID="$(docker inspect -f '{{.Id}}' npmplus)"
+          # what the race leaves the container with: no nameservers at all
+          sudo : >"/var/lib/docker/containers/$CID/resolv.conf"
+          docker start npmplus >/dev/null
+          # launch.sh retries nginx -tq and every failed retry logs the emerg
+          # line - watch for it so the dns restore happens while the retry
+          # loop is provably active, not before the first attempt
+          saw=0
+          for _ in $(seq 1 60); do
+            if docker logs --since "$SINCE" npmplus 2>&1 | grep -q "no name servers defined"; then
+              saw=1
+              break
+            fi
+            sleep 10
+          done
+          [ "$saw" = "1" ] || fail "scenario broken: nginx never reported missing nameservers"
+          # dns comes back - the entrypoint must recover on its next retry
+          printf 'nameserver 8.8.8.8\nnameserver 8.8.4.4\n' | sudo tee "/var/lib/docker/containers/$CID/resolv.conf" >/dev/null
+          wait_healthy 300 || fail "container did not recover from the dns race - the entrypoint nginx retry regressed"
+          echo "dns race recovered"
+
+          echo "=== scenario 2: reboot (docker daemon restart, containers come back alone)"
+          sudo systemctl restart docker docker.socket
+          wait_healthy 420 || fail "stack did not come back after the daemon restart"
+          code="$(curl -ksS -o /dev/null -w '%{http_code}' -m 10 https://127.0.0.1/ || true)"
+          [ "$code" != "000" ] || fail "no https answer after the daemon restart (code $code)"
+          echo "boot resilience ok - dns race and daemon restart both recover without help"

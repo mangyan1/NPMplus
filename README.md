@@ -70,6 +70,7 @@ Later updates: repeat the `wget` line and run `sudo bash setup-npmplus.sh --upda
 - daily backup cron (keeps the last 7, root-only permissions): database (hot-copied so it is never torn mid-write), certificates, crowdsec config, anubis policy
 - unattended-upgrades for OS security patches
 - daily upstream sync workflow: merges ZoeyVid/NPMplus automatically and opens an issue with a resolve recipe if there is a conflict
+- boot-resilience CI: on every major change the image is built and proven to survive the boot dns race (container starting before the host's dns answers) and a docker daemon restart, recovering without human help
 
 Admin UI fixes:
 
