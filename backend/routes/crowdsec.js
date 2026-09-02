@@ -33,7 +33,11 @@ const lapiFetch = async (path) => {
 	if (!response.ok) {
 		// a rejected key means the bouncer was deleted or the file is stale,
 		// anything else is a real lapi problem worth seeing the status of
-		const err = new Error(response.status === 401 || response.status === 403 ? "crowdsec.bad-key" : `crowdsec LAPI answered ${response.status}`);
+		const err = new Error(
+			response.status === 401 || response.status === 403
+				? "crowdsec.bad-key"
+				: `crowdsec LAPI answered ${response.status}`,
+		);
 		err.status = 502;
 		throw err;
 	}

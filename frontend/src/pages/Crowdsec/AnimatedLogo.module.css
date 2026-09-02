@@ -6,7 +6,9 @@
 	position: relative;
 	width: 3rem;
 	height: 3.75rem;
-	animation: logo-bounce 1.5s ease-in-out infinite, logo-chroma 6s linear infinite;
+	animation:
+		logo-bounce 1.5s ease-in-out infinite,
+		logo-chroma 6s linear infinite;
 }
 
 .logo svg {
