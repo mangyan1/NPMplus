@@ -24,6 +24,7 @@ export * from "./getAuditLogs";
 export * from "./getCertificate";
 export * from "./getCertificateDNSProviders";
 export * from "./getCertificates";
+export * from "./getCrowdsecDecisions";
 export * from "./getDeadHost";
 export * from "./getDeadHosts";
 export * from "./getHealth";

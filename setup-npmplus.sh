@@ -434,6 +434,19 @@ EOF
 		fi
 	fi
 
+	# dedicated read-only bouncer for the admin UI's live ban page; the backend
+	# reads the key file at request time, so re-runs rotating it need no restart
+	say "registering the admin UI bouncer (live ban view)"
+	UIKEY=$(register_bouncer npmplus-ui || true)
+	if [[ -n "$UIKEY" ]]; then
+		echo "$UIKEY" >"$DATA_DIR/crowdsec/lapi-ui.key"
+		chmod 600 "$DATA_DIR/crowdsec/lapi-ui.key"
+	else
+		echo "could not register the admin UI bouncer - the UI's crowdsec page will show an error" >&2
+		echo "run: docker exec crowdsec cscli bouncers add npmplus-ui" >&2
+		echo "then put the key into $DATA_DIR/crowdsec/lapi-ui.key" >&2
+	fi
+
 	if [[ "$USE_FWBOUNCER" == "y" ]]; then
 		say "installing the firewall bouncer (native package, programs the host nftables)"
 		# crowdsec publishes no docker image for this bouncer, the deb is the

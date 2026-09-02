@@ -1,5 +1,6 @@
 import {
 	IconBook,
+	IconGavel,
 	IconChartBar,
 	IconDeviceDesktop,
 	IconExternalLink,
@@ -97,6 +98,12 @@ const menuItems: MenuItem[] = [
 		to: "/audit-log",
 		icon: IconBook,
 		label: "auditlogs",
+		permissionSection: ADMIN,
+	},
+	{
+		to: "/crowdsec",
+		icon: IconGavel,
+		label: "crowdsec",
 		permissionSection: ADMIN,
 	},
 	{
