@@ -1,10 +1,11 @@
-import { IconGavel, IconRefresh } from "@tabler/icons-react";
+import { IconRefresh } from "@tabler/icons-react";
 import Alert from "react-bootstrap/Alert";
 import type { CrowdsecDecision } from "src/api/backend";
-import { Button, HasPermission, LoadingPage } from "src/components";
+import { Button, HasPermission } from "src/components";
 import { useCrowdsecDecisions } from "src/hooks";
 import { T } from "src/locale";
 import { ADMIN, VIEW } from "src/modules/Permissions";
+import AnimatedLogo from "./AnimatedLogo";
 
 // newest decision first, so the top of the table is always the latest ban
 const byNewest = (a: CrowdsecDecision, b: CrowdsecDecision) => (b?.id ?? 0) - (a?.id ?? 0);
@@ -25,7 +26,11 @@ const Content = () => {
 	}
 
 	if (!data) {
-		return <LoadingPage />;
+		return (
+			<div className="py-5 d-flex justify-content-center">
+				<AnimatedLogo />
+			</div>
+		);
 	}
 
 	return (
@@ -35,7 +40,7 @@ const Content = () => {
 				<div className="row w-full">
 					<div className="col">
 						<h2 className="mt-1 mb-0 d-flex align-items-center gap-2">
-							<IconGavel size={24} />
+							<AnimatedLogo />
 							<T id="crowdsec.title" />
 							{decisions.length > 0 && (
 								<span className="badge bg-red">
