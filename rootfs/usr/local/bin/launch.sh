@@ -71,9 +71,18 @@ elif [ -s /data/tls/ech/nginx.conf ]; then
 fi
 
 
-if ! nginx -tq; then
-    sleep inf
-fi
+# a boot can start the container before the host's dns answers ("no name
+# servers defined" or resolvers unreachable) - that heals once dns is up,
+# a genuinely broken config does not. retry for a while, then keep the
+# sleep-forever debug path
+i=0
+while ! nginx -tq; do
+    i=$((i + 1))
+    if [ "$i" -ge 120 ]; then
+        sleep inf
+    fi
+    sleep 1
+done
 if [ "$PHP83" = "true" ]; then
     if ! PHP_INI_SCAN_DIR=/data/php/83/conf.d php-fpm83 -c /data/php/83 -y /data/php/83/php-fpm.conf -FORt > /dev/null 2>&1; then
         PHP_INI_SCAN_DIR=/data/php/83/conf.d php-fpm83 -c /data/php/83 -y /data/php/83/php-fpm.conf -FORt

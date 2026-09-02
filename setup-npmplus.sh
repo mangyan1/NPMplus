@@ -151,6 +151,22 @@ fi
 # reboot leaves the whole stack down until someone starts docker by hand
 if command -v systemctl >/dev/null; then
 	systemctl enable docker.service >/dev/null 2>&1 || true
+	# ...and the daemon must not start containers before the vm's dns answers:
+	# nginx dies with "no name servers defined" and the ui stays down until
+	# restarted by hand. network-online.target is a no-op unless a wait-online
+	# service exists, so enable the one matching the active network stack
+	if systemctl is-active --quiet systemd-networkd.service; then
+		systemctl enable systemd-networkd-wait-online.service >/dev/null 2>&1 || true
+	elif systemctl is-active --quiet NetworkManager.service; then
+		systemctl enable NetworkManager-wait-online.service >/dev/null 2>&1 || true
+	fi
+	mkdir -p /etc/systemd/system/docker.service.d
+	cat >/etc/systemd/system/docker.service.d/10-wait-for-dns.conf <<'UNIT'
+[Unit]
+After=network-online.target systemd-resolved.service
+Wants=network-online.target
+UNIT
+	systemctl daemon-reload >/dev/null 2>&1 || true
 fi
 
 say "NPMplus interactive setup"
