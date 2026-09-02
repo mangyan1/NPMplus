@@ -102,7 +102,7 @@
 	"crowdsec": "CrowdSec",
 	"crowdsec.action": "Action",
 	"crowdsec.active-count": "{count, plural, one {# ban} other {# bans}}",
-	"crowdsec.bad-key": "CrowdSec rejected the bouncer key — it was deleted or the key file is stale. Re-register it with: docker exec crowdsec cscli bouncers add npmplus-ui --raw | sudo tee /opt/npmplus/crowdsec/lapi-ui.key >/dev/null",
+	"crowdsec.bad-key": "CrowdSec rejected the bouncer key — it was deleted or the key file is stale. Re-register it with: docker exec crowdsec cscli bouncers add npmplus-ui -o raw | sudo tee /opt/npmplus/crowdsec/lapi-ui.key >/dev/null",
 	"crowdsec.empty": "Nobody is banned right now",
 	"crowdsec.expires": "Expires",
 	"crowdsec.honeypot": "anubis honeypot",

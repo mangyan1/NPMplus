@@ -83,7 +83,9 @@ anubis_policy() { # anubis_policy <version> [challenge_all]
 register_bouncer() { # $1 = name -> key on stdout (empty on failure)
 	local key="" _
 	for _ in $(seq 1 30); do
-		key=$(docker exec crowdsec cscli bouncers add "$1" --raw 2>/dev/null || true)
+		key=$(docker exec crowdsec cscli bouncers add "$1" -o raw 2>/dev/null || true)
+		# cscli without -o raw support: pull the key out of the human table
+		[[ -n "$key" ]] || key=$(docker exec crowdsec cscli bouncers add "$1" 2>/dev/null | grep -oE '[[:alnum:]]{20,}' || true)
 		[[ -n "$key" ]] && { echo "$key"; return 0; }
 		sleep 2
 	done
@@ -390,7 +392,7 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 	KEY=$(register_bouncer npmplus || true)
 	if [[ -z "$KEY" ]]; then
 		echo "could not register nginx bouncer automatically." >&2
-		echo "run: docker exec crowdsec cscli bouncers add npmplus" >&2
+		echo "run: docker exec crowdsec cscli bouncers add npmplus -o raw" >&2
 		echo "then put the key into $DATA_DIR/crowdsec/crowdsec.conf and redeploy" >&2
 	else
 		say "writing NPMplus bouncer config"
@@ -455,7 +457,7 @@ EOF
 		chmod 600 "$DATA_DIR/crowdsec/lapi-ui.key"
 	else
 		echo "could not register the admin UI bouncer - the UI's crowdsec page will show an error" >&2
-		echo "run: docker exec crowdsec cscli bouncers add npmplus-ui" >&2
+		echo "run: docker exec crowdsec cscli bouncers add npmplus-ui -o raw" >&2
 		echo "then put the key into $DATA_DIR/crowdsec/lapi-ui.key" >&2
 	fi
 
@@ -470,7 +472,7 @@ EOF
 		FWKEY=$(register_bouncer npmplus-firewall || true)
 		if [[ -z "$FWKEY" ]]; then
 			echo "could not register firewall bouncer automatically." >&2
-			echo "run: docker exec crowdsec cscli bouncers add npmplus-firewall" >&2
+			echo "run: docker exec crowdsec cscli bouncers add npmplus-firewall -o raw" >&2
 			echo "then put the key into /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml and restart the service" >&2
 		else
 			cat >/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml <<EOF
