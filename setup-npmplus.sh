@@ -261,7 +261,7 @@ if [[ "$USE_CADDY" == "y" ]]; then
   npmplus-caddy:
     container_name: npmplus-caddy
     restart: unless-stopped
-    image: docker.io/zoeyvid/npmplus:caddy
+    image: ghcr.io/mangyan1/npmplus:caddy
     pull_policy: always
     network_mode: bridge
     ports:
@@ -277,7 +277,7 @@ services:
   npmplus:
     container_name: npmplus
     restart: unless-stopped
-    image: docker.io/zoeyvid/npmplus:latest
+    image: ghcr.io/mangyan1/npmplus:develop
     pull_policy: always
     network_mode: host
     cap_drop:

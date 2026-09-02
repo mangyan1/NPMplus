@@ -53,7 +53,7 @@ Security fixes (filed as upstream issues #3806-#3810, fixed here first):
 
 Automation, run `sudo bash setup-npmplus.sh` on a fresh host (or `--update` later):
 
-- generates the compose stack: npmplus, crowdsec with appsec + firewall bouncer, anubis (optional), caddy (optional)
+- generates the compose stack: npmplus (this fork's own image, ghcr.io/mangyan1/npmplus, so the fixes below are included), crowdsec with appsec + firewall bouncer, anubis (optional), caddy (optional)
 - UFW firewall: default deny, only 22/80/443 (+81 if you opt in); ssh can be restricted to a subnet (e.g. 192.168.1.0/24), and pre-existing rules are never silently wiped
 - anubis: image and policy are pinned to the same release, status codes adjusted for auth_request, bbolt store instead of memory, honeypot IP logging, optional catch-all that challenges everything unmatched
 - honeypot to crowdsec bridge: IPs caught in anubis' honeypot are auto-banned for 24h via a 5 minute cron
