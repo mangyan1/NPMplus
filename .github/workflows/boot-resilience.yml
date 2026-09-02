@@ -88,8 +88,10 @@ jobs:
           SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           docker stop npmplus >/dev/null
           CID="$(docker inspect -f '{{.Id}}' npmplus)"
-          # what the race leaves the container with: no nameservers at all
-          sudo : >"/var/lib/docker/containers/$CID/resolv.conf"
+          # what the race leaves the container with: no nameservers at all.
+          # the redirect must run as root, sudo alone would open the file as
+          # the runner user first - truncate does the open under sudo itself
+          sudo truncate -s0 "/var/lib/docker/containers/$CID/resolv.conf"
           docker start npmplus >/dev/null
           # launch.sh retries nginx -tq and every failed retry logs the emerg
           # line - watch for it so the dns restore happens while the retry
