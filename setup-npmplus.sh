@@ -469,8 +469,23 @@ fi
 
 if [[ "$USE_UFW" == "y" ]]; then
 	say "configuring UFW"
-	ufw --force reset >/dev/null
-	ufw allow 22/tcp comment 'ssh' >/dev/null          # first, so you stay logged in
+	# never silently wipe rules someone set by hand - ask first
+	if ufw status | grep -q "ALLOW" && ! confirm "UFW already has rules - reset them to the recommended set?" "n"; then
+		echo "keeping existing UFW rules - only adding 80/443 if missing"
+	else
+		ufw --force reset >/dev/null
+		SSH_FROM=""
+		if confirm "Restrict ssh to a source subnet (e.g. 192.168.1.0/24)?" "n"; then
+			read -r -p "  subnet (blank = anywhere): " SSH_FROM || true
+			[[ "$SSH_FROM" =~ ^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?$ ]] || SSH_FROM=""
+			[[ -z "$SSH_FROM" ]] && echo "  not a valid cidr - ssh stays reachable from anywhere"
+		fi
+		if [[ -n "$SSH_FROM" ]]; then
+			ufw allow from "$SSH_FROM" to any port 22 proto tcp comment 'ssh' >/dev/null  # first, so you stay logged in
+		else
+			ufw allow 22/tcp comment 'ssh' >/dev/null          # first, so you stay logged in
+		fi
+	fi
 	ufw allow 80/tcp comment 'http' >/dev/null
 	ufw allow 443/tcp comment 'https' >/dev/null
 	ufw allow 443/udp comment 'http3-quic' >/dev/null  # required for HTTP/3
