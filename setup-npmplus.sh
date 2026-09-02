@@ -82,6 +82,9 @@ anubis_policy() { # anubis_policy <version> [challenge_all]
 
 register_bouncer() { # $1 = name -> key on stdout (empty on failure)
 	local key="" _
+	# a heal can hit a name that still exists in the lapi while its key is dead
+	# (rolled-back sqlite); cscli add refuses duplicates, so clear the corpse first
+	docker exec crowdsec cscli bouncers delete "$1" >/dev/null 2>&1 || true
 	for _ in $(seq 1 30); do
 		key=$(docker exec crowdsec cscli bouncers add "$1" -o raw 2>/dev/null || true)
 		# cscli without -o raw support: pull the key out of the human table
@@ -90,6 +93,21 @@ register_bouncer() { # $1 = name -> key on stdout (empty on failure)
 		sleep 2
 	done
 	return 1
+}
+
+# a key file can exist and still be dead: an unclean shutdown can roll back or
+# corrupt crowdsec's sqlite, and then the lapi no longer knows the registration.
+# verify = ask the lapi, so a heal only fires on a key it actually rejects.
+bouncer_key_works() { # $1 = bouncer key -> 0 when the lapi accepts it
+	[[ -n "$1" ]] || return 1
+	curl -sS -m 5 -o /dev/null -w '%{http_code}' \
+		-H "X-Api-Key: $1" "http://127.0.0.1:8080/v1/decisions?limit=1" 2>/dev/null | grep -q '^200'
+}
+
+machine_key_works() { # $1 = machine id, $2 = password -> 0 on a working login
+	[[ -n "$2" ]] || return 1
+	curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" \
+		-d "{\"machine_id\": \"$1\", \"password\": \"$2\"}" "http://127.0.0.1:8080/v1/watchers/login" 2>/dev/null | grep -q '^200'
 }
 
 register_machine() { # $1 = name -> machine password on stdout (empty on failure)
@@ -129,6 +147,11 @@ if ! docker compose version >/dev/null 2>&1; then
 	echo "docker compose plugin is required (apt: docker-compose-plugin / docker.io)" >&2
 	exit 1
 fi
+# container restart policies only fire once the daemon is up: without this, a
+# reboot leaves the whole stack down until someone starts docker by hand
+if command -v systemctl >/dev/null; then
+	systemctl enable docker.service >/dev/null 2>&1 || true
+fi
 
 say "NPMplus interactive setup"
 
@@ -153,38 +176,47 @@ if [[ "${1:-}" == "--update" ]]; then
 		anubis_policy "$ANUBIS_VERSION" "$CATCHALL"
 	fi
 	# installs made before the crowdsec UI page existed have no bouncer
-	# key for it - backfill instead of showing "not wired" in the admin UI
-	if grep -q "container_name: crowdsec" "$COMPOSE_FILE" && [[ ! -s "$DATA_DIR/crowdsec/lapi-ui.key" ]]; then
-		say "registering the admin UI bouncer (crowdsec live ban view)"
-		UIKEY=$(register_bouncer npmplus-ui || true)
-		if [[ -n "$UIKEY" ]]; then
-			mkdir -p "$DATA_DIR/crowdsec"
-			echo "$UIKEY" >"$DATA_DIR/crowdsec/lapi-ui.key"
-			chmod 600 "$DATA_DIR/crowdsec/lapi-ui.key"
+	# key for it - backfill instead of showing "not wired" in the admin UI.
+	# a present but rejected key means crowdsec's db lost the registration
+	# (unclean shutdown rolled the sqlite back) - re-register then too
+	if grep -q "container_name: crowdsec" "$COMPOSE_FILE"; then
+		if [[ ! -s "$DATA_DIR/crowdsec/lapi-ui.key" ]] || ! bouncer_key_works "$(cat "$DATA_DIR/crowdsec/lapi-ui.key" 2>/dev/null)"; then
+			say "registering the admin UI bouncer (crowdsec live ban view)"
+			UIKEY=$(register_bouncer npmplus-ui || true)
+			if [[ -n "$UIKEY" ]]; then
+				mkdir -p "$DATA_DIR/crowdsec"
+				echo "$UIKEY" >"$DATA_DIR/crowdsec/lapi-ui.key"
+				chmod 600 "$DATA_DIR/crowdsec/lapi-ui.key"
+			fi
 		fi
-	fi
-	# same backfill for the machine the unban action and alert context need;
-	# bouncer keys are read-only in the lapi, those two need a machine login
-	if grep -q "container_name: crowdsec" "$COMPOSE_FILE" && [[ ! -s "$DATA_DIR/crowdsec/lapi-ui-machine.key" ]]; then
-		say "registering the admin UI machine (crowdsec unban + alert context)"
-		UIPASSWORD=$(register_machine npmplus-ui || true)
-		if [[ -n "$UIPASSWORD" ]]; then
-			mkdir -p "$DATA_DIR/crowdsec"
-			echo "$UIPASSWORD" >"$DATA_DIR/crowdsec/lapi-ui-machine.key"
-			chmod 600 "$DATA_DIR/crowdsec/lapi-ui-machine.key"
+		# same for the machine the unban action and alert context need;
+		# bouncer keys are read-only in the lapi, those two need a machine login
+		if [[ ! -s "$DATA_DIR/crowdsec/lapi-ui-machine.key" ]] || ! machine_key_works npmplus-ui "$(cat "$DATA_DIR/crowdsec/lapi-ui-machine.key" 2>/dev/null)"; then
+			say "registering the admin UI machine (crowdsec unban + alert context)"
+			UIPASSWORD=$(register_machine npmplus-ui || true)
+			if [[ -n "$UIPASSWORD" ]]; then
+				mkdir -p "$DATA_DIR/crowdsec"
+				echo "$UIPASSWORD" >"$DATA_DIR/crowdsec/lapi-ui-machine.key"
+				chmod 600 "$DATA_DIR/crowdsec/lapi-ui-machine.key"
+			fi
 		fi
-	fi
-	# installs from before the "-o raw" fix never got a nginx bouncer key, so
-	# crowdsec saw alerts but nothing was enforced at the proxy - backfill it
-	CONF="$DATA_DIR/crowdsec/crowdsec.conf"
-	if grep -q "container_name: crowdsec" "$COMPOSE_FILE" && [[ -s "$CONF" ]] && grep -q '^API_KEY=$' "$CONF"; then
-		say "backfilling the nginx bouncer key (bans were never enforced)"
-		KEY=$(register_bouncer npmplus || true)
-		if [[ -n "$KEY" ]]; then
-			sed -i "s|^ENABLED=.*|ENABLED=true|" "$CONF"
-			sed -i "s|^API_KEY=.*|API_KEY=$KEY|" "$CONF"
-			say "restarting npmplus to load the bouncer"
-			docker compose -f "$COMPOSE_FILE" restart npmplus
+		# the nginx bouncer: installs from before the "-o raw" fix never got a
+		# key (crowdsec saw alerts but nothing was enforced at the proxy), and a
+		# rejected key is worse - bans silently stop being enforced, no error
+		# anywhere. empty or dead -> (re-)register, the bouncer reloads on restart
+		CONF="$DATA_DIR/crowdsec/crowdsec.conf"
+		if [[ -s "$CONF" ]]; then
+			CONFKEY=$(sed -n 's/^API_KEY=//p' "$CONF")
+			if [[ -z "$CONFKEY" ]] || ! bouncer_key_works "$CONFKEY"; then
+				say "(re-)registering the nginx bouncer (bans must stay enforced)"
+				KEY=$(register_bouncer npmplus || true)
+				if [[ -n "$KEY" ]]; then
+					sed -i "s|^ENABLED=.*|ENABLED=true|" "$CONF"
+					sed -i "s|^API_KEY=.*|API_KEY=$KEY|" "$CONF"
+					say "restarting npmplus to load the bouncer"
+					docker compose -f "$COMPOSE_FILE" restart npmplus
+				fi
+			fi
 		fi
 	fi
 	docker compose -f "$COMPOSE_FILE" pull
