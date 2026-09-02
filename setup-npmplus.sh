@@ -145,6 +145,19 @@ if [[ "${1:-}" == "--update" ]]; then
 			chmod 600 "$DATA_DIR/crowdsec/lapi-ui.key"
 		fi
 	fi
+	# installs from before the "-o raw" fix never got a nginx bouncer key, so
+	# crowdsec saw alerts but nothing was enforced at the proxy - backfill it
+	CONF="$DATA_DIR/crowdsec/crowdsec.conf"
+	if grep -q "container_name: crowdsec" "$COMPOSE_FILE" && [[ -s "$CONF" ]] && grep -q '^API_KEY=$' "$CONF"; then
+		say "backfilling the nginx bouncer key (bans were never enforced)"
+		KEY=$(register_bouncer npmplus || true)
+		if [[ -n "$KEY" ]]; then
+			sed -i "s|^ENABLED=.*|ENABLED=true|" "$CONF"
+			sed -i "s|^API_KEY=.*|API_KEY=$KEY|" "$CONF"
+			say "restarting npmplus to load the bouncer"
+			docker compose -f "$COMPOSE_FILE" restart npmplus
+		fi
+	fi
 	docker compose -f "$COMPOSE_FILE" pull
 	docker compose -f "$COMPOSE_FILE" up -d
 	say "update done - check: docker compose -f $COMPOSE_FILE ps"
