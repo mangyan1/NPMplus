@@ -51,7 +51,14 @@ Security fixes (filed as upstream issues #3806-#3810, fixed here first):
 - stream (port forward) incoming ports are validated: 1-65535, no leading zeros, no collisions with other streams or with the http/https/admin ports
 - with `TRUST_CLOUDFLARE` unset, cloudflare IP ranges are not trusted (before, the real client IPs were lost, so bans and logs saw the CF edge IP)
 
-Automation, run `sudo bash setup-npmplus.sh` on a fresh host (or `--update` later):
+Automation, run `sudo bash setup-npmplus.sh` on a fresh host (or `--update` later). If you do not have the script yet, this is all it takes on a fresh Debian/Ubuntu host:
+
+```bash
+wget -O setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh
+sudo bash setup-npmplus.sh
+```
+
+Later updates: repeat the `wget` line and run `sudo bash setup-npmplus.sh --update` instead.
 
 - generates the compose stack: npmplus (this fork's own image, ghcr.io/mangyan1/npmplus, so the fixes below are included), crowdsec with appsec + firewall bouncer, anubis (optional), caddy (optional)
 - UFW firewall: default deny, only 22/80/443 (+81 if you opt in); ssh can be restricted to a subnet (e.g. 192.168.1.0/24), and pre-existing rules are never silently wiped
