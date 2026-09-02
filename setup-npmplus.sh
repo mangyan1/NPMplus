@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.1"
+SCRIPT_VERSION="1.2"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -187,6 +187,64 @@ fi
 say "NPMplus interactive setup"
 
 COMPOSE_FILE="$DATA_DIR/compose.yaml"
+
+# --uninstall: remove everything this script installed. a final backup is
+# taken first (kept in /var/backups/npmplus) so a reinstall can be seeded
+# from it; --no-backup skips that. everything else goes: containers, images,
+# data dirs, crons, helper scripts, the docker systemd dropin and the
+# native crowdsec packages (a leftover native crowdsec silently steals the
+# lapi port from the container). UFW rules are left alone - they are the
+# host's firewall, review with `ufw status numbered`
+if [[ "${1:-}" == "--uninstall" ]]; then
+	if [[ "${2:-}" != "--no-backup" ]] && [[ -x /usr/local/bin/npmplus-backup ]]; then
+		say "taking one final backup first (kept in /var/backups/npmplus)"
+		/usr/local/bin/npmplus-backup || echo "backup failed - continuing anyway" >&2
+	fi
+	echo "this removes ALL npmplus containers, images, data (certs, database,"
+	echo "crowdsec state) and the crons this script installed."
+	read -r -p "type 'uninstall' to confirm: " answer || true
+	[[ "${answer:-}" == "uninstall" ]] || { echo "aborted - nothing removed" >&2; exit 1; }
+
+	if [[ -s "$COMPOSE_FILE" ]]; then
+		say "stopping and removing containers + images"
+		docker compose -f "$COMPOSE_FILE" down --rmi all --remove-orphans || true
+		rm -f "$COMPOSE_FILE"
+	else
+		say "no compose file - removing stray containers by name"
+		for c in npmplus crowdsec npmplus-anubis npmplus-caddy; do
+			docker rm -f "$c" >/dev/null 2>&1 || true
+		done
+	fi
+
+	say "removing data dirs"
+	rm -rf "$DATA_DIR" /opt/crowdsec /opt/anubis-data /opt/anubis.yaml
+
+	say "removing crons and helper scripts"
+	rm -f /etc/cron.d/npmplus-safe-update /etc/cron.d/npmplus-backup \
+		/etc/cron.d/npmplus-crowdsec-heal /etc/cron.d/anubis-honeypot
+	rm -f /usr/local/bin/npmplus-safe-update /usr/local/bin/npmplus-backup \
+		/usr/local/bin/npmplus-crowdsec-heal /usr/local/bin/anubis-honeypot-ban
+	rm -f /var/log/npmplus-update.log /var/log/npmplus-backup.log /var/log/npmplus-crowdsec-heal.log
+
+	say "removing the docker systemd dropin"
+	rm -rf /etc/systemd/system/docker.service.d
+	systemctl daemon-reload >/dev/null 2>&1 || true
+
+	say "removing native crowdsec packages"
+	# a native crowdsec squats 127.0.0.1:8080 and silently breaks the whole
+	# dockerized stack whenever it wins the bind race at boot - it must not
+	# survive an uninstall
+	apt-get remove -y crowdsec crowdsec-firewall-bouncer >/dev/null 2>&1 || true
+	apt-get autoremove -y >/dev/null 2>&1 || true
+
+	if [[ -d /var/backups/npmplus ]]; then
+		say "uninstalled - backups kept in /var/backups/npmplus (delete manually if unwanted)"
+	else
+		say "uninstalled"
+	fi
+	echo "ufw rules were left untouched - review with: ufw status numbered"
+	exit 0
+fi
 
 # --update: no prompts, just pull latest images and redeploy the existing install
 if [[ "${1:-}" == "--update" ]]; then

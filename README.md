@@ -58,7 +58,7 @@ wget -O setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/deve
 sudo bash setup-npmplus.sh
 ```
 
-Later updates: repeat the `wget` line and run `sudo bash setup-npmplus.sh --update` instead. The script also checks its own version against the one on GitHub at startup and tells you when your local copy is stale.
+Later updates: repeat the `wget` line and run `sudo bash setup-npmplus.sh --update` instead. The script also checks its own version against the one on GitHub at startup and tells you when your local copy is stale. To wipe the install completely: `sudo bash setup-npmplus.sh --uninstall` — it takes one final backup first (kept in `/var/backups/npmplus`, `--no-backup` skips that), then removes containers, images, data dirs, crons, the docker systemd dropin and any native crowdsec packages; UFW rules are left alone.
 
 - generates the compose stack: npmplus (this fork's own image, ghcr.io/mangyan1/npmplus, so the fixes below are included), crowdsec with appsec + firewall bouncer, anubis (optional), caddy (optional)
 - UFW firewall: default deny, only 22/80/443 (+81 if you opt in); ssh can be restricted to a subnet (e.g. 192.168.1.0/24), and pre-existing rules are never silently wiped
