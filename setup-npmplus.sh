@@ -761,6 +761,108 @@ printf '17 2 * * * root /usr/local/bin/npmplus-backup\n' >/etc/cron.d/npmplus-ba
 chmod 644 /etc/cron.d/npmplus-backup
 touch /var/log/npmplus-backup.log && chmod 640 /var/log/npmplus-backup.log
 
+# crowdsec's sqlite can roll back on an unclean shutdown and silently kill
+# every key registration - that already broke this install's ui and nginx
+# bouncer. --update heals it, but only when someone runs it, so verify all
+# three keys against the lapi daily and re-register the rejected ones here
+say "installing crowdsec key heal (daily cron, log: /var/log/npmplus-crowdsec-heal.log)"
+cat >/usr/local/bin/npmplus-crowdsec-heal <<'EOF'
+#!/bin/bash
+set -uo pipefail
+
+LOG=/var/log/npmplus-crowdsec-heal.log
+exec >>"$LOG" 2>&1
+log() { echo "$(date '+%F %T') $*"; }
+DATA_DIR=/opt/npmplus
+
+docker ps --format '{{.Names}}' 2>/dev/null | grep -qx crowdsec || { log "crowdsec not running, skipped"; exit 0; }
+
+bouncer_key_works() { # $1 = bouncer key -> 0 when the lapi accepts it
+	[[ -n "$1" ]] || return 1
+	curl -sS -m 5 -o /dev/null -w '%{http_code}' \
+		-H "X-Api-Key: $1" "http://127.0.0.1:8080/v1/decisions?limit=1" 2>/dev/null | grep -q '^200'
+}
+
+machine_key_works() { # $1 = machine id, $2 = password -> 0 on a working login
+	[[ -n "$2" ]] || return 1
+	curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" \
+		-d "{\"machine_id\": \"$1\", \"password\": \"$2\"}" "http://127.0.0.1:8080/v1/watchers/login" 2>/dev/null | grep -q '^200'
+}
+
+register_bouncer() { # $1 = name -> key on stdout (empty on failure)
+	local key="" _
+	# cscli add refuses duplicates, so clear the dead registration first
+	docker exec crowdsec cscli bouncers delete "$1" >/dev/null 2>&1 || true
+	for _ in $(seq 1 30); do
+		key=$(docker exec crowdsec cscli bouncers add "$1" -o raw 2>/dev/null || true)
+		[[ -n "$key" ]] && { echo "$key"; return 0; }
+		sleep 2
+	done
+	return 1
+}
+
+register_machine() { # $1 = name -> machine password on stdout (empty on failure)
+	local out="" password="" _
+	for _ in $(seq 1 30); do
+		# the yaml goes to stderr on newer cscli and stdout on older, so merge
+		out=$(docker exec crowdsec cscli machines add "$1" -a -f - --force 2>&1 || true)
+		password=$(sed -n 's/^password:[[:space:]]*//p' <<<"$out" | head -1)
+		[[ -n "$password" ]] && { echo "$password"; return 0; }
+		sleep 2
+	done
+	return 1
+}
+
+# 1: the read-only bouncer behind the admin UI's live ban view
+if [[ ! -s "$DATA_DIR/crowdsec/lapi-ui.key" ]] || ! bouncer_key_works "$(cat "$DATA_DIR/crowdsec/lapi-ui.key" 2>/dev/null)"; then
+	log "ui bouncer key rejected - re-registering"
+	key=$(register_bouncer npmplus-ui || true)
+	if [[ -n "$key" ]]; then
+		echo "$key" >"$DATA_DIR/crowdsec/lapi-ui.key"
+		chmod 600 "$DATA_DIR/crowdsec/lapi-ui.key"
+		log "ui bouncer healed"
+	else
+		log "ui bouncer heal FAILED"
+	fi
+fi
+
+# 2: the machine behind unban + alert context (bouncer keys are read-only)
+if [[ ! -s "$DATA_DIR/crowdsec/lapi-ui-machine.key" ]] || ! machine_key_works npmplus-ui "$(cat "$DATA_DIR/crowdsec/lapi-ui-machine.key" 2>/dev/null)"; then
+	log "ui machine key rejected - re-registering"
+	password=$(register_machine npmplus-ui || true)
+	if [[ -n "$password" ]]; then
+		echo "$password" >"$DATA_DIR/crowdsec/lapi-ui-machine.key"
+		chmod 600 "$DATA_DIR/crowdsec/lapi-ui-machine.key"
+		log "ui machine healed"
+	else
+		log "ui machine heal FAILED"
+	fi
+fi
+
+# 3: the nginx bouncer - a dead key means bans silently stop being enforced,
+# so this one also reloads the bouncer after rewriting the key
+CONF="$DATA_DIR/crowdsec/crowdsec.conf"
+if [[ -s "$CONF" ]]; then
+	confkey=$(sed -n 's/^API_KEY=//p' "$CONF")
+	if [[ -z "$confkey" ]] || ! bouncer_key_works "$confkey"; then
+		log "nginx bouncer key rejected - re-registering"
+		key=$(register_bouncer npmplus || true)
+		if [[ -n "$key" ]]; then
+			sed -i "s|^ENABLED=.*|ENABLED=true|" "$CONF"
+			sed -i "s|^API_KEY=.*|API_KEY=$key|" "$CONF"
+			docker compose -f "$DATA_DIR/compose.yaml" restart npmplus >/dev/null 2>&1
+			log "nginx bouncer healed, npmplus restarted"
+		else
+			log "nginx bouncer heal FAILED"
+		fi
+	fi
+fi
+EOF
+chmod +x /usr/local/bin/npmplus-crowdsec-heal
+printf '42 2 * * * root /usr/local/bin/npmplus-crowdsec-heal\n' >/etc/cron.d/npmplus-crowdsec-heal
+chmod 644 /etc/cron.d/npmplus-crowdsec-heal
+touch /var/log/npmplus-crowdsec-heal.log && chmod 640 /var/log/npmplus-crowdsec-heal.log
+
 say "done"
 if [[ "$EXPOSE_ADMIN" == "y" ]]; then
 	echo "admin UI: https://<host>:81"

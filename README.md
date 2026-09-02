@@ -68,6 +68,7 @@ Later updates: repeat the `wget` line and run `sudo bash setup-npmplus.sh --upda
 - boot survival: docker is enabled on the host (`systemctl enable docker`), containers run with `restart: unless-stopped` - the whole stack comes back on reboot (containers stopped by hand stay stopped)
 - monthly safe-update cron: snapshots the running image digests and configs, updates the stack, health checks it, and auto-reverts to the last good state if anything breaks. `--update` also self-heals crowdsec keys: if an unclean shutdown rolled crowdsec's sqlite back, every bouncer key and the UI machine key are re-registered automatically (a dead nginx bouncer key means bans silently stop being enforced)
 - daily backup cron (keeps the last 7, root-only permissions): database (hot-copied so it is never torn mid-write), certificates, crowdsec config, anubis policy
+- daily crowdsec key-heal cron: verifies the UI bouncer, UI machine and nginx bouncer keys against the LAPI every day and re-registers any the LAPI rejects, so a sqlite rollback after an unclean shutdown never leaves the ban view broken or bans unenforced (log: `/var/log/npmplus-crowdsec-heal.log`)
 - unattended-upgrades for OS security patches
 - daily upstream sync workflow: merges ZoeyVid/NPMplus automatically and opens an issue with a resolve recipe if there is a conflict
 - boot-resilience CI: on every major change the image is built and proven to survive the boot dns race (container starting before the host's dns answers) and a docker daemon restart, recovering without human help
