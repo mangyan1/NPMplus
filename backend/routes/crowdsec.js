@@ -20,7 +20,10 @@ const lapiFetch = async (path) => {
 	try {
 		key = (await readFile(LAPI_KEY_FILE, "utf8")).trim();
 	} catch {
-		// 503 body matches the {error:{message}} shape the frontend expects,
+		key = "";
+	}
+	if (!key) {
+		// missing or empty key file: same hint as not wired at all,
 		// the message doubles as an i18n key for the page's alert
 		const err = new Error("crowdsec.not-wired");
 		err.status = 503;
@@ -28,7 +31,9 @@ const lapiFetch = async (path) => {
 	}
 	const response = await fetch(`${LAPI_URL}${path}`, { headers: { "X-Api-Key": key } });
 	if (!response.ok) {
-		const err = new Error(`crowdsec LAPI answered ${response.status}`);
+		// a rejected key means the bouncer was deleted or the file is stale,
+		// anything else is a real lapi problem worth seeing the status of
+		const err = new Error(response.status === 401 || response.status === 403 ? "crowdsec.bad-key" : `crowdsec LAPI answered ${response.status}`);
 		err.status = 502;
 		throw err;
 	}
