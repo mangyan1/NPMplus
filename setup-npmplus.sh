@@ -92,6 +92,24 @@ register_bouncer() { # $1 = name -> key on stdout (empty on failure)
 	return 1
 }
 
+register_machine() { # $1 = name -> machine password on stdout (empty on failure)
+	local out="" password="" _
+	for _ in $(seq 1 30); do
+		# -a generates the password, -f - dumps the credentials as yaml;
+		# the yaml goes to stderr on newer cscli and stdout on older, so merge
+		out=$(docker exec crowdsec cscli machines add "$1" -a -f - --force 2>&1 || true)
+		# cscli without --force support: plain add, the machine exists case just fails
+		password=$(sed -n 's/^password:[[:space:]]*//p' <<<"$out" | head -1)
+		if [[ -z "$password" ]]; then
+			out=$(docker exec crowdsec cscli machines add "$1" -a -f - 2>&1 || true)
+			password=$(sed -n 's/^password:[[:space:]]*//p' <<<"$out" | head -1)
+		fi
+		[[ -n "$password" ]] && { echo "$password"; return 0; }
+		sleep 2
+	done
+	return 1
+}
+
 # --- dependencies (debian/ubuntu) ------------------------------------------------
 if ! command -v curl >/dev/null; then
 	if confirm "curl is missing - install it via apt?" "y"; then
@@ -143,6 +161,17 @@ if [[ "${1:-}" == "--update" ]]; then
 			mkdir -p "$DATA_DIR/crowdsec"
 			echo "$UIKEY" >"$DATA_DIR/crowdsec/lapi-ui.key"
 			chmod 600 "$DATA_DIR/crowdsec/lapi-ui.key"
+		fi
+	fi
+	# same backfill for the machine the unban action and alert context need;
+	# bouncer keys are read-only in the lapi, those two need a machine login
+	if grep -q "container_name: crowdsec" "$COMPOSE_FILE" && [[ ! -s "$DATA_DIR/crowdsec/lapi-ui-machine.key" ]]; then
+		say "registering the admin UI machine (crowdsec unban + alert context)"
+		UIPASSWORD=$(register_machine npmplus-ui || true)
+		if [[ -n "$UIPASSWORD" ]]; then
+			mkdir -p "$DATA_DIR/crowdsec"
+			echo "$UIPASSWORD" >"$DATA_DIR/crowdsec/lapi-ui-machine.key"
+			chmod 600 "$DATA_DIR/crowdsec/lapi-ui-machine.key"
 		fi
 	fi
 	# installs from before the "-o raw" fix never got a nginx bouncer key, so
@@ -472,6 +501,20 @@ EOF
 		echo "could not register the admin UI bouncer - the UI's crowdsec page will show an error" >&2
 		echo "run: docker exec crowdsec cscli bouncers add npmplus-ui -o raw" >&2
 		echo "then put the key into $DATA_DIR/crowdsec/lapi-ui.key" >&2
+	fi
+
+	# machine login for the unban action and the alert context view (bouncer
+	# keys are read-only in the lapi); also backfilled by --update above
+	say "registering the admin UI machine (unban + alert context)"
+	UIPASSWORD=""
+	[[ -s "$DATA_DIR/crowdsec/lapi-ui-machine.key" ]] || UIPASSWORD=$(register_machine npmplus-ui || true)
+	if [[ -n "$UIPASSWORD" ]]; then
+		echo "$UIPASSWORD" >"$DATA_DIR/crowdsec/lapi-ui-machine.key"
+		chmod 600 "$DATA_DIR/crowdsec/lapi-ui-machine.key"
+	else
+		echo "could not register the admin UI machine - unban and alert context will show an error" >&2
+		echo "run: docker exec crowdsec cscli machines add npmplus-ui -a -f - --force" >&2
+		echo "then put the password into $DATA_DIR/crowdsec/lapi-ui-machine.key" >&2
 	fi
 
 	if [[ "$USE_FWBOUNCER" == "y" ]]; then
