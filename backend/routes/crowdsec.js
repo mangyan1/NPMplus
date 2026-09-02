@@ -1,7 +1,7 @@
-import express from "express";
 import { readFile } from "node:fs/promises";
-import { debug, express as logger } from "../logger.js";
+import express from "express";
 import jwtdecode from "../lib/express/jwt-decode.js";
+import { debug, express as logger } from "../logger.js";
 
 const router = express.Router({
 	caseSensitive: true,
