@@ -102,7 +102,7 @@ jobs:
         run: |
           # Reproduce the legacy VM state: an unversioned wrapper plus a setup
           # copy installed without its execute bit, plus the root-owned Anubis
-          # data directory produced by v1.6. The downloaded v1.8 script must
+          # data directory produced by v1.6. The downloaded v1.9 script must
           # repair both before entering the transactional update.
           sudo sed -i '/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=2/d' /usr/local/bin/npmplus-safe-update
           sudo chmod 0644 /opt/npmplus/setup-npmplus.sh
@@ -115,7 +115,7 @@ jobs:
           api_ready=false
           for _ in $(seq 1 30); do
             if curl -fkSs --connect-timeout 2 --max-time 5 -o /dev/null https://127.0.0.1/ && \
-              curl -fkSs --connect-timeout 2 --max-time 5 https://127.0.0.1:81/api | grep -q '"status":"OK"'; then
+              curl -fkSs --connect-timeout 2 --max-time 5 https://127.0.0.1:81/api | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"'; then
               api_ready=true
               break
             fi

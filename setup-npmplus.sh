@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.8"
+SCRIPT_VERSION="1.9"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -383,7 +383,7 @@ curl -fkSs --connect-timeout 5 --max-time 10 -o /dev/null https://127.0.0.1/ || 
 	log "pre-update check failed: public HTTPS listener is not healthy"
 	exit 1
 }
-curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -q '"status":"OK"' || {
+curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"' || {
 	log "pre-update check failed: admin API is not healthy"
 	exit 1
 }
@@ -465,7 +465,7 @@ check() {
 		[[ "$health" == "none" || "$health" == "healthy" ]] || { log "$svc health is $health"; return 1; }
 	done < <(docker compose -f "$COMPOSE_FILE" config --services)
 	curl -fkSs --connect-timeout 5 --max-time 10 -o /dev/null https://127.0.0.1/ || return 1
-	curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -q '"status":"OK"' || return 1
+	curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"' || return 1
 	if docker compose -f "$COMPOSE_FILE" config --services | grep -qx crowdsec; then
 		docker exec crowdsec cscli lapi status >/dev/null 2>&1 || return 1
 		key=$(cat /opt/npmplus/crowdsec/lapi-ui.key 2>/dev/null || true)
