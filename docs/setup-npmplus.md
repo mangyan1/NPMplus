@@ -50,7 +50,9 @@ Manual and scheduled updates use the same maintenance lock and safe-update wrapp
 5. Checks every configured container, Docker health status, both NPMplus API listeners, and CrowdSec LAPI credentials.
 6. Restores the saved application database, security-service state, host helpers, Compose file, and exact image IDs if the checks fail twice.
 
-When upgrading an installation made by setup script v1.4 or earlier, v1.6 automatically replaces the legacy updater before delegation and repairs the installed setup script's execute permission. This avoids the legacy `/opt/npmplus/setup-npmplus.sh: Permission denied` failure and wrapper recursion.
+When upgrading an installation made by setup script v1.4 or earlier, v1.6 and later automatically replace the legacy updater before delegation and repair the installed setup script's execute permission. This avoids the legacy `/opt/npmplus/setup-npmplus.sh: Permission denied` failure and wrapper recursion.
+
+Setup script v1.7 also repairs the ownership of the persistent Anubis data directory before the safe-update preflight. Anubis runs as a non-root user; older root-owned `/opt/anubis-data` directories could make its bbolt database unwritable and leave `npmplus-anubis` restarting after installation or reboot.
 
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 

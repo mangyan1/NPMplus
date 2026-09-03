@@ -48,7 +48,7 @@ jobs:
           if [[ "${{ matrix.name }}" == "defaults" ]]; then
             # Keep every default except UFW: enabling it severs the hosted
             # runner's control connection before the remaining checks run.
-            printf '%s\n' '' '' '' '' '' '' '' '' '' n '' | sudo bash setup-npmplus.sh
+            printf '%s\n' '' '' '' '' '' '' '' '' '' '' n '' | sudo bash setup-npmplus.sh
           else
             printf '%s\n' UTC admin@example.com "$TEST_ADMIN_PASSWORD" y y n y n y n n y | sudo bash setup-npmplus.sh
           fi
@@ -101,13 +101,17 @@ jobs:
         if: matrix.name == 'defaults'
         run: |
           # Reproduce the legacy VM state: an unversioned wrapper plus a setup
-          # copy installed without its execute bit. The downloaded v1.6 script
-          # must replace that wrapper before entering the transactional update.
+          # copy installed without its execute bit, plus the root-owned Anubis
+          # data directory produced by v1.6. The downloaded v1.7 script must
+          # repair both before entering the transactional update.
           sudo sed -i '/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=2/d' /usr/local/bin/npmplus-safe-update
           sudo chmod 0644 /opt/npmplus/setup-npmplus.sh
+          sudo chown -R 0:0 /opt/anubis-data
+          sudo docker restart npmplus-anubis
           sudo bash setup-npmplus.sh --update
           sudo test -x /opt/npmplus/setup-npmplus.sh
           sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=2' /usr/local/bin/npmplus-safe-update
+          test "$(stat -c '%u:%g' /opt/anubis-data)" = '1000:1000'
       - name: uninstall preserves operator-owned Docker configuration
         if: matrix.name == 'alternate'
         run: |

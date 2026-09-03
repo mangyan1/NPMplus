@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.6"
+SCRIPT_VERSION="1.7"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -158,6 +158,25 @@ pin_image() { # mutable channel -> immutable local platform repo digest
 		return 1
 	}
 	printf '%s\n' "$digest"
+}
+
+# The official Anubis image is non-root. A root-owned bind mount lets it read
+# the policy but makes the bbolt database and honeypot log unwritable, which
+# sends the container into a restart loop. Discover the numeric image user so
+# this keeps working if Anubis changes it in a later release.
+prepare_anubis_data() { # prepare_anubis_data <image-ref>
+	local image_ref="$1" image_user uid gid
+	image_user=$(docker image inspect --format '{{.Config.User}}' "$image_ref" 2>/dev/null || true)
+	case "$image_user" in
+		[0-9]*:[0-9]*) uid=${image_user%%:*}; gid=${image_user#*:} ;;
+		[0-9]*) uid=$image_user; gid=$image_user ;;
+		*)
+			echo "cannot determine the numeric Anubis image user for $image_ref" >&2
+			return 1
+			;;
+	esac
+	install -d -m 0750 -o "$uid" -g "$gid" /opt/anubis-data /opt/anubis-data/anubis
+	chown -R "$uid:$gid" /opt/anubis-data
 }
 
 anubis_latest_version() {
@@ -711,6 +730,16 @@ if [[ "${1:-}" == "--update" ]]; then
 			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=2' /usr/local/bin/npmplus-safe-update; then
 			install_host_tooling
 		fi
+		# Repair the v1.6 root-owned Anubis bind mount before the wrapper checks
+		# that every service is healthy. Restart only an already crash-looping
+		# container; an intentionally stopped service remains stopped.
+		if docker inspect npmplus-anubis >/dev/null 2>&1; then
+			ANUBIS_CURRENT_IMAGE=$(docker inspect --format '{{.Config.Image}}' npmplus-anubis)
+			prepare_anubis_data "$ANUBIS_CURRENT_IMAGE"
+			if [[ "$(docker inspect --format '{{.State.Restarting}}' npmplus-anubis)" == "true" ]]; then
+				docker restart npmplus-anubis >/dev/null
+			fi
+		fi
 		candidate=$(readlink -f "$0")
 		chmod 700 "$candidate"
 		NPMPLUS_SETUP_CANDIDATE="$candidate" exec /usr/local/bin/npmplus-safe-update
@@ -999,7 +1028,7 @@ mkdir -p "$DATA_DIR/nginx/logs"
 if [[ "$USE_ANUBIS" == "y" ]]; then
 	say "fetching anubis bot policy $ANUBIS_VERSION (status codes adjusted for auth_request)"
 	anubis_policy "$ANUBIS_VERSION" "$CHALLENGE_ALL"
-	mkdir -p /opt/anubis-data/anubis # subdir holds the honeypot IP log
+	prepare_anubis_data "$ANUBIS_IMAGE" # subdir holds the honeypot IP log
 fi
 
 if [[ "$USE_CROWDSEC" == "y" && "$USE_ANUBIS" == "y" ]]; then
