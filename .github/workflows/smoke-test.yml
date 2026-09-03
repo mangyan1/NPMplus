@@ -112,6 +112,16 @@ jobs:
             sleep 2
           done
           test "$health" = 'healthy'
+          api_ready=false
+          for _ in $(seq 1 30); do
+            if curl -fkSs --connect-timeout 2 --max-time 5 https://127.0.0.1/api | grep -q '"status":"OK"' && \
+              curl -fkSs --connect-timeout 2 --max-time 5 https://127.0.0.1:81/api | grep -q '"status":"OK"'; then
+              api_ready=true
+              break
+            fi
+            sleep 2
+          done
+          test "$api_ready" = true
           sudo chown -R 0:0 /opt/anubis-data
           sudo docker restart npmplus-anubis
           sudo bash setup-npmplus.sh --update
