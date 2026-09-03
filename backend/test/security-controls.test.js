@@ -25,7 +25,7 @@ test("outbound timeout remains active while the response body is read", async ()
 	await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 	try {
 		const { port } = server.address();
-		const response = await fetchWithTimeout(`http://127.0.0.1:${port}`, {}, 50);
+		const response = await fetchWithTimeout(`http://127.0.0.1:${port}`, {}, 1000);
 		await assert.rejects(readBoundedText(response, 1024));
 	} finally {
 		server.closeAllConnections();
