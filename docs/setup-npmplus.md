@@ -46,7 +46,7 @@ Manual and scheduled updates use the same maintenance lock and safe-update wrapp
 1. Saves the Compose file, exact running image IDs, setup/helper scripts, and cron definitions.
 2. Creates an online SQLite backup before a new application image can perform migrations.
 3. Briefly stops CrowdSec and Anubis while copying their database-backed state, then restarts them. An exit trap attempts to restart a service if this snapshot is interrupted.
-4. Resolves the configured image channels to immutable digests, refreshes optional Anubis policy and CrowdSec credentials, and redeploys.
+4. Resolves the configured image channels to immutable digests, refreshes optional Anubis policy and CrowdSec credentials, and redeploys. A transient Docker port-release failure during container replacement is retried once before rollback.
 5. Checks every configured container, Docker health status, both NPMplus API listeners, and CrowdSec LAPI credentials.
 6. Restores the saved application database, security-service state, host helpers, Compose file, and exact image IDs if the checks fail twice.
 
@@ -57,6 +57,8 @@ Setup script v1.7 and later also repair the ownership of the persistent Anubis d
 Setup script v1.9 corrects the strict update probes: port 443 is checked as the public frontend listener, while the pretty-printed JSON API health response is checked on the admin listener at port 81.
 
 Setup script v1.10 bumps the generated safe-update wrapper to version 3, ensuring installations with the older version-2 health probes replace that wrapper before the preflight runs.
+
+Setup script v1.11 retries Compose deployment once when Docker has not yet released a published port from the container being replaced. Persistent port conflicts still trigger the normal automatic rollback.
 
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 

@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.10"
+SCRIPT_VERSION="1.11"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -820,7 +820,14 @@ if [[ "${1:-}" == "--update" ]]; then
 		fi
 	fi
 	docker compose -f "$COMPOSE_FILE" pull
-	docker compose -f "$COMPOSE_FILE" up -d
+	# Docker can briefly retain a published port while replacing its old
+	# container (most often Caddy on port 80). Give that release race one
+	# bounded retry; a real port conflict still fails and triggers rollback.
+	if ! docker compose -f "$COMPOSE_FILE" up -d; then
+		say "deployment did not start cleanly - retrying once after Docker releases ports"
+		sleep 3
+		docker compose -f "$COMPOSE_FILE" up -d
+	fi
 	say "update done - check: docker compose -f $COMPOSE_FILE ps"
 	exit 0
 fi
