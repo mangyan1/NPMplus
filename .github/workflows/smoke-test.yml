@@ -3,6 +3,18 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "23 5 * * 1"
+  push:
+    branches:
+      - develop
+    paths:
+      - setup-npmplus.sh
+      - crowdsec-doctor.sh
+      - .github/workflows/smoke-test.yml
+  pull_request:
+    paths:
+      - setup-npmplus.sh
+      - crowdsec-doctor.sh
+      - .github/workflows/smoke-test.yml
 
 permissions: {}
 
@@ -17,18 +29,27 @@ jobs:
           # every prompt answered with its default: crowdsec + appsec off +
           # firewall bouncer + anubis challenge-all + cloudflare trust + ufw
           - name: defaults
-            answers: "yes ''"
           # flips every default: appsec on, firewall bouncer + challenge-all off,
           # caddy on, cloudflare trust + ufw off, explicit admin credentials
           - name: alternate
-            answers: "printf '%s\\n' UTC admin@example.com SmokeTest-Password-1 y y n y n y n n y"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: preserve an unrelated Docker drop-in for the uninstall test
+        run: |
+          sudo mkdir -p /etc/systemd/system/docker.service.d
+          printf '[Service]\nTimeoutStartSec=0\n' | sudo tee /etc/systemd/system/docker.service.d/99-operator-owned.conf >/dev/null
       # the answers are piped to every prompt, so the full interactive path runs
       # on a clean disposable vm: compose generation, ufw, crowdsec with bouncer
       # registration, anubis policy fetch, all crons installed
       - name: run setup-npmplus.sh end to end (${{ matrix.name }})
-        run: ${{ matrix.answers }} | sudo bash setup-npmplus.sh
+        env:
+          TEST_ADMIN_PASSWORD: 'Smoke${NOT_SET}-Password-1'
+        run: |
+          if [[ "${{ matrix.name }}" == "defaults" ]]; then
+            printf '\n%.0s' {1..20} | sudo bash setup-npmplus.sh
+          else
+            printf '%s\n' UTC admin@example.com "$TEST_ADMIN_PASSWORD" y y n y n y n n y | sudo bash setup-npmplus.sh
+          fi
       - name: verify the stack
         # sudo: the compose file is chmod 600 root, it holds the admin password
         run: |
@@ -53,15 +74,18 @@ jobs:
             exit 1
           fi
           echo "smoke test ok - all containers up, https answers with $code"
+          sudo docker compose -f /opt/npmplus/compose.yaml config --images | grep -q '@sha256:'
       # only the alternate variant sets INITIAL_ADMIN_EMAIL/PASSWORD; a working
       # login proves the env block was generated into the compose file correctly
       - name: admin login works (alternate)
         if: matrix.name == 'alternate'
+        env:
+          TEST_ADMIN_PASSWORD: 'Smoke${NOT_SET}-Password-1'
         run: |
           code="000"
           for _ in $(seq 1 40); do
             code="$(curl -ksS -o /tmp/login.json -w '%{http_code}' -m 10 -H 'Content-Type: application/json' \
-              -d '{"identity":"admin@example.com","secret":"SmokeTest-Password-1"}' https://127.0.0.1:81/api/tokens || true)"
+              -d "{\"identity\":\"admin@example.com\",\"secret\":\"$TEST_ADMIN_PASSWORD\"}" https://127.0.0.1:81/api/tokens || true)"
             [[ "$code" == "200" ]] && break
             sleep 5
           done
@@ -71,3 +95,12 @@ jobs:
             exit 1
           fi
           echo "admin login ok"
+      - name: safe update snapshots state and passes strict health checks
+        if: matrix.name == 'defaults'
+        run: sudo /opt/npmplus/setup-npmplus.sh --update
+      - name: uninstall preserves operator-owned Docker configuration
+        if: matrix.name == 'alternate'
+        run: |
+          printf 'uninstall\n' | sudo /opt/npmplus/setup-npmplus.sh --uninstall
+          test ! -e /opt/npmplus
+          test -f /etc/systemd/system/docker.service.d/99-operator-owned.conf

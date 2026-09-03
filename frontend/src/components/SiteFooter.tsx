@@ -1,12 +1,15 @@
 import { useCheckVersion } from "src/hooks";
 import { T } from "src/locale";
 
+const COMMIT_PATTERN = /^[0-9a-f]{7,40}$/i;
+
 export function SiteFooter() {
 	const { data: versionData } = useCheckVersion();
 
 	const version = versionData?.current || "";
 	const githubTag = version.split("-").slice(0, 4).join("-");
-	const githubLinkType = githubTag.length < 13 ? "tree" : "releases/tag";
+	const githubRepository = "mangyan1/NPMplus";
+	const githubLinkType = COMMIT_PATTERN.test(githubTag) ? "commit" : "releases/tag";
 
 	return (
 		<footer className="footer d-print-none py-3">
@@ -16,7 +19,7 @@ export function SiteFooter() {
 						<ul className="list-inline list-inline-dots mb-0">
 							<li className="list-inline-item">
 								<a
-									href="https://github.com/ZoeyVid/NPMplus"
+									href={`https://github.com/${githubRepository}`}
 									target="_blank"
 									className="link-secondary"
 									rel="noopener"
@@ -52,7 +55,7 @@ export function SiteFooter() {
 							</li>
 							<li className="list-inline-item">
 								<a
-									href={`https://github.com/ZoeyVid/NPMplus/${githubLinkType}/${githubTag}`}
+									href={`https://github.com/${githubRepository}/${githubLinkType}/${githubTag}`}
 									className="link-secondary"
 									target="_blank"
 									rel="noopener"
@@ -64,7 +67,7 @@ export function SiteFooter() {
 							{versionData?.updateAvailable && versionData?.latest && (
 								<li className="list-inline-item">
 									<a
-										href={`https://github.com/ZoeyVid/NPMplus/releases/tag/${versionData.latest}`}
+										href={`https://github.com/${githubRepository}/commit/${versionData.latest}`}
 										className="link-warning fw-bold"
 										target="_blank"
 										rel="noopener"

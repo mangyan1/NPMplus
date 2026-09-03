@@ -1,6 +1,12 @@
 import { remoteVersion as logger } from "../logger.js";
 import pjson from "../package.json" with { type: "json" };
 
+const COMMIT_PATTERN = /^[0-9a-f]{7,40}$/i;
+const isCommitUpdateAvailable = (currentVersion, latestVersion) =>
+	COMMIT_PATTERN.test(currentVersion) &&
+	COMMIT_PATTERN.test(latestVersion) &&
+	!currentVersion.startsWith(latestVersion);
+
 const internalRemoteVersion = {
 	cache_timeout: 1000 * 60 * 60, // 1 hour
 	last_result: null,
@@ -17,10 +23,13 @@ const internalRemoteVersion = {
 				!internalRemoteVersion.last_fetch_time ||
 				Date.now() - internalRemoteVersion.last_fetch_time > internalRemoteVersion.cache_timeout
 			) {
-				const response = await fetch("https://api.github.com/repos/ZoeyVid/NPMplus/releases/latest", {
+				const repository = process.env.NPMPLUS_GITHUB_REPOSITORY || "mangyan1/NPMplus";
+				const branch = process.env.NPMPLUS_GITHUB_BRANCH || "develop";
+				const response = await fetch(`https://api.github.com/repos/${repository}/commits/${branch}`, {
 					headers: {
 						"User-Agent": `NPMplus/${pjson.version}`,
 					},
+					signal: AbortSignal.timeout(10_000),
 				});
 
 				if (!response.ok) {
@@ -43,14 +52,15 @@ const internalRemoteVersion = {
 			}
 		}
 
-		const latestVersion = internalRemoteVersion.last_result?.tag_name || "unknown";
+		const latestVersion = internalRemoteVersion.last_result?.sha?.slice(0, 7) || "unknown";
 		const currentVersion = pjson.version;
 		return {
 			current: currentVersion,
 			latest: latestVersion,
-			update_available: currentVersion < latestVersion && currentVersion.length >= 13,
+			update_available: isCommitUpdateAvailable(currentVersion, latestVersion),
 		};
 	},
 };
 
+export { isCommitUpdateAvailable };
 export default internalRemoteVersion;

@@ -125,13 +125,18 @@ fi
 hdr "9. recent crowdsec auth errors (2h)"
 auth_errors=$(docker logs crowdsec --since 2h 2>&1 | grep -iE "api key|bouncer|403" | tail -8)
 if [[ -n $auth_errors ]]; then
-	echo "$auth_errors" | sed 's/^/        /'
+	printf '        %s\n' "${auth_errors//$'\n'/$'\n        '}"
 else
 	note "none found"
 fi
 
 hdr "10. crowdsec db files (wal rollback leaves these behind)"
-ls -la /opt/crowdsec/data/*.db* 2>/dev/null | sed 's/^/        /' || note "no db files found at /opt/crowdsec/data"
+db_files=$(find /opt/crowdsec/data -maxdepth 1 -type f -name '*.db*' -print 2>/dev/null)
+if [[ -n $db_files ]]; then
+	printf '        %s\n' "${db_files//$'\n'/$'\n        '}"
+else
+	note "no db files found at /opt/crowdsec/data"
+fi
 
 if [[ $fail -eq 0 ]]; then
 	hdr "everything checks out"

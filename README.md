@@ -58,15 +58,17 @@ wget -O setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/deve
 sudo bash setup-npmplus.sh
 ```
 
-Later updates: repeat the `wget` line and run `sudo bash setup-npmplus.sh --update` instead. The script also checks its own version against the one on GitHub at startup and tells you when your local copy is stale. To wipe the install completely: `sudo bash setup-npmplus.sh --uninstall` — it takes one final backup first (kept in `/var/backups/npmplus`, `--no-backup` skips that), then removes containers, images, data dirs, crons, the docker systemd dropin and any native crowdsec packages; UFW rules are left alone.
+See [docs/setup-npmplus.md](docs/setup-npmplus.md) for update, rollback, backup restoration, uninstall, and troubleshooting procedures.
 
-- generates the compose stack: npmplus (this fork's own image, ghcr.io/mangyan1/npmplus, so the fixes below are included), crowdsec with appsec + firewall bouncer, anubis (optional), caddy (optional)
-- UFW firewall: default deny, only 22/80/443 (+81 if you opt in); ssh can be restricted to a subnet (e.g. 192.168.1.0/24), and pre-existing rules are never silently wiped
+Later updates: repeat the `wget` line, review the downloaded change, and run `sudo bash setup-npmplus.sh --update` instead. Manual and scheduled updates both go through the transactional snapshot/health/revert wrapper. The script checks its version and content against GitHub at startup; `--update` stops when a newer script exists instead of silently using stale host logic. To wipe the install completely: `sudo bash setup-npmplus.sh --uninstall` — it takes one final backup first (kept in `/var/backups/npmplus`, `--no-backup` skips that) and aborts if that backup fails. It removes only NPMplus containers, data and owned tooling; shared images, unrelated Docker drop-ins/packages and UFW rules are left alone.
+
+- generates the compose stack: npmplus (this fork's own image, ghcr.io/mangyan1/npmplus, so the fixes below are included), crowdsec with appsec + firewall bouncer, anubis (optional), caddy (optional). Mutable update channels are resolved to immutable image digests before they are written to compose.
+- UFW firewall: default deny, the detected/configured SSH port plus 80/443 (+81 if you opt in); ssh can be restricted to a subnet (e.g. 192.168.1.0/24), and any pre-existing rule set — including inactive, DENY-only or LIMIT-only configurations — is preserved unless you explicitly approve a reset
 - anubis: image and policy are pinned to the same release, status codes adjusted for auth_request, bbolt store instead of memory, honeypot IP logging, optional catch-all that challenges everything unmatched
 - honeypot to crowdsec bridge: IPs caught in anubis' honeypot are auto-banned for 24h via a 5 minute cron
 - live ban view in the admin UI ("CrowdSec" page, admin only): current crowdsec decisions incl. the anubis honeypot bans, refreshed every 10s, searchable, with time-left on each ban - no third-party console. Unban (deletes the decision, lands in the audit log) and per-ban alert context are served through a LAPI machine account, since bouncer keys are read-only in the LAPI. Needs `/data/crowdsec/lapi-ui.key` (read-only bouncer for the list) and `/data/crowdsec/lapi-ui-machine.key` (machine for unban + context) inside the container; setup-npmplus.sh creates both when crowdsec is enabled (also on `--update`). Manual, on installs made before this existed: `docker exec crowdsec cscli bouncers add npmplus-ui -o raw | sudo tee /opt/npmplus/crowdsec/lapi-ui.key >/dev/null && sudo chmod 600 /opt/npmplus/crowdsec/lapi-ui.key` and `docker exec crowdsec cscli machines add npmplus-ui -a -f - --force 2>&1 | sed -n 's/^password: //p' | sudo tee /opt/npmplus/crowdsec/lapi-ui-machine.key >/dev/null && sudo chmod 600 /opt/npmplus/crowdsec/lapi-ui-machine.key`
 - boot survival: docker is enabled on the host (`systemctl enable docker`), containers run with `restart: unless-stopped` - the whole stack comes back on reboot (containers stopped by hand stay stopped)
-- monthly safe-update cron: snapshots the running image digests and configs, updates the stack, health checks it, and auto-reverts to the last good state if anything breaks. `--update` also self-heals crowdsec keys: if an unclean shutdown rolled crowdsec's sqlite back, every bouncer key and the UI machine key are re-registered automatically (a dead nginx bouncer key means bans silently stop being enforced)
+- monthly safe-update cron: snapshots the running image digests, application sqlite database, CrowdSec config/data, Anubis state and host helpers; updates the stack; strictly checks every container, Docker health, both NPMplus listeners and CrowdSec LAPI; and restores state plus images if anything breaks. `--update` also self-heals crowdsec keys: if an unclean shutdown rolled crowdsec's sqlite back, every bouncer key and the UI machine key are re-registered automatically (a dead nginx bouncer key means bans silently stop being enforced)
 - daily backup cron (keeps the last 7, root-only permissions): database (hot-copied so it is never torn mid-write), certificates, crowdsec config, anubis policy
 - daily crowdsec key-heal cron: verifies the UI bouncer, UI machine and nginx bouncer keys against the LAPI every day and re-registers any the LAPI rejects, so a sqlite rollback after an unclean shutdown never leaves the ban view broken or bans unenforced (log: `/var/log/npmplus-crowdsec-heal.log`)
 - unattended-upgrades for OS security patches
@@ -370,7 +372,7 @@ If you need to run scripts before NPMplus launches put them under: `/opt/npmplus
 - to your clients
 - to your upstreams
 - to your acme/ocsp server
-- to github for a daily update check
+- to this fork's GitHub commit API for an hourly cached update check while the UI is in use
 - if not disabled gravatar for profile pictures
 - if used to your OIDC
 - if used to pypi to download certbot plugins

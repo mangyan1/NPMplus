@@ -11,10 +11,19 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.4"
+SCRIPT_VERSION="1.5"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
+COMPOSE_FILE="$DATA_DIR/compose.yaml"
+SELF_URL="https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh"
+NPMPLUS_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:develop"
+CADDY_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:caddy"
+CROWDSEC_IMAGE_CHANNEL="docker.io/crowdsecurity/crowdsec:latest"
+DOCKER_INSTALL_URL="https://get.docker.com"
+DOCKER_INSTALL_SHA256="2df5f9e0f201a967f454191726d9254625f0f08030af3812c9edcdedc78e9693"
+PACKAGECLOUD_INSTALL_URL="https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh"
+PACKAGECLOUD_INSTALL_SHA256="3a098063d364ab1e69516d6835d69945d0e4061c003f86a98e7cf307bb79a91e"
 
 say() { printf '\n\033[1;32m== %s\033[0m\n' "$*"; }
 ask() { # ask "question" "default" -> answer on stdout, default on empty enter
@@ -36,14 +45,119 @@ confirm() { # confirm "question" "y|n" -> 0 if yes
 
 [[ $EUID -eq 0 ]] || { echo "run as root (sudo)" >&2; exit 1; }
 
+# --uninstall is deliberately handled before dependency installation, network
+# access and docker service changes. Removing an installation must never install
+# Docker/curl or rewrite host configuration first.
+if [[ "${1:-}" == "--uninstall" ]]; then
+	if [[ "${2:-}" != "--no-backup" ]]; then
+		if [[ -x /usr/local/bin/npmplus-backup ]]; then
+			say "taking one final backup first (kept in /var/backups/npmplus)"
+			/usr/local/bin/npmplus-backup || {
+				echo "backup failed - uninstall aborted; fix the backup or explicitly use --no-backup" >&2
+				exit 1
+			}
+		elif [[ -d "$DATA_DIR" ]]; then
+			echo "backup helper is missing - uninstall aborted; restore the helper or explicitly use --no-backup" >&2
+			exit 1
+		fi
+	fi
+	echo "this removes ALL npmplus containers and data (certs, database,"
+	echo "crowdsec state) and the crons this script installed. Shared images and"
+	echo "unrelated Docker/system packages are left alone."
+	read -r -p "type 'uninstall' to confirm: " answer || true
+	[[ "${answer:-}" == "uninstall" ]] || { echo "aborted - nothing removed" >&2; exit 1; }
+
+	if [[ -s "$COMPOSE_FILE" ]] && command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
+		say "stopping and removing containers"
+		docker compose -f "$COMPOSE_FILE" down --remove-orphans || true
+	elif command -v docker >/dev/null; then
+		say "no usable compose file - removing stray containers by name"
+		for c in npmplus crowdsec npmplus-anubis npmplus-caddy; do
+			docker rm -f "$c" >/dev/null 2>&1 || true
+		done
+	fi
+
+	say "removing NPMplus data and tooling"
+	rm -rf -- "$DATA_DIR" "$CROWDSEC_DIR" /opt/anubis-data /opt/anubis.yaml
+	rm -f /etc/cron.d/npmplus-safe-update /etc/cron.d/npmplus-backup \
+		/etc/cron.d/npmplus-crowdsec-heal /etc/cron.d/anubis-honeypot
+	rm -f /usr/local/bin/npmplus-safe-update /usr/local/bin/npmplus-backup \
+		/usr/local/bin/npmplus-crowdsec-heal /usr/local/bin/anubis-honeypot-ban
+	rm -f /var/log/npmplus-update.log /var/log/npmplus-backup.log /var/log/npmplus-crowdsec-heal.log
+
+	# Remove only the drop-in owned by this script. Other Docker overrides belong
+	# to the operator and must survive an NPMplus uninstall.
+	rm -f /etc/systemd/system/docker.service.d/10-wait-for-dns.conf
+	rmdir /etc/systemd/system/docker.service.d >/dev/null 2>&1 || true
+	command -v systemctl >/dev/null && systemctl daemon-reload >/dev/null 2>&1 || true
+
+	# Only remove a firewall bouncer that this script recorded as installed by it.
+	if [[ -f /var/lib/npmplus/installed-firewall-bouncer ]]; then
+		apt-get remove -y crowdsec-firewall-bouncer >/dev/null 2>&1 || true
+		rm -f /var/lib/npmplus/installed-firewall-bouncer
+		rmdir /var/lib/npmplus >/dev/null 2>&1 || true
+	fi
+
+	if [[ -d /var/backups/npmplus ]]; then
+		say "uninstalled - backups kept in /var/backups/npmplus (delete manually if unwanted)"
+	else
+		say "uninstalled"
+	fi
+	echo "container images, unrelated packages and ufw rules were left untouched"
+	exit 0
+fi
+
 fetch() { # fetch <url> [curl args] -> stdout, retries to survive network blips
 	local i
 	for i in 1 2 3 4 5; do
-		curl -sSfL "$@" && return 0
+		curl -sSfL --connect-timeout 10 --max-time 60 "$@" && return 0
 		[[ $i -eq 5 ]] || sleep $((i * 2))
 	done
 	echo "giving up on: $*" >&2
 	return 1
+}
+
+run_verified_script() { # url sha256: download, verify, then execute
+	local url="$1" expected="$2" tmp
+	tmp=$(mktemp)
+	if ! fetch "$url" -o "$tmp" || ! printf '%s  %s\n' "$expected" "$tmp" | sha256sum -c -; then
+		rm -f "$tmp"
+		echo "refusing to execute an unverified installer from $url" >&2
+		return 1
+	fi
+	if ! bash "$tmp"; then
+		rm -f "$tmp"
+		return 1
+	fi
+	rm -f "$tmp"
+}
+
+yaml_quote() { # quote YAML and escape $ so compose preserves it literally
+	local value=${1//\$/\$\$}
+	value=${value//\'/\'\'}
+	printf "'%s'" "$value"
+}
+
+pin_image() { # mutable channel -> immutable local platform repo digest
+	local channel="$1" repository short_repository docker_repository candidate digest=""
+	docker pull "$channel" >/dev/null
+	repository=${channel%:*}
+	short_repository=${repository#docker.io/}
+	docker_repository=${short_repository#library/}
+	while IFS= read -r candidate; do
+		candidate=${candidate%$'\r'}
+		case "${candidate%@*}" in
+			"$repository" | "$short_repository" | "$docker_repository")
+				digest="$candidate"
+				break
+				;;
+		esac
+	done < <(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$channel")
+	[[ "$digest" =~ @sha256:[0-9a-f]{64}$ ]] || {
+		echo "could not resolve an immutable digest for $channel" >&2
+		return 1
+	}
+	printf '%s\n' "$digest"
 }
 
 anubis_latest_version() {
@@ -148,10 +262,13 @@ remove_native_crowdsec() {
 install_host_tooling() {
 say "installing monthly safe-update (snapshot -> update -> health check -> auto-revert)"
 # the cron needs the setup script at a known path; running via curl|bash has no file to copy
-if [[ -f "$0" ]]; then
-	cp -a "$0" "$DATA_DIR/setup-npmplus.sh"
+if [[ -f "$0" ]] && head -1 "$0" | grep -q '^#!/bin/bash'; then
+	setup_source=$(readlink -f "$0")
+	setup_target=$(readlink -f "$DATA_DIR/setup-npmplus.sh" 2>/dev/null || printf '%s/setup-npmplus.sh' "$DATA_DIR")
+	[[ "$setup_source" == "$setup_target" ]] || cp -a "$setup_source" "$DATA_DIR/setup-npmplus.sh"
 fi
 if [[ -s "$DATA_DIR/setup-npmplus.sh" ]]; then
+	chmod 700 "$DATA_DIR/setup-npmplus.sh"
 	cat >/usr/local/bin/npmplus-safe-update <<'EOF'
 #!/bin/bash
 # monthly npmplus update with a safety net: snapshots the running state,
@@ -160,16 +277,51 @@ set -euo pipefail
 
 COMPOSE_FILE=/opt/npmplus/compose.yaml
 SETUP=/opt/npmplus/setup-npmplus.sh
-BACKUP=/opt/npmplus/.last-good
+BACKUP=/var/backups/npmplus-last-good
+CANDIDATE=${NPMPLUS_SETUP_CANDIDATE:-}
 
 log() { echo "$(date '+%F %T') $*"; }
 
+# Updates, backups and manual maintenance must not race over sqlite/config files.
+exec 9>/run/lock/npmplus-maintenance.lock
+flock -n 9 || { log "another NPMplus maintenance job is already running"; exit 1; }
+
 revert() {
 	log "health check FAILED - reverting to the last good state"
+	docker compose -f "$COMPOSE_FILE" ps -a >"$BACKUP/failed-ps.txt" 2>&1 || true
+	docker compose -f "$COMPOSE_FILE" logs --no-color --tail 200 >"$BACKUP/failed-logs.txt" 2>&1 || true
+	docker compose -f "$COMPOSE_FILE" down >/dev/null 2>&1 || true
 	cp -a "$BACKUP/compose.yaml" "$COMPOSE_FILE"
-	[[ -s "$BACKUP/anubis.yaml" ]] && cp -a "$BACKUP/anubis.yaml" /opt/anubis.yaml
-	# restore the crowdsec config incl. hub items so the signature update reverts too
-	[[ -d "$BACKUP/crowdsec-conf" ]] && cp -a "$BACKUP/crowdsec-conf/." /opt/crowdsec/conf/
+	if [[ -s "$BACKUP/anubis.yaml" ]]; then
+		cp -a "$BACKUP/anubis.yaml" /opt/anubis.yaml
+	else
+		rm -f /opt/anubis.yaml
+	fi
+	if [[ -d "$BACKUP/crowdsec" ]]; then
+		rm -rf /opt/crowdsec
+		cp -a "$BACKUP/crowdsec" /opt/crowdsec
+	fi
+	if [[ -d "$BACKUP/anubis-data" ]]; then
+		rm -rf /opt/anubis-data
+		cp -a "$BACKUP/anubis-data" /opt/anubis-data
+	fi
+	if [[ -s "$BACKUP/database.sqlite" ]]; then
+		cp -a "$BACKUP/database.sqlite" /opt/npmplus/npmplus/database.sqlite
+		chmod 600 /opt/npmplus/npmplus/database.sqlite
+		rm -f /opt/npmplus/npmplus/database.sqlite-wal /opt/npmplus/npmplus/database.sqlite-shm
+	fi
+	# --update refreshes these before touching images; roll them back as well.
+	[[ -s "$BACKUP/setup-npmplus.sh" ]] && cp -a "$BACKUP/setup-npmplus.sh" "$SETUP"
+	rm -f /usr/local/bin/npmplus-safe-update /usr/local/bin/npmplus-backup \
+		/usr/local/bin/npmplus-crowdsec-heal
+	rm -f /etc/cron.d/npmplus-safe-update /etc/cron.d/npmplus-backup \
+		/etc/cron.d/npmplus-crowdsec-heal
+	for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal; do
+		[[ -s "$BACKUP/$f" ]] && cp -a "$BACKUP/$f" "/usr/local/bin/$f"
+	done
+	for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal; do
+		[[ -s "$BACKUP/cron-$f" ]] && cp -a "$BACKUP/cron-$f" "/etc/cron.d/$f"
+	done
 	if [[ -s "$BACKUP/override.yaml" ]]; then
 		# pin every service back to its exact pre-update image; --pull never keeps
 		# a bad :latest from sneaking back in
@@ -177,16 +329,84 @@ revert() {
 	else
 		docker compose -f "$COMPOSE_FILE" up -d --pull never
 	fi
-	log "reverted - the failed state is kept for inspection, next update overwrites it"
+	log "reverted - failure diagnostics are in $BACKUP/failed-{ps,logs}.txt"
 	exit 1
 }
 
 # snapshot the currently running (presumed good) state
 mkdir -p "$BACKUP"
+chmod 700 "$BACKUP"
 cp -a "$COMPOSE_FILE" "$BACKUP/compose.yaml"
 cp -a /opt/anubis.yaml "$BACKUP/anubis.yaml" 2>/dev/null || rm -f "$BACKUP/anubis.yaml"
-rm -rf "$BACKUP/crowdsec-conf"
-cp -a /opt/crowdsec/conf "$BACKUP/crowdsec-conf" 2>/dev/null || true
+cp -a "$SETUP" "$BACKUP/setup-npmplus.sh"
+for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal; do
+	rm -f "$BACKUP/$f" "$BACKUP/cron-$f"
+	cp -a "/usr/local/bin/$f" "$BACKUP/$f" 2>/dev/null || true
+	cp -a "/etc/cron.d/$f" "$BACKUP/cron-$f" 2>/dev/null || true
+done
+
+# Never update a stack that is already incomplete; it would produce an unsafe
+# rollback baseline and could bring an intentionally stopped service online.
+while read -r svc; do
+	cid=$(docker compose -f "$COMPOSE_FILE" ps --status running -q "$svc" 2>/dev/null)
+	[[ -n "$cid" ]] || {
+		log "pre-update check failed: $svc is not running"
+		exit 1
+	}
+	health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")
+	[[ "$health" == "none" || "$health" == "healthy" ]] || {
+		log "pre-update check failed: $svc health is $health"
+		exit 1
+	}
+done < <(docker compose -f "$COMPOSE_FILE" config --services)
+curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1/api | grep -q '"status":"OK"' || {
+	log "pre-update check failed: public API is not healthy"
+	exit 1
+}
+curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -q '"status":"OK"' || {
+	log "pre-update check failed: admin API is not healthy"
+	exit 1
+}
+
+# Take an online sqlite backup before a new image can run migrations. Refuse to
+# call an update safe when the rollback database cannot be created.
+rm -f "$BACKUP/database.sqlite"
+if [[ -f /opt/npmplus/npmplus/database.sqlite ]]; then
+	rm -f /opt/npmplus/npmplus/database.pre-update.sqlite
+	docker exec npmplus node -e "const d=require('better-sqlite3')('/data/npmplus/database.sqlite',{readonly:true});d.backup('/data/npmplus/database.pre-update.sqlite').then(()=>d.close())"
+	cp -a /opt/npmplus/npmplus/database.pre-update.sqlite "$BACKUP/database.sqlite"
+	chmod 600 "$BACKUP/database.sqlite"
+	rm -f /opt/npmplus/npmplus/database.pre-update.sqlite
+fi
+
+# CrowdSec sqlite/WAL and Anubis bbolt copies must be made while their writers
+# are stopped. The brief stop occurs before any image changes and each service
+# is restarted immediately after its snapshot.
+rm -rf "$BACKUP/crowdsec" "$BACKUP/anubis-data"
+stopped_svc=""
+restart_snapshot_service() {
+	if [[ -n "$stopped_svc" ]]; then
+		log "restarting $stopped_svc after an interrupted snapshot"
+		docker compose -f "$COMPOSE_FILE" start "$stopped_svc" >/dev/null 2>&1 || true
+	fi
+}
+trap restart_snapshot_service EXIT
+for spec in "crowdsec:/opt/crowdsec:crowdsec" "anubis:/opt/anubis-data:anubis-data"; do
+	IFS=: read -r svc source name <<<"$spec"
+	if docker compose -f "$COMPOSE_FILE" config --services | grep -qx "$svc" && [[ -d "$source" ]]; then
+		docker compose -f "$COMPOSE_FILE" stop "$svc"
+		stopped_svc="$svc"
+		rm -rf "$BACKUP/${name:?}"
+		if ! cp -a "$source" "$BACKUP/$name"; then
+			docker compose -f "$COMPOSE_FILE" start "$svc" || true
+			stopped_svc=""
+			exit 1
+		fi
+		docker compose -f "$COMPOSE_FILE" start "$svc"
+		stopped_svc=""
+	fi
+done
+trap - EXIT
 {
 	echo "services:"
 	while read -r svc id; do
@@ -199,7 +419,11 @@ cp -a /opt/crowdsec/conf "$BACKUP/crowdsec-conf" 2>/dev/null || true
 } >"$BACKUP/override.yaml"
 
 log "running update"
-"$SETUP" --update || revert
+if [[ -n "$CANDIDATE" && "$CANDIDATE" != "$SETUP" ]]; then
+	cp -a "$CANDIDATE" "$SETUP" || revert
+	chmod 700 "$SETUP" || revert
+fi
+NPMPLUS_SAFE_UPDATE_ACTIVE=true "$SETUP" --update || revert
 
 # crowdsec hub: refresh the detection signatures (parsers/scenarios/collections);
 # a container image update alone never touches them and they live outside the image
@@ -208,11 +432,32 @@ if docker compose -f "$COMPOSE_FILE" ps --status running --format '{{.Name}}' 2>
 	docker exec crowdsec cscli hub upgrade || log "cscli hub upgrade reported failures (kept, check: docker exec crowdsec cscli hub list)"
 fi
 
-# health check: no dead/exited/restarting containers and nginx answers on https
+# Health check every configured service, Docker health where present, both
+# NPMplus listeners, and CrowdSec's own LAPI. HTTP error responses must fail.
 check() {
-	local bad
-	bad=$(docker compose -f "$COMPOSE_FILE" ps -a --status dead --status exited --status restarting --format '{{.Name}}' 2>/dev/null | head -1)
-	[[ -z "$bad" ]] && curl -ksS -m 5 https://127.0.0.1/ >/dev/null 2>&1
+	local svc cid state health key machine_password
+	while read -r svc; do
+		cid=$(docker compose -f "$COMPOSE_FILE" ps -a -q "$svc" 2>/dev/null)
+		[[ -n "$cid" ]] || { log "$svc has no container"; return 1; }
+		state=$(docker inspect --format '{{.State.Status}}' "$cid")
+		[[ "$state" == "running" ]] || { log "$svc state is $state"; return 1; }
+		health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")
+		[[ "$health" == "none" || "$health" == "healthy" ]] || { log "$svc health is $health"; return 1; }
+	done < <(docker compose -f "$COMPOSE_FILE" config --services)
+	curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1/api | grep -q '"status":"OK"' || return 1
+	curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -q '"status":"OK"' || return 1
+	if docker compose -f "$COMPOSE_FILE" config --services | grep -qx crowdsec; then
+		docker exec crowdsec cscli lapi status >/dev/null 2>&1 || return 1
+		key=$(cat /opt/npmplus/crowdsec/lapi-ui.key 2>/dev/null || true)
+		[[ -n "$key" ]] || return 1
+		[[ "$(curl -sS --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' -H "X-Api-Key: $key" 'http://127.0.0.1:8080/v1/decisions?limit=1')" == "200" ]] || return 1
+		key=$(sed -n 's/^API_KEY=//p' /opt/npmplus/crowdsec/crowdsec.conf 2>/dev/null)
+		[[ -n "$key" ]] || return 1
+		[[ "$(curl -sS --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' -H "X-Api-Key: $key" 'http://127.0.0.1:8080/v1/decisions?limit=1')" == "200" ]] || return 1
+		machine_password=$(cat /opt/npmplus/crowdsec/lapi-ui-machine.key 2>/dev/null || true)
+		[[ -n "$machine_password" ]] || return 1
+		[[ "$(curl -sS --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d "{\"machine_id\":\"npmplus-ui\",\"password\":\"$machine_password\"}" 'http://127.0.0.1:8080/v1/watchers/login')" == "200" ]] || return 1
+	fi
 }
 sleep 30
 check || { sleep 60; check || revert; }
@@ -240,6 +485,9 @@ KEEP=7 # one week of daily backups
 LOG=/var/log/npmplus-backup.log
 exec >>"$LOG" 2>&1
 
+exec 9>/run/lock/npmplus-maintenance.lock
+flock -n 9 || { echo "$(date '+%F %T') another NPMplus maintenance job is already running"; exit 1; }
+
 log() { echo "$(date '+%F %T') $*"; }
 
 # the tars contain private keys and the database, so keep them root-only
@@ -252,17 +500,20 @@ if ! docker exec npmplus node -e "const d=require('better-sqlite3')('/data/npmpl
 	log "warning: consistent database copy failed, tar will contain the live file"
 fi
 
-files="opt/npmplus opt/crowdsec"
-[[ -f /opt/anubis.yaml ]] && files="$files opt/anubis.yaml"
+files=(opt/npmplus opt/crowdsec)
+[[ -f /opt/anubis.yaml ]] && files+=(opt/anubis.yaml)
 ts=$(date +%F-%H%M%S)
 out="$BACKUP_DIR/npmplus-$ts.tar.gz"
-tar -czf "$out" -C / $files || { log "backup FAILED (tar)"; exit 1; }
+tar -czf "$out" -C / "${files[@]}" || { log "backup FAILED (tar)"; exit 1; }
 chmod 600 "$out"
 rm -f /opt/npmplus/npmplus/database.backup.sqlite
 log "backup ok: $out ($(du -h "$out" | cut -f1))"
 
 # roll the oldest off, keep the last KEEP
-ls -1t "$BACKUP_DIR"/npmplus-*.tar.gz | tail -n +$((KEEP + 1)) | xargs -r rm -f
+mapfile -t backups < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'npmplus-*.tar.gz' -printf '%f\n' | sort -r)
+for old in "${backups[@]:$KEEP}"; do
+	rm -f -- "$BACKUP_DIR/$old"
+done
 EOF
 chmod +x /usr/local/bin/npmplus-backup
 printf '17 2 * * * root /usr/local/bin/npmplus-backup\n' >/etc/cron.d/npmplus-backup
@@ -386,7 +637,7 @@ if ! command -v curl >/dev/null; then
 fi
 if ! command -v docker >/dev/null; then
 	if confirm "docker is missing - install it via get.docker.com (official script)?" "y"; then
-		curl -sSfL https://get.docker.com | sh
+		run_verified_script "$DOCKER_INSTALL_URL" "$DOCKER_INSTALL_SHA256"
 	else
 		echo "docker is required" >&2; exit 1
 	fi
@@ -417,78 +668,31 @@ UNIT
 	systemctl daemon-reload >/dev/null 2>&1 || true
 fi
 
-# compare this file's version against the one on github - the safe-update and
-# key-heal crons run this script, so a stale local copy keeps deploying old
-# logic silently. best-effort: offline means no notice, never a hard failure
-latest_version=$(fetch "https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh" 2>/dev/null |
-	sed -n 's/^SCRIPT_VERSION="\([^"]*\)".*/\1/p' | head -1) || true
-if [[ -n "$latest_version" && "$latest_version" != "$SCRIPT_VERSION" ]]; then
-	say "notice: this script is v$SCRIPT_VERSION, the latest on github is v$latest_version"
-	echo "re-download it first, then run again:"
-	echo "  wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh"
+# Compare this file with GitHub. The remote copy is never executed here. A
+# newer version blocks --update so unattended automation cannot keep deploying
+# stale host logic; offline checks remain best-effort.
+remote_script=$(fetch "$SELF_URL" 2>/dev/null) || remote_script=""
+latest_version=$(sed -n 's/^SCRIPT_VERSION="\([^"]*\)".*/\1/p' <<<"$remote_script" | head -1)
+remote_hash=""
+local_hash=""
+if [[ -n "$remote_script" ]]; then
+	remote_hash=$(printf '%s\n' "$remote_script" | sha256sum | cut -d' ' -f1)
+	[[ -f "$0" ]] && local_hash=$(sha256sum "$0" | cut -d' ' -f1)
+fi
+if [[ -n "$latest_version" && "$(printf '%s\n%s\n' "$SCRIPT_VERSION" "$latest_version" | sort -V | tail -1)" == "$latest_version" && "$latest_version" != "$SCRIPT_VERSION" ]]; then
+	say "notice: this script is v$SCRIPT_VERSION, GitHub has newer v$latest_version"
+	echo "review and re-download it first:"
+	echo "  wget -qO setup-npmplus.sh $SELF_URL"
+	if [[ "${1:-}" == "--update" && "${NPMPLUS_ALLOW_STALE_SCRIPT:-false}" != "true" ]]; then
+		echo "update stopped: set NPMPLUS_ALLOW_STALE_SCRIPT=true only if you intentionally accept the old logic" >&2
+		exit 1
+	fi
+elif [[ -n "$remote_hash" && -n "$local_hash" && "$latest_version" == "$SCRIPT_VERSION" && "$remote_hash" != "$local_hash" ]]; then
+	echo "warning: GitHub has different content with the same SCRIPT_VERSION; review before updating" >&2
+	[[ "${1:-}" != "--update" || "${NPMPLUS_ALLOW_STALE_SCRIPT:-false}" == "true" ]] || exit 1
 fi
 
 say "NPMplus interactive setup"
-
-COMPOSE_FILE="$DATA_DIR/compose.yaml"
-
-# --uninstall: remove everything this script installed. a final backup is
-# taken first (kept in /var/backups/npmplus) so a reinstall can be seeded
-# from it; --no-backup skips that. everything else goes: containers, images,
-# data dirs, crons, helper scripts, the docker systemd dropin and the
-# native crowdsec packages (a leftover native crowdsec silently steals the
-# lapi port from the container). UFW rules are left alone - they are the
-# host's firewall, review with `ufw status numbered`
-if [[ "${1:-}" == "--uninstall" ]]; then
-	if [[ "${2:-}" != "--no-backup" ]] && [[ -x /usr/local/bin/npmplus-backup ]]; then
-		say "taking one final backup first (kept in /var/backups/npmplus)"
-		/usr/local/bin/npmplus-backup || echo "backup failed - continuing anyway" >&2
-	fi
-	echo "this removes ALL npmplus containers, images, data (certs, database,"
-	echo "crowdsec state) and the crons this script installed."
-	read -r -p "type 'uninstall' to confirm: " answer || true
-	[[ "${answer:-}" == "uninstall" ]] || { echo "aborted - nothing removed" >&2; exit 1; }
-
-	if [[ -s "$COMPOSE_FILE" ]]; then
-		say "stopping and removing containers + images"
-		docker compose -f "$COMPOSE_FILE" down --rmi all --remove-orphans || true
-		rm -f "$COMPOSE_FILE"
-	else
-		say "no compose file - removing stray containers by name"
-		for c in npmplus crowdsec npmplus-anubis npmplus-caddy; do
-			docker rm -f "$c" >/dev/null 2>&1 || true
-		done
-	fi
-
-	say "removing data dirs"
-	rm -rf "$DATA_DIR" /opt/crowdsec /opt/anubis-data /opt/anubis.yaml
-
-	say "removing crons and helper scripts"
-	rm -f /etc/cron.d/npmplus-safe-update /etc/cron.d/npmplus-backup \
-		/etc/cron.d/npmplus-crowdsec-heal /etc/cron.d/anubis-honeypot
-	rm -f /usr/local/bin/npmplus-safe-update /usr/local/bin/npmplus-backup \
-		/usr/local/bin/npmplus-crowdsec-heal /usr/local/bin/anubis-honeypot-ban
-	rm -f /var/log/npmplus-update.log /var/log/npmplus-backup.log /var/log/npmplus-crowdsec-heal.log
-
-	say "removing the docker systemd dropin"
-	rm -rf /etc/systemd/system/docker.service.d
-	systemctl daemon-reload >/dev/null 2>&1 || true
-
-	say "removing native crowdsec packages"
-	# a native crowdsec squats 127.0.0.1:8080 and silently breaks the whole
-	# dockerized stack whenever it wins the bind race at boot - it must not
-	# survive an uninstall
-	apt-get remove -y crowdsec crowdsec-firewall-bouncer >/dev/null 2>&1 || true
-	apt-get autoremove -y >/dev/null 2>&1 || true
-
-	if [[ -d /var/backups/npmplus ]]; then
-		say "uninstalled - backups kept in /var/backups/npmplus (delete manually if unwanted)"
-	else
-		say "uninstalled"
-	fi
-	echo "ufw rules were left untouched - review with: ufw status numbered"
-	exit 0
-fi
 
 # --update: no prompts, just pull latest images and redeploy the existing install
 if [[ "${1:-}" == "--update" ]]; then
@@ -496,7 +700,27 @@ if [[ "${1:-}" == "--update" ]]; then
 		echo "no existing install at $COMPOSE_FILE - run without --update first" >&2
 		exit 1
 	fi
+	# Make manual updates use the same transactional snapshot/health/revert path
+	# as cron. The environment flag is set only by that wrapper to avoid recursion.
+	if [[ "${NPMPLUS_SAFE_UPDATE_ACTIVE:-false}" != "true" ]]; then
+		[[ -x /usr/local/bin/npmplus-safe-update ]] || install_host_tooling
+		candidate=$(readlink -f "$0")
+		chmod 700 "$candidate"
+		NPMPLUS_SETUP_CANDIDATE="$candidate" exec /usr/local/bin/npmplus-safe-update
+	fi
 	say "updating"
+	# Resolve update channels once, then persist immutable digests in compose.
+	# Later registry tag movement cannot silently change a deployed stack.
+	NPMPLUS_IMAGE=$(pin_image "$NPMPLUS_IMAGE_CHANNEL")
+	sed -i -E "s|^(    image: )ghcr.io/mangyan1/npmplus(:develop)?(@sha256:[0-9a-f]{64})?$|\1$NPMPLUS_IMAGE|" "$COMPOSE_FILE"
+	if grep -q "container_name: crowdsec" "$COMPOSE_FILE"; then
+		CROWDSEC_IMAGE=$(pin_image "$CROWDSEC_IMAGE_CHANNEL")
+		sed -i -E "s|^(    image: )(docker.io/)?crowdsecurity/crowdsec(:latest)?(@sha256:[0-9a-f]{64})?$|\1$CROWDSEC_IMAGE|" "$COMPOSE_FILE"
+	fi
+	if grep -q "container_name: npmplus-caddy" "$COMPOSE_FILE"; then
+		CADDY_IMAGE=$(pin_image "$CADDY_IMAGE_CHANNEL")
+		sed -i -E "s|^(    image: )ghcr.io/mangyan1/npmplus(:caddy)?(@sha256:[0-9a-f]{64})?$|\1$CADDY_IMAGE|" "$COMPOSE_FILE"
+	fi
 	# refresh the generated host tooling (safe-update, backup, key heal) so
 	# improvements reach existing installs, not just fresh ones
 	install_host_tooling
@@ -504,7 +728,8 @@ if [[ "${1:-}" == "--update" ]]; then
 	# with its policy file so the two can never disagree
 	if grep -q "npmplus-anubis" "$COMPOSE_FILE"; then
 		ANUBIS_VERSION=$(anubis_latest_version)
-		sed -i -E "s|(image: ghcr.io/techarohq/anubis:).*|\1$ANUBIS_VERSION|" "$COMPOSE_FILE"
+		ANUBIS_IMAGE=$(pin_image "ghcr.io/techarohq/anubis:$ANUBIS_VERSION")
+		sed -i -E "s|^(    image: )ghcr.io/techarohq/anubis(:[^@[:space:]]+)?@?((sha256:)?[0-9a-f]{64})?$|\1$ANUBIS_IMAGE|" "$COMPOSE_FILE"
 		# keep the catchall choice from the existing policy
 		CATCHALL="n"
 		grep -q "name: everything-else" /opt/anubis.yaml 2>/dev/null && CATCHALL="y"
@@ -598,7 +823,7 @@ if ! command -v ufw >/dev/null; then
 	fi
 fi
 if command -v ufw >/dev/null; then
-	confirm "Configure UFW firewall (allow 22, 80, 443/tcp+udp)?" "y" && USE_UFW="y"
+	confirm "Configure UFW firewall (allow SSH, 80, 443/tcp+udp)?" "y" && USE_UFW="y"
 	if [[ "$USE_UFW" == "y" ]]; then
 		confirm "Open the admin UI port 81 to the internet?" "n" && EXPOSE_ADMIN="y"
 	fi
@@ -611,16 +836,36 @@ if [[ -s "$COMPOSE_FILE" ]]; then
 	echo "existing compose.yaml backed up"
 fi
 
+say "resolving immutable container image digests"
+NPMPLUS_IMAGE=$(pin_image "$NPMPLUS_IMAGE_CHANNEL")
+if [[ "$USE_CROWDSEC" == "y" ]]; then
+	CROWDSEC_IMAGE=$(pin_image "$CROWDSEC_IMAGE_CHANNEL")
+fi
+if [[ "$USE_ANUBIS" == "y" ]]; then
+	ANUBIS_VERSION=$(anubis_latest_version)
+	ANUBIS_IMAGE=$(pin_image "ghcr.io/techarohq/anubis:$ANUBIS_VERSION")
+fi
+if [[ "$USE_CADDY" == "y" ]]; then
+	CADDY_IMAGE=$(pin_image "$CADDY_IMAGE_CHANNEL")
+fi
+
 say "writing $COMPOSE_FILE"
 mkdir -p "$DATA_DIR"
 
 ENV_ADMIN=""
 if [[ -n "$ADMIN_EMAIL" ]]; then
-	ENV_ADMIN="      - \"INITIAL_ADMIN_EMAIL=$ADMIN_EMAIL\""
-	[[ -n "$ADMIN_PASSWORD" ]] && ENV_ADMIN="$ENV_ADMIN"$'\n'"      - \"INITIAL_ADMIN_PASSWORD=$ADMIN_PASSWORD\""
+	ENV_ADMIN="      - $(yaml_quote "INITIAL_ADMIN_EMAIL=$ADMIN_EMAIL")"
+	[[ -n "$ADMIN_PASSWORD" ]] && ENV_ADMIN="$ENV_ADMIN"$'\n'"      - $(yaml_quote "INITIAL_ADMIN_PASSWORD=$ADMIN_PASSWORD")"
 fi
-# no IPv6 on the host, so stop nginx from listening on it entirely
-ENV_DISABLE_IPV6="      - \"DISABLE_IPV6=true\""
+ENV_TZ="      - $(yaml_quote "TZ=$TZ")"
+# Disable IPv6 only when the host has no global IPv6 address.
+ENV_DISABLE_IPV6=""
+FW_IPV6_ENABLED="false"
+if command -v ip >/dev/null && ip -6 address show scope global | grep -q 'inet6 '; then
+	FW_IPV6_ENABLED="true"
+else
+	ENV_DISABLE_IPV6="      - \"DISABLE_IPV6=true\""
+fi
 # needed for real visitor ips in logs/crowdsec when cloudflare proxies the traffic
 ENV_CF=""
 [[ "$USE_CF" == "y" ]] && ENV_CF="      - \"TRUST_CLOUDFLARE=true\""
@@ -645,14 +890,14 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
   crowdsec:
     container_name: crowdsec
     restart: unless-stopped
-    image: docker.io/crowdsecurity/crowdsec:latest
-    pull_policy: always
+    image: $CROWDSEC_IMAGE
+    pull_policy: missing
     network_mode: bridge
     ports:
       - "127.0.0.1:7422:7422"
       - "127.0.0.1:8080:8080"
     environment:
-      - "TZ=$TZ"
+$ENV_TZ
       - "USE_WAL=true"
       - "COLLECTIONS=ZoeyVid/npmplus"
     volumes:
@@ -669,19 +914,18 @@ ANUBIS_BLOCK=""
 if [[ "$USE_ANUBIS" == "y" ]]; then
 	# pin image and policy file to the same release so they cannot drift apart:
 	# a policy from main can be newer than the released image and fail to parse
-	ANUBIS_VERSION=$(anubis_latest_version)
 	IFS= read -r -d '' ANUBIS_BLOCK <<EOF || true
 
   anubis:
     container_name: npmplus-anubis
     restart: unless-stopped
-    image: ghcr.io/techarohq/anubis:$ANUBIS_VERSION
-    pull_policy: always
+    image: $ANUBIS_IMAGE
+    pull_policy: missing
     network_mode: bridge
     ports:
       - "127.0.0.1:8923:8923"
     environment:
-      - "TZ=$TZ"
+$ENV_TZ
       - "TARGET= " # important: this needs to be and stay one single space
       - "POLICY_FNAME=/etc/botPolicies.yaml"
     volumes:
@@ -697,13 +941,13 @@ if [[ "$USE_CADDY" == "y" ]]; then
   npmplus-caddy:
     container_name: npmplus-caddy
     restart: unless-stopped
-    image: ghcr.io/mangyan1/npmplus:caddy
-    pull_policy: always
+    image: $CADDY_IMAGE
+    pull_policy: missing
     network_mode: bridge
     ports:
       - "80:80"
     environment:
-      - "TZ=$TZ"
+$ENV_TZ
 EOF
 fi
 
@@ -713,8 +957,8 @@ services:
   npmplus:
     container_name: npmplus
     restart: unless-stopped
-    image: ghcr.io/mangyan1/npmplus:develop
-    pull_policy: always
+    image: $NPMPLUS_IMAGE
+    pull_policy: missing
     network_mode: host
     cap_drop:
       - ALL
@@ -729,7 +973,7 @@ services:
     volumes:
       - "$DATA_DIR:/data"
     environment:
-      - "TZ=$TZ"
+$ENV_TZ
 $ENV_ADMIN
 $ENV_LOGROTATE
 $ENV_QUIC_BPF
@@ -780,6 +1024,9 @@ fi
 
 if [[ "$USE_CROWDSEC" == "y" ]]; then
 	say "starting crowdsec"
+	# A native daemon can already own 127.0.0.1:8080. Remove it before the
+	# container attempts to bind, otherwise set -e exits before cleanup runs.
+	remove_native_crowdsec
 	docker compose -f "$COMPOSE_FILE" up -d crowdsec
 	mkdir -p "$CROWDSEC_DIR/conf/acquis.d" "$CROWDSEC_DIR/conf/bouncers"
 
@@ -801,7 +1048,6 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 	} >"$CROWDSEC_DIR/conf/acquis.d/npmplus.yaml"
 
 	# register bouncer keys (retry until the LAPI is up)
-	remove_native_crowdsec
 	say "registering nginx bouncer (waiting for crowdsec LAPI...)"
 	KEY=$(register_bouncer npmplus || true)
 	if [[ -z "$KEY" ]]; then
@@ -894,12 +1140,14 @@ EOF
 		# crowdsec publishes no docker image for this bouncer, the deb is the
 		# supported install; noninteractive keeps its debconf wizard silent
 		if ! command -v crowdsec-firewall-bouncer >/dev/null; then
-			curl -sSfL https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh | bash >/dev/null
+			run_verified_script "$PACKAGECLOUD_INSTALL_URL" "$PACKAGECLOUD_INSTALL_SHA256" >/dev/null
 			# --no-install-recommends is load-bearing: the debian-packaged
 			# bouncer Recommends a native crowdsec daemon, and a native
 			# crowdsec binds 127.0.0.1:8080 before the container can - every
 			# auth then hits an lapi that knows none of our keys (silent 403s)
 			DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends crowdsec-firewall-bouncer
+			mkdir -p /var/lib/npmplus
+			touch /var/lib/npmplus/installed-firewall-bouncer
 			# belt and suspenders for installs predating the flag (and for
 			# packagecloud hiccups): never let a native daemon survive here
 			remove_native_crowdsec
@@ -920,7 +1168,7 @@ nftables:
   ipv4:
     enabled: true
   ipv6:
-    enabled: false
+    enabled: $FW_IPV6_ENABLED
 EOF
 			chmod 600 /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
 			systemctl enable --now crowdsec-firewall-bouncer >/dev/null 2>&1 || systemctl restart crowdsec-firewall-bouncer >/dev/null 2>&1 || true
@@ -931,10 +1179,23 @@ fi
 
 if [[ "$USE_UFW" == "y" ]]; then
 	say "configuring UFW"
-	# never silently wipe rules someone set by hand - ask first
-	if ufw status | grep -q "ALLOW" && ! confirm "UFW already has rules - reset them to the recommended set?" "n"; then
+	# `ufw show added` exposes configured rules even while UFW is inactive and
+	# catches DENY/LIMIT-only rule sets too.
+	if ufw show added 2>/dev/null | grep -qE '^[[:space:]]*ufw[[:space:]]' && ! confirm "UFW already has rules - reset them to the recommended set?" "n"; then
 		echo "keeping existing UFW rules - only adding 80/443 if missing"
 	else
+		SSH_PORT=22
+		if [[ -n "${SSH_CONNECTION:-}" ]]; then
+			SSH_PORT=${SSH_CONNECTION##* }
+		elif command -v sshd >/dev/null; then
+			SSH_PORT=$(sshd -T 2>/dev/null | awk '$1 == "port" {print $2; exit}')
+			SSH_PORT=${SSH_PORT:-22}
+		fi
+		SSH_PORT=$(ask "SSH port to keep open" "$SSH_PORT")
+		[[ "$SSH_PORT" =~ ^[0-9]+$ && "$SSH_PORT" -ge 1 && "$SSH_PORT" -le 65535 ]] || {
+			echo "invalid SSH port; refusing to reset UFW" >&2
+			exit 1
+		}
 		ufw --force reset >/dev/null
 		SSH_FROM=""
 		if confirm "Restrict ssh to a source subnet (e.g. 192.168.1.0/24)?" "n"; then
@@ -943,9 +1204,9 @@ if [[ "$USE_UFW" == "y" ]]; then
 			[[ -z "$SSH_FROM" ]] && echo "  not a valid cidr - ssh stays reachable from anywhere"
 		fi
 		if [[ -n "$SSH_FROM" ]]; then
-			ufw allow from "$SSH_FROM" to any port 22 proto tcp comment 'ssh' >/dev/null  # first, so you stay logged in
+			ufw allow from "$SSH_FROM" to any port "$SSH_PORT" proto tcp comment 'ssh' >/dev/null  # first, so you stay logged in
 		else
-			ufw allow 22/tcp comment 'ssh' >/dev/null          # first, so you stay logged in
+			ufw allow "$SSH_PORT"/tcp comment 'ssh' >/dev/null # first, so you stay logged in
 		fi
 	fi
 	ufw allow 80/tcp comment 'http' >/dev/null

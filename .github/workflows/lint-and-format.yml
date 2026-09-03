@@ -34,6 +34,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm biome $BIOME --reporter=default --reporter=github | sed "s|,file=|,file=backend/|g" || echo "BIOME_FAILED=1" >> "$GITHUB_ENV"
           node validate-schema.js
+          pnpm test
       - name: frontend
         run: |
           set -x
@@ -41,7 +42,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm biome $BIOME --reporter=default --reporter=github | sed "s|,file=|,file=frontend/|g" || echo "BIOME_FAILED=1" >> "$GITHUB_ENV"
           ./translations/sort-locale.sh
-          pnpm tsc -b
+          pnpm test
           pnpm vite build
       - name: nginxbeautifier
         run: |

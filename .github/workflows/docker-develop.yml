@@ -36,6 +36,9 @@ jobs:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
           tags: ghcr.io/${{ github.repository_owner }}/npmplus:develop-x86_64
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           build-args: |
             FLAGS=-march=x86-64-v2 -mtune=generic -fcf-protection=full
           
@@ -65,6 +68,9 @@ jobs:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
           tags: ghcr.io/${{ github.repository_owner }}/npmplus:develop-aarch64
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           build-args: |
             FLAGS=-mbranch-protection=standard
           
@@ -84,3 +90,4 @@ jobs:
       - name: merge
         run: |
           docker buildx imagetools create --tag ghcr.io/${{ github.repository_owner }}/npmplus:develop ghcr.io/${{ github.repository_owner }}/npmplus:develop-x86_64 ghcr.io/${{ github.repository_owner }}/npmplus:develop-aarch64
+          docker buildx imagetools create --tag ghcr.io/${{ github.repository_owner }}/npmplus:${{ github.sha }} ghcr.io/${{ github.repository_owner }}/npmplus:develop-x86_64 ghcr.io/${{ github.repository_owner }}/npmplus:develop-aarch64
