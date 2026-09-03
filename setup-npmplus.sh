@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.4"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -130,6 +130,250 @@ register_machine() { # $1 = name -> machine password on stdout (empty on failure
 		sleep 2
 	done
 	return 1
+}
+
+# a native crowdsec daemon binds 127.0.0.1:8080 before the container's
+# publish can and then rejects every key this stack registers - the
+# debian-packaged firewall bouncer pulls it in via Recommends. sweep it
+# whenever we manage the dockerized stack
+remove_native_crowdsec() {
+	dpkg -s crowdsec >/dev/null 2>&1 || return 0
+	say "removing a native crowdsec (its daemon steals the container's lapi port)"
+	systemctl disable --now crowdsec >/dev/null 2>&1 || true
+	apt-get remove -y -qq crowdsec >/dev/null 2>&1 || true
+}
+
+# the generated host tooling (safe-update, backup, key heal + their crons):
+# one definition, installed by both the interactive setup and --update
+install_host_tooling() {
+say "installing monthly safe-update (snapshot -> update -> health check -> auto-revert)"
+# the cron needs the setup script at a known path; running via curl|bash has no file to copy
+if [[ -f "$0" ]]; then
+	cp -a "$0" "$DATA_DIR/setup-npmplus.sh"
+fi
+if [[ -s "$DATA_DIR/setup-npmplus.sh" ]]; then
+	cat >/usr/local/bin/npmplus-safe-update <<'EOF'
+#!/bin/bash
+# monthly npmplus update with a safety net: snapshots the running state,
+# runs the update, health-checks it, and reverts to the snapshot on failure
+set -euo pipefail
+
+COMPOSE_FILE=/opt/npmplus/compose.yaml
+SETUP=/opt/npmplus/setup-npmplus.sh
+BACKUP=/opt/npmplus/.last-good
+
+log() { echo "$(date '+%F %T') $*"; }
+
+revert() {
+	log "health check FAILED - reverting to the last good state"
+	cp -a "$BACKUP/compose.yaml" "$COMPOSE_FILE"
+	[[ -s "$BACKUP/anubis.yaml" ]] && cp -a "$BACKUP/anubis.yaml" /opt/anubis.yaml
+	# restore the crowdsec config incl. hub items so the signature update reverts too
+	[[ -d "$BACKUP/crowdsec-conf" ]] && cp -a "$BACKUP/crowdsec-conf/." /opt/crowdsec/conf/
+	if [[ -s "$BACKUP/override.yaml" ]]; then
+		# pin every service back to its exact pre-update image; --pull never keeps
+		# a bad :latest from sneaking back in
+		docker compose -f "$COMPOSE_FILE" -f "$BACKUP/override.yaml" up -d --pull never
+	else
+		docker compose -f "$COMPOSE_FILE" up -d --pull never
+	fi
+	log "reverted - the failed state is kept for inspection, next update overwrites it"
+	exit 1
+}
+
+# snapshot the currently running (presumed good) state
+mkdir -p "$BACKUP"
+cp -a "$COMPOSE_FILE" "$BACKUP/compose.yaml"
+cp -a /opt/anubis.yaml "$BACKUP/anubis.yaml" 2>/dev/null || rm -f "$BACKUP/anubis.yaml"
+rm -rf "$BACKUP/crowdsec-conf"
+cp -a /opt/crowdsec/conf "$BACKUP/crowdsec-conf" 2>/dev/null || true
+{
+	echo "services:"
+	while read -r svc id; do
+		echo "  $svc:"
+		echo "    image: \"$id\""
+	done < <(for s in $(docker compose -f "$COMPOSE_FILE" config --services); do
+		cid=$(docker compose -f "$COMPOSE_FILE" ps -q "$s" 2>/dev/null || true)
+		[[ -n "$cid" ]] && echo "$s $(docker inspect --format '{{.Image}}' "$cid")"
+	done)
+} >"$BACKUP/override.yaml"
+
+log "running update"
+"$SETUP" --update || revert
+
+# crowdsec hub: refresh the detection signatures (parsers/scenarios/collections);
+# a container image update alone never touches them and they live outside the image
+if docker compose -f "$COMPOSE_FILE" ps --status running --format '{{.Name}}' 2>/dev/null | grep -qx crowdsec; then
+	docker exec crowdsec cscli hub update
+	docker exec crowdsec cscli hub upgrade || log "cscli hub upgrade reported failures (kept, check: docker exec crowdsec cscli hub list)"
+fi
+
+# health check: no dead/exited/restarting containers and nginx answers on https
+check() {
+	local bad
+	bad=$(docker compose -f "$COMPOSE_FILE" ps -a --status dead --status exited --status restarting --format '{{.Name}}' 2>/dev/null | head -1)
+	[[ -z "$bad" ]] && curl -ksS -m 5 https://127.0.0.1/ >/dev/null 2>&1
+}
+sleep 30
+check || { sleep 60; check || revert; }
+log "update healthy - last good snapshot kept in $BACKUP"
+EOF
+	chmod +x /usr/local/bin/npmplus-safe-update
+	printf '37 4 1 * * root /usr/local/bin/npmplus-safe-update >>/var/log/npmplus-update.log 2>&1\n' >/etc/cron.d/npmplus-safe-update
+	chmod 644 /etc/cron.d/npmplus-safe-update
+	touch /var/log/npmplus-update.log && chmod 640 /var/log/npmplus-update.log
+else
+	echo "safe-update cron NOT installed: copy setup-npmplus.sh to $DATA_DIR/ manually, then rerun" >&2
+fi
+
+say "installing daily data backup (keeps the last 7)"
+cat >/usr/local/bin/npmplus-backup <<'EOF'
+#!/bin/bash
+# daily npmplus backup. the tar contains the data dir (database, certs, htpasswd
+# files), the crowdsec dir and the anubis policy. restores: untar into / and, if
+# present, copy npmplus/database.backup.sqlite over npmplus/database.sqlite (it
+# is the consistent copy, see below), then: docker compose up -d
+set -euo pipefail
+
+BACKUP_DIR=/var/backups/npmplus
+KEEP=7 # one week of daily backups
+LOG=/var/log/npmplus-backup.log
+exec >>"$LOG" 2>&1
+
+log() { echo "$(date '+%F %T') $*"; }
+
+# the tars contain private keys and the database, so keep them root-only
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+
+# hot-copy the database with better-sqlite3 so a copy is never torn mid-write;
+# the plain live file is still in the tar as a fallback if this ever fails
+if ! docker exec npmplus node -e "const d=require('better-sqlite3')('/data/npmplus/database.sqlite',{readonly:true});d.backup('/data/npmplus/database.backup.sqlite').then(()=>d.close())" >/dev/null 2>&1; then
+	log "warning: consistent database copy failed, tar will contain the live file"
+fi
+
+files="opt/npmplus opt/crowdsec"
+[[ -f /opt/anubis.yaml ]] && files="$files opt/anubis.yaml"
+ts=$(date +%F-%H%M%S)
+out="$BACKUP_DIR/npmplus-$ts.tar.gz"
+tar -czf "$out" -C / $files || { log "backup FAILED (tar)"; exit 1; }
+chmod 600 "$out"
+rm -f /opt/npmplus/npmplus/database.backup.sqlite
+log "backup ok: $out ($(du -h "$out" | cut -f1))"
+
+# roll the oldest off, keep the last KEEP
+ls -1t "$BACKUP_DIR"/npmplus-*.tar.gz | tail -n +$((KEEP + 1)) | xargs -r rm -f
+EOF
+chmod +x /usr/local/bin/npmplus-backup
+printf '17 2 * * * root /usr/local/bin/npmplus-backup\n' >/etc/cron.d/npmplus-backup
+chmod 644 /etc/cron.d/npmplus-backup
+touch /var/log/npmplus-backup.log && chmod 640 /var/log/npmplus-backup.log
+
+# crowdsec's sqlite can roll back on an unclean shutdown and silently kill
+# every key registration - that already broke this install's ui and nginx
+# bouncer. --update heals it, but only when someone runs it, so verify all
+# three keys against the lapi daily and re-register the rejected ones here
+say "installing crowdsec key heal (daily cron, log: /var/log/npmplus-crowdsec-heal.log)"
+cat >/usr/local/bin/npmplus-crowdsec-heal <<'EOF'
+#!/bin/bash
+set -uo pipefail
+
+LOG=/var/log/npmplus-crowdsec-heal.log
+exec >>"$LOG" 2>&1
+log() { echo "$(date '+%F %T') $*"; }
+DATA_DIR=/opt/npmplus
+
+docker ps --format '{{.Names}}' 2>/dev/null | grep -qx crowdsec || { log "crowdsec not running, skipped"; exit 0; }
+
+# a native crowdsec steals the lapi port and no heal can help while its
+# daemon runs - name the cause instead of failing keys forever
+dpkg -s crowdsec >/dev/null 2>&1 && log "WARNING: native crowdsec package installed - if keys keep failing, run crowdsec-doctor.sh"
+
+bouncer_key_works() { # $1 = bouncer key -> 0 when the lapi accepts it
+	[[ -n "$1" ]] || return 1
+	curl -sS -m 5 -o /dev/null -w '%{http_code}' \
+		-H "X-Api-Key: $1" "http://127.0.0.1:8080/v1/decisions?limit=1" 2>/dev/null | grep -q '^200'
+}
+
+machine_key_works() { # $1 = machine id, $2 = password -> 0 on a working login
+	[[ -n "$2" ]] || return 1
+	curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" \
+		-d "{\"machine_id\": \"$1\", \"password\": \"$2\"}" "http://127.0.0.1:8080/v1/watchers/login" 2>/dev/null | grep -q '^200'
+}
+
+register_bouncer() { # $1 = name -> key on stdout (empty on failure)
+	local key="" _
+	# cscli add refuses duplicates, so clear the dead registration first
+	docker exec crowdsec cscli bouncers delete "$1" >/dev/null 2>&1 || true
+	for _ in $(seq 1 30); do
+		key=$(docker exec crowdsec cscli bouncers add "$1" -o raw 2>/dev/null || true)
+		[[ -n "$key" ]] && { echo "$key"; return 0; }
+		sleep 2
+	done
+	return 1
+}
+
+register_machine() { # $1 = name -> machine password on stdout (empty on failure)
+	local out="" password="" _
+	for _ in $(seq 1 30); do
+		# the yaml goes to stderr on newer cscli and stdout on older, so merge
+		out=$(docker exec crowdsec cscli machines add "$1" -a -f - --force 2>&1 || true)
+		password=$(sed -n 's/^password:[[:space:]]*//p' <<<"$out" | head -1)
+		[[ -n "$password" ]] && { echo "$password"; return 0; }
+		sleep 2
+	done
+	return 1
+}
+
+# 1: the read-only bouncer behind the admin UI's live ban view
+if [[ ! -s "$DATA_DIR/crowdsec/lapi-ui.key" ]] || ! bouncer_key_works "$(cat "$DATA_DIR/crowdsec/lapi-ui.key" 2>/dev/null)"; then
+	log "ui bouncer key rejected - re-registering"
+	key=$(register_bouncer npmplus-ui || true)
+	if [[ -n "$key" ]]; then
+		echo "$key" >"$DATA_DIR/crowdsec/lapi-ui.key"
+		chmod 600 "$DATA_DIR/crowdsec/lapi-ui.key"
+		log "ui bouncer healed"
+	else
+		log "ui bouncer heal FAILED"
+	fi
+fi
+
+# 2: the machine behind unban + alert context (bouncer keys are read-only)
+if [[ ! -s "$DATA_DIR/crowdsec/lapi-ui-machine.key" ]] || ! machine_key_works npmplus-ui "$(cat "$DATA_DIR/crowdsec/lapi-ui-machine.key" 2>/dev/null)"; then
+	log "ui machine key rejected - re-registering"
+	password=$(register_machine npmplus-ui || true)
+	if [[ -n "$password" ]]; then
+		echo "$password" >"$DATA_DIR/crowdsec/lapi-ui-machine.key"
+		chmod 600 "$DATA_DIR/crowdsec/lapi-ui-machine.key"
+		log "ui machine healed"
+	else
+		log "ui machine heal FAILED"
+	fi
+fi
+
+# 3: the nginx bouncer - a dead key means bans silently stop being enforced,
+# so this one also reloads the bouncer after rewriting the key
+CONF="$DATA_DIR/crowdsec/crowdsec.conf"
+if [[ -s "$CONF" ]]; then
+	confkey=$(sed -n 's/^API_KEY=//p' "$CONF")
+	if [[ -z "$confkey" ]] || ! bouncer_key_works "$confkey"; then
+		log "nginx bouncer key rejected - re-registering"
+		key=$(register_bouncer npmplus || true)
+		if [[ -n "$key" ]]; then
+			sed -i "s|^ENABLED=.*|ENABLED=true|" "$CONF"
+			sed -i "s|^API_KEY=.*|API_KEY=$key|" "$CONF"
+			docker compose -f "$DATA_DIR/compose.yaml" restart npmplus >/dev/null 2>&1
+			log "nginx bouncer healed, npmplus restarted"
+		else
+			log "nginx bouncer heal FAILED"
+		fi
+	fi
+fi
+EOF
+chmod +x /usr/local/bin/npmplus-crowdsec-heal
+printf '42 2 * * * root /usr/local/bin/npmplus-crowdsec-heal\n' >/etc/cron.d/npmplus-crowdsec-heal
+chmod 644 /etc/cron.d/npmplus-crowdsec-heal
+touch /var/log/npmplus-crowdsec-heal.log && chmod 640 /var/log/npmplus-crowdsec-heal.log
 }
 
 # --- dependencies (debian/ubuntu) ------------------------------------------------
@@ -253,6 +497,9 @@ if [[ "${1:-}" == "--update" ]]; then
 		exit 1
 	fi
 	say "updating"
+	# refresh the generated host tooling (safe-update, backup, key heal) so
+	# improvements reach existing installs, not just fresh ones
+	install_host_tooling
 	# anubis is release-pinned in the compose; move it to the latest release together
 	# with its policy file so the two can never disagree
 	if grep -q "npmplus-anubis" "$COMPOSE_FILE"; then
@@ -269,6 +516,9 @@ if [[ "${1:-}" == "--update" ]]; then
 	# a present but rejected key means crowdsec's db lost the registration
 	# (unclean shutdown rolled the sqlite back) - re-register then too
 	if grep -q "container_name: crowdsec" "$COMPOSE_FILE"; then
+		# a native crowdsec steals 127.0.0.1:8080 from the container and no
+		# key heal can help while it exists - sweep before healing
+		remove_native_crowdsec
 		if [[ ! -s "$DATA_DIR/crowdsec/lapi-ui.key" ]] || ! bouncer_key_works "$(cat "$DATA_DIR/crowdsec/lapi-ui.key" 2>/dev/null)"; then
 			say "registering the admin UI bouncer (crowdsec live ban view)"
 			UIKEY=$(register_bouncer npmplus-ui || true)
@@ -551,6 +801,7 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 	} >"$CROWDSEC_DIR/conf/acquis.d/npmplus.yaml"
 
 	# register bouncer keys (retry until the LAPI is up)
+	remove_native_crowdsec
 	say "registering nginx bouncer (waiting for crowdsec LAPI...)"
 	KEY=$(register_bouncer npmplus || true)
 	if [[ -z "$KEY" ]]; then
@@ -651,11 +902,7 @@ EOF
 			DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends crowdsec-firewall-bouncer
 			# belt and suspenders for installs predating the flag (and for
 			# packagecloud hiccups): never let a native daemon survive here
-			if dpkg -s crowdsec >/dev/null 2>&1; then
-				say "removing the native crowdsec the bouncer pulled in"
-				systemctl disable --now crowdsec >/dev/null 2>&1 || true
-				apt-get remove -y -qq crowdsec >/dev/null 2>&1 || true
-			fi
+			remove_native_crowdsec
 		fi
 		FWKEY=$(register_bouncer npmplus-firewall || true)
 		if [[ -z "$FWKEY" ]]; then
@@ -722,230 +969,7 @@ fi
 say "deploying"
 docker compose -f "$COMPOSE_FILE" up -d
 
-say "installing monthly safe-update (snapshot -> update -> health check -> auto-revert)"
-# the cron needs the setup script at a known path; running via curl|bash has no file to copy
-if [[ -f "$0" ]]; then
-	cp -a "$0" "$DATA_DIR/setup-npmplus.sh"
-fi
-if [[ -s "$DATA_DIR/setup-npmplus.sh" ]]; then
-	cat >/usr/local/bin/npmplus-safe-update <<'EOF'
-#!/bin/bash
-# monthly npmplus update with a safety net: snapshots the running state,
-# runs the update, health-checks it, and reverts to the snapshot on failure
-set -euo pipefail
-
-COMPOSE_FILE=/opt/npmplus/compose.yaml
-SETUP=/opt/npmplus/setup-npmplus.sh
-BACKUP=/opt/npmplus/.last-good
-
-log() { echo "$(date '+%F %T') $*"; }
-
-revert() {
-	log "health check FAILED - reverting to the last good state"
-	cp -a "$BACKUP/compose.yaml" "$COMPOSE_FILE"
-	[[ -s "$BACKUP/anubis.yaml" ]] && cp -a "$BACKUP/anubis.yaml" /opt/anubis.yaml
-	# restore the crowdsec config incl. hub items so the signature update reverts too
-	[[ -d "$BACKUP/crowdsec-conf" ]] && cp -a "$BACKUP/crowdsec-conf/." /opt/crowdsec/conf/
-	if [[ -s "$BACKUP/override.yaml" ]]; then
-		# pin every service back to its exact pre-update image; --pull never keeps
-		# a bad :latest from sneaking back in
-		docker compose -f "$COMPOSE_FILE" -f "$BACKUP/override.yaml" up -d --pull never
-	else
-		docker compose -f "$COMPOSE_FILE" up -d --pull never
-	fi
-	log "reverted - the failed state is kept for inspection, next update overwrites it"
-	exit 1
-}
-
-# snapshot the currently running (presumed good) state
-mkdir -p "$BACKUP"
-cp -a "$COMPOSE_FILE" "$BACKUP/compose.yaml"
-cp -a /opt/anubis.yaml "$BACKUP/anubis.yaml" 2>/dev/null || rm -f "$BACKUP/anubis.yaml"
-rm -rf "$BACKUP/crowdsec-conf"
-cp -a /opt/crowdsec/conf "$BACKUP/crowdsec-conf" 2>/dev/null || true
-{
-	echo "services:"
-	while read -r svc id; do
-		echo "  $svc:"
-		echo "    image: \"$id\""
-	done < <(for s in $(docker compose -f "$COMPOSE_FILE" config --services); do
-		cid=$(docker compose -f "$COMPOSE_FILE" ps -q "$s" 2>/dev/null || true)
-		[[ -n "$cid" ]] && echo "$s $(docker inspect --format '{{.Image}}' "$cid")"
-	done)
-} >"$BACKUP/override.yaml"
-
-log "running update"
-"$SETUP" --update || revert
-
-# crowdsec hub: refresh the detection signatures (parsers/scenarios/collections);
-# a container image update alone never touches them and they live outside the image
-if docker compose -f "$COMPOSE_FILE" ps --status running --format '{{.Name}}' 2>/dev/null | grep -qx crowdsec; then
-	docker exec crowdsec cscli hub update
-	docker exec crowdsec cscli hub upgrade || log "cscli hub upgrade reported failures (kept, check: docker exec crowdsec cscli hub list)"
-fi
-
-# health check: no dead/exited/restarting containers and nginx answers on https
-check() {
-	local bad
-	bad=$(docker compose -f "$COMPOSE_FILE" ps -a --status dead --status exited --status restarting --format '{{.Name}}' 2>/dev/null | head -1)
-	[[ -z "$bad" ]] && curl -ksS -m 5 https://127.0.0.1/ >/dev/null 2>&1
-}
-sleep 30
-check || { sleep 60; check || revert; }
-log "update healthy - last good snapshot kept in $BACKUP"
-EOF
-	chmod +x /usr/local/bin/npmplus-safe-update
-	printf '37 4 1 * * root /usr/local/bin/npmplus-safe-update >>/var/log/npmplus-update.log 2>&1\n' >/etc/cron.d/npmplus-safe-update
-	chmod 644 /etc/cron.d/npmplus-safe-update
-	touch /var/log/npmplus-update.log && chmod 640 /var/log/npmplus-update.log
-else
-	echo "safe-update cron NOT installed: copy setup-npmplus.sh to $DATA_DIR/ manually, then rerun" >&2
-fi
-
-say "installing daily data backup (keeps the last 7)"
-cat >/usr/local/bin/npmplus-backup <<'EOF'
-#!/bin/bash
-# daily npmplus backup. the tar contains the data dir (database, certs, htpasswd
-# files), the crowdsec dir and the anubis policy. restores: untar into / and, if
-# present, copy npmplus/database.backup.sqlite over npmplus/database.sqlite (it
-# is the consistent copy, see below), then: docker compose up -d
-set -euo pipefail
-
-BACKUP_DIR=/var/backups/npmplus
-KEEP=7 # one week of daily backups
-LOG=/var/log/npmplus-backup.log
-exec >>"$LOG" 2>&1
-
-log() { echo "$(date '+%F %T') $*"; }
-
-# the tars contain private keys and the database, so keep them root-only
-mkdir -p "$BACKUP_DIR"
-chmod 700 "$BACKUP_DIR"
-
-# hot-copy the database with better-sqlite3 so a copy is never torn mid-write;
-# the plain live file is still in the tar as a fallback if this ever fails
-if ! docker exec npmplus node -e "const d=require('better-sqlite3')('/data/npmplus/database.sqlite',{readonly:true});d.backup('/data/npmplus/database.backup.sqlite').then(()=>d.close())" >/dev/null 2>&1; then
-	log "warning: consistent database copy failed, tar will contain the live file"
-fi
-
-files="opt/npmplus opt/crowdsec"
-[[ -f /opt/anubis.yaml ]] && files="$files opt/anubis.yaml"
-ts=$(date +%F-%H%M%S)
-out="$BACKUP_DIR/npmplus-$ts.tar.gz"
-tar -czf "$out" -C / $files || { log "backup FAILED (tar)"; exit 1; }
-chmod 600 "$out"
-rm -f /opt/npmplus/npmplus/database.backup.sqlite
-log "backup ok: $out ($(du -h "$out" | cut -f1))"
-
-# roll the oldest off, keep the last KEEP
-ls -1t "$BACKUP_DIR"/npmplus-*.tar.gz | tail -n +$((KEEP + 1)) | xargs -r rm -f
-EOF
-chmod +x /usr/local/bin/npmplus-backup
-printf '17 2 * * * root /usr/local/bin/npmplus-backup\n' >/etc/cron.d/npmplus-backup
-chmod 644 /etc/cron.d/npmplus-backup
-touch /var/log/npmplus-backup.log && chmod 640 /var/log/npmplus-backup.log
-
-# crowdsec's sqlite can roll back on an unclean shutdown and silently kill
-# every key registration - that already broke this install's ui and nginx
-# bouncer. --update heals it, but only when someone runs it, so verify all
-# three keys against the lapi daily and re-register the rejected ones here
-say "installing crowdsec key heal (daily cron, log: /var/log/npmplus-crowdsec-heal.log)"
-cat >/usr/local/bin/npmplus-crowdsec-heal <<'EOF'
-#!/bin/bash
-set -uo pipefail
-
-LOG=/var/log/npmplus-crowdsec-heal.log
-exec >>"$LOG" 2>&1
-log() { echo "$(date '+%F %T') $*"; }
-DATA_DIR=/opt/npmplus
-
-docker ps --format '{{.Names}}' 2>/dev/null | grep -qx crowdsec || { log "crowdsec not running, skipped"; exit 0; }
-
-bouncer_key_works() { # $1 = bouncer key -> 0 when the lapi accepts it
-	[[ -n "$1" ]] || return 1
-	curl -sS -m 5 -o /dev/null -w '%{http_code}' \
-		-H "X-Api-Key: $1" "http://127.0.0.1:8080/v1/decisions?limit=1" 2>/dev/null | grep -q '^200'
-}
-
-machine_key_works() { # $1 = machine id, $2 = password -> 0 on a working login
-	[[ -n "$2" ]] || return 1
-	curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" \
-		-d "{\"machine_id\": \"$1\", \"password\": \"$2\"}" "http://127.0.0.1:8080/v1/watchers/login" 2>/dev/null | grep -q '^200'
-}
-
-register_bouncer() { # $1 = name -> key on stdout (empty on failure)
-	local key="" _
-	# cscli add refuses duplicates, so clear the dead registration first
-	docker exec crowdsec cscli bouncers delete "$1" >/dev/null 2>&1 || true
-	for _ in $(seq 1 30); do
-		key=$(docker exec crowdsec cscli bouncers add "$1" -o raw 2>/dev/null || true)
-		[[ -n "$key" ]] && { echo "$key"; return 0; }
-		sleep 2
-	done
-	return 1
-}
-
-register_machine() { # $1 = name -> machine password on stdout (empty on failure)
-	local out="" password="" _
-	for _ in $(seq 1 30); do
-		# the yaml goes to stderr on newer cscli and stdout on older, so merge
-		out=$(docker exec crowdsec cscli machines add "$1" -a -f - --force 2>&1 || true)
-		password=$(sed -n 's/^password:[[:space:]]*//p' <<<"$out" | head -1)
-		[[ -n "$password" ]] && { echo "$password"; return 0; }
-		sleep 2
-	done
-	return 1
-}
-
-# 1: the read-only bouncer behind the admin UI's live ban view
-if [[ ! -s "$DATA_DIR/crowdsec/lapi-ui.key" ]] || ! bouncer_key_works "$(cat "$DATA_DIR/crowdsec/lapi-ui.key" 2>/dev/null)"; then
-	log "ui bouncer key rejected - re-registering"
-	key=$(register_bouncer npmplus-ui || true)
-	if [[ -n "$key" ]]; then
-		echo "$key" >"$DATA_DIR/crowdsec/lapi-ui.key"
-		chmod 600 "$DATA_DIR/crowdsec/lapi-ui.key"
-		log "ui bouncer healed"
-	else
-		log "ui bouncer heal FAILED"
-	fi
-fi
-
-# 2: the machine behind unban + alert context (bouncer keys are read-only)
-if [[ ! -s "$DATA_DIR/crowdsec/lapi-ui-machine.key" ]] || ! machine_key_works npmplus-ui "$(cat "$DATA_DIR/crowdsec/lapi-ui-machine.key" 2>/dev/null)"; then
-	log "ui machine key rejected - re-registering"
-	password=$(register_machine npmplus-ui || true)
-	if [[ -n "$password" ]]; then
-		echo "$password" >"$DATA_DIR/crowdsec/lapi-ui-machine.key"
-		chmod 600 "$DATA_DIR/crowdsec/lapi-ui-machine.key"
-		log "ui machine healed"
-	else
-		log "ui machine heal FAILED"
-	fi
-fi
-
-# 3: the nginx bouncer - a dead key means bans silently stop being enforced,
-# so this one also reloads the bouncer after rewriting the key
-CONF="$DATA_DIR/crowdsec/crowdsec.conf"
-if [[ -s "$CONF" ]]; then
-	confkey=$(sed -n 's/^API_KEY=//p' "$CONF")
-	if [[ -z "$confkey" ]] || ! bouncer_key_works "$confkey"; then
-		log "nginx bouncer key rejected - re-registering"
-		key=$(register_bouncer npmplus || true)
-		if [[ -n "$key" ]]; then
-			sed -i "s|^ENABLED=.*|ENABLED=true|" "$CONF"
-			sed -i "s|^API_KEY=.*|API_KEY=$key|" "$CONF"
-			docker compose -f "$DATA_DIR/compose.yaml" restart npmplus >/dev/null 2>&1
-			log "nginx bouncer healed, npmplus restarted"
-		else
-			log "nginx bouncer heal FAILED"
-		fi
-	fi
-fi
-EOF
-chmod +x /usr/local/bin/npmplus-crowdsec-heal
-printf '42 2 * * * root /usr/local/bin/npmplus-crowdsec-heal\n' >/etc/cron.d/npmplus-crowdsec-heal
-chmod 644 /etc/cron.d/npmplus-crowdsec-heal
-touch /var/log/npmplus-crowdsec-heal.log && chmod 640 /var/log/npmplus-crowdsec-heal.log
+install_host_tooling
 
 say "done"
 if [[ "$EXPOSE_ADMIN" == "y" ]]; then
