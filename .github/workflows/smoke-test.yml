@@ -104,7 +104,7 @@ jobs:
         run: |
           # Reproduce the legacy VM state: a version-2 wrapper plus a setup
           # copy installed without its execute bit, plus the root-owned Anubis
-          # data directory produced by v1.6. The downloaded v1.12 script must
+          # data directory produced by v1.6. The downloaded v1.13 script must
           # repair both before entering the transactional update.
           sudo sed -i 's/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=3/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=2/' /usr/local/bin/npmplus-safe-update
           sudo chmod 0644 /opt/npmplus/setup-npmplus.sh

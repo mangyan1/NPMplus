@@ -62,6 +62,8 @@ Setup script v1.11 retries Compose deployment once when Docker has not yet relea
 
 Setup script v1.12 updates image references within their specific Compose service and retains the source tag alongside each immutable digest. This prevents the `develop` application and `caddy` images, which share one container repository, from being confused during an update.
 
+Setup script v1.13 discovers the latest Anubis release through GitHub's public release redirect instead of the rate-limited anonymous REST API. An exhausted API quota can therefore no longer abort an otherwise healthy safe update.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 ## Backups and restoration

@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.12"
+SCRIPT_VERSION="1.13"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -205,7 +205,18 @@ prepare_anubis_data() { # prepare_anubis_data <image-ref>
 }
 
 anubis_latest_version() {
-	fetch https://api.github.com/repos/TecharoHQ/anubis/releases/latest | grep -oE '"tag_name": *"[^"]+"' | cut -d'"' -f4
+	local latest_url version
+	# GitHub's releases/latest web redirect is not subject to the small anonymous
+	# REST API quota. Read its final URL, then validate the tag before using it in
+	# either a registry reference or a raw-content URL.
+	latest_url=$(fetch https://github.com/TecharoHQ/anubis/releases/latest \
+		-o /dev/null -w '%{url_effective}\n')
+	version=${latest_url##*/}
+	[[ "$version" =~ ^v[0-9][0-9A-Za-z._+-]*$ ]] || {
+		echo "could not determine the latest Anubis release from $latest_url" >&2
+		return 1
+	}
+	printf '%s\n' "$version"
 }
 
 # fetch the bot policy for a given anubis release and adapt it for the auth_request
