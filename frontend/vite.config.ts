@@ -18,18 +18,6 @@ export default defineConfig({
 							test: /node_modules[\\/](@tabler|react-bootstrap|react-select)[\\/]/,
 							priority: 20,
 						},
-						{
-							name: "vendor",
-							test: /node_modules/,
-							maxSize: 450 * 1024,
-							priority: 10,
-						},
-						{
-							name: "app",
-							test: /[\\/]src[\\/]/,
-							maxSize: 400 * 1024,
-							priority: 5,
-						},
 					],
 				},
 			},
