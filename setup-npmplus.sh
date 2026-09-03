@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -644,7 +644,18 @@ EOF
 		# supported install; noninteractive keeps its debconf wizard silent
 		if ! command -v crowdsec-firewall-bouncer >/dev/null; then
 			curl -sSfL https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh | bash >/dev/null
-			DEBIAN_FRONTEND=noninteractive apt-get install -y -qq crowdsec-firewall-bouncer
+			# --no-install-recommends is load-bearing: the debian-packaged
+			# bouncer Recommends a native crowdsec daemon, and a native
+			# crowdsec binds 127.0.0.1:8080 before the container can - every
+			# auth then hits an lapi that knows none of our keys (silent 403s)
+			DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends crowdsec-firewall-bouncer
+			# belt and suspenders for installs predating the flag (and for
+			# packagecloud hiccups): never let a native daemon survive here
+			if dpkg -s crowdsec >/dev/null 2>&1; then
+				say "removing the native crowdsec the bouncer pulled in"
+				systemctl disable --now crowdsec >/dev/null 2>&1 || true
+				apt-get remove -y -qq crowdsec >/dev/null 2>&1 || true
+			fi
 		fi
 		FWKEY=$(register_bouncer npmplus-firewall || true)
 		if [[ -z "$FWKEY" ]]; then

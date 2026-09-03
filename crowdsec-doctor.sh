@@ -35,6 +35,21 @@ case $code in
 	*) bad "unexpected no-key answer: $code"; fail=1 ;;
 esac
 
+hdr "2b. is the port the container's? (native crowdsec steals it)"
+if dpkg -s crowdsec >/dev/null 2>&1; then
+	bad "native crowdsec package is installed on the host"
+	note "its daemon binds 127.0.0.1:8080 before the container can, and"
+	note "then rejects every key the container's cscli ever registered"
+	note "fix: sudo apt remove crowdsec; docker compose -f $DATA_DIR/compose.yaml up -d crowdsec"
+	fail=1
+elif command -v ss >/dev/null && ss -ltnp 2>/dev/null | grep ':8080' | grep -qv docker-proxy; then
+	bad "port 8080 is owned by something other than docker:"
+	ss -ltnp 2>/dev/null | grep ':8080' | sed 's/^/        /'
+	fail=1
+else
+	ok "no native crowdsec, docker owns the port"
+fi
+
 hdr "3. bouncer key file ($KEY)"
 if [[ ! -s "$KEY" ]]; then
 	bad "missing or empty"
