@@ -14,7 +14,7 @@ sudo bash setup-npmplus.sh
 
 The interactive prompts cover the initial administrator, CrowdSec and AppSec, the firewall bouncer, Anubis, Caddy, Cloudflare trust, UFW, and unattended security upgrades. Existing UFW rules are preserved unless a reset is explicitly approved. Before a reset, the script detects the active SSH port and asks for confirmation so it does not assume port 22.
 
-The generated Compose file is `/opt/npmplus/compose.yaml`. Registry channels are pulled and resolved to immutable `sha256` image digests before that file is written. Administrator values are YAML-quoted, and dollar signs are escaped for Docker Compose interpolation.
+The generated Compose file is `/opt/npmplus/compose.yaml`. Registry channels are pulled and resolved to immutable `sha256` image digests before that file is written. An explicitly supplied initial administrator password is passed through a root-only, one-time Docker secret under `/run`, never embedded in Compose. After the API confirms that the account exists, the script truncates and removes the secret and removes its Compose references. Setup script v1.16 also scrubs legacy inline `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` entries before an update snapshot is created.
 
 The script installs these root-owned helpers:
 
@@ -68,7 +68,11 @@ Setup script v1.14 installs a Docker `ExecStartPre` resolver-file gate for hosts
 
 Setup script v1.15 recognizes and safely recreates an NPMplus container whose Docker-managed resolver file is empty while the host resolver is populated. This repairs an existing `no name servers defined` boot failure before the transactional update takes its rollback baseline.
 
+Setup script v1.16 removes one-time administrator bootstrap credentials from generated Compose files. Existing inline credentials are scrubbed at the beginning of the next update; new installations use a temporary Docker secret that is erased as soon as account creation is confirmed.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
+
+Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.
 
 ## Backups and restoration
 

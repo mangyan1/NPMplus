@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import internalHost from "./internal/host.js";
 import internalNginx from "./internal/nginx.js";
 import internalProxyHost from "./internal/proxy-host.js";
@@ -24,10 +24,12 @@ import userPermissionModel from "./models/user_permission.js";
  */
 const setupDefaultUser = async () => {
 	const initialAdminEmail = process.env.INITIAL_ADMIN_EMAIL?.toLowerCase().trim();
-	const initialAdminPassword = process.env.INITIAL_ADMIN_PASSWORD;
+	const initialAdminPassword = process.env.INITIAL_ADMIN_PASSWORD_FILE
+		? await readFile(process.env.INITIAL_ADMIN_PASSWORD_FILE, "utf8")
+		: process.env.INITIAL_ADMIN_PASSWORD;
 
 	// This will only create a new user when there are no active users in the database
-	// and the INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD environment variables are set.
+	// and the email plus either the password value or password file are set.
 	// Otherwise, users should be shown the setup wizard in the frontend.
 	// I'm keeping this legacy behavior in case some people are automating deployments.
 

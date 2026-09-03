@@ -655,12 +655,26 @@ if [ -n "$INITIAL_DEFAULT_PAGE" ] && ! echo "$INITIAL_DEFAULT_PAGE" | grep -q "^
     sleep inf
 fi
 
-if { [ -n "$INITIAL_ADMIN_EMAIL" ] || [ -n "$INITIAL_ADMIN_PASSWORD" ]; } && { [ -z "$INITIAL_ADMIN_EMAIL" ] || [ -z "$INITIAL_ADMIN_PASSWORD" ]; }; then
-    echo "You need to set INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD (both are needed) or none of them."
+INITIAL_ADMIN_PASSWORD_CONFIGURED=false
+[ -n "$INITIAL_ADMIN_PASSWORD" ] && INITIAL_ADMIN_PASSWORD_CONFIGURED=true
+if [ -n "$INITIAL_ADMIN_PASSWORD_FILE" ]; then
+    if [ -n "$INITIAL_ADMIN_PASSWORD" ]; then
+        echo "Set only one of INITIAL_ADMIN_PASSWORD or INITIAL_ADMIN_PASSWORD_FILE."
+        sleep inf
+    fi
+    if [ ! -r "$INITIAL_ADMIN_PASSWORD_FILE" ]; then
+        echo "INITIAL_ADMIN_PASSWORD_FILE is not readable."
+        sleep inf
+    fi
+    INITIAL_ADMIN_PASSWORD_CONFIGURED=true
+fi
+
+if { [ -n "$INITIAL_ADMIN_EMAIL" ] || [ "$INITIAL_ADMIN_PASSWORD_CONFIGURED" = "true" ]; } && { [ -z "$INITIAL_ADMIN_EMAIL" ] || [ "$INITIAL_ADMIN_PASSWORD_CONFIGURED" != "true" ]; }; then
+    echo "You need to set INITIAL_ADMIN_EMAIL and either INITIAL_ADMIN_PASSWORD or INITIAL_ADMIN_PASSWORD_FILE, or none of them."
     sleep inf
 fi
 
-if [ -n "$INITIAL_ADMIN_EMAIL" ] || [ -n "$INITIAL_ADMIN_PASSWORD" ] || [ -n "$INITIAL_DEFAULT_PAGE" ]; then
+if [ -n "$INITIAL_ADMIN_EMAIL" ] || [ "$INITIAL_ADMIN_PASSWORD_CONFIGURED" = "true" ] || [ -n "$INITIAL_DEFAULT_PAGE" ]; then
     echo "Remember to remove INITIAL_ envs after the first start."
     sleep 3
 fi

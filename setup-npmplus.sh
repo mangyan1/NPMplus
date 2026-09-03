@@ -11,11 +11,12 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.15"
+SCRIPT_VERSION="1.16"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
 COMPOSE_FILE="$DATA_DIR/compose.yaml"
+ADMIN_SECRET_FILE="/run/npmplus-initial-admin-password"
 SELF_URL="https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh"
 NPMPLUS_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:develop"
 CADDY_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:caddy"
@@ -137,6 +138,53 @@ yaml_quote() { # quote YAML and escape $ so compose preserves it literally
 	local value=${1//\$/\$\$}
 	value=${value//\'/\'\'}
 	printf "'%s'" "$value"
+}
+
+scrub_bootstrap_admin_credentials() {
+	[[ -s "$COMPOSE_FILE" ]] || return 0
+	local tmp
+	tmp=$(mktemp "${COMPOSE_FILE}.XXXXXX")
+	awk '
+		/NPMPLUS_BOOTSTRAP_ADMIN_(MOUNT|ENV|SECRET)_BEGIN/ { skip=1; next }
+		skip && /NPMPLUS_BOOTSTRAP_ADMIN_(MOUNT|ENV|SECRET)_END/ { skip=0; next }
+		skip { next }
+		$0 == "  npmplus:" { in_npmplus=1 }
+		in_npmplus && $0 ~ /^  [^ ]/ && $0 != "  npmplus:" { in_npmplus=0 }
+		in_npmplus && ($0 ~ /INITIAL_ADMIN_EMAIL=/ || $0 ~ /INITIAL_ADMIN_PASSWORD=/ || $0 ~ /INITIAL_ADMIN_PASSWORD_FILE=/) { next }
+		{ print }
+	' "$COMPOSE_FILE" >"$tmp"
+	chmod 600 "$tmp"
+	chown root:root "$tmp"
+	mv -f "$tmp" "$COMPOSE_FILE"
+}
+
+erase_bootstrap_admin_secret() {
+	if [[ -e "$ADMIN_SECRET_FILE" ]]; then
+		# Truncate first so an already-mounted Docker secret loses the value too.
+		: >"$ADMIN_SECRET_FILE"
+		chmod 600 "$ADMIN_SECRET_FILE"
+		rm -f "$ADMIN_SECRET_FILE"
+	fi
+}
+
+finalize_admin_bootstrap() {
+	local ready=false response="" _
+	for _ in $(seq 1 300); do
+		response=$(curl -fkSs --connect-timeout 2 --max-time 5 https://127.0.0.1:81/api 2>/dev/null || true)
+		if grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"' <<<"$response" && \
+			grep -qE '"setup"[[:space:]]*:[[:space:]]*true' <<<"$response"; then
+			ready=true
+			break
+		fi
+		sleep 1
+	done
+	if [[ "$ready" != "true" ]]; then
+		echo "initial administrator was not confirmed; the root-only bootstrap secret remains at $ADMIN_SECRET_FILE" >&2
+		return 1
+	fi
+	say "removing one-time administrator bootstrap credentials"
+	scrub_bootstrap_admin_credentials
+	erase_bootstrap_admin_secret
 }
 
 pin_image() { # mutable channel -> immutable local platform repo digest
@@ -776,6 +824,11 @@ if [[ "${1:-}" == "--update" ]]; then
 		echo "no existing install at $COMPOSE_FILE - run without --update first" >&2
 		exit 1
 	fi
+	# Initial credentials are one-time bootstrap inputs. Remove legacy inline
+	# values before the safe-update wrapper snapshots compose.yaml, so neither
+	# the live file nor the new last-good backup retains the password.
+	scrub_bootstrap_admin_credentials
+	erase_bootstrap_admin_secret
 	# Make manual updates use the same transactional snapshot/health/revert path
 	# as cron. The environment flag is set only by that wrapper to avoid recursion.
 	if [[ "${NPMPLUS_SAFE_UPDATE_ACTIVE:-false}" != "true" ]]; then
@@ -975,9 +1028,23 @@ say "writing $COMPOSE_FILE"
 mkdir -p "$DATA_DIR"
 
 ENV_ADMIN=""
-if [[ -n "$ADMIN_EMAIL" ]]; then
-	ENV_ADMIN="      - $(yaml_quote "INITIAL_ADMIN_EMAIL=$ADMIN_EMAIL")"
-	[[ -n "$ADMIN_PASSWORD" ]] && ENV_ADMIN="$ENV_ADMIN"$'\n'"      - $(yaml_quote "INITIAL_ADMIN_PASSWORD=$ADMIN_PASSWORD")"
+ADMIN_SECRET_MOUNT=""
+ADMIN_SECRET_TOPLEVEL=""
+ADMIN_BOOTSTRAP_ENABLED="false"
+if [[ -n "$ADMIN_EMAIL" && -n "$ADMIN_PASSWORD" ]]; then
+	ADMIN_BOOTSTRAP_ENABLED="true"
+	(umask 077; printf '%s' "$ADMIN_PASSWORD" >"$ADMIN_SECRET_FILE")
+	ADMIN_PASSWORD=""
+	ADMIN_SECRET_MOUNT='    # NPMPLUS_BOOTSTRAP_ADMIN_MOUNT_BEGIN
+    secrets:
+      - npmplus_initial_admin_password
+    # NPMPLUS_BOOTSTRAP_ADMIN_MOUNT_END'
+	ENV_ADMIN="    # NPMPLUS_BOOTSTRAP_ADMIN_ENV_BEGIN"$'\n'"      - $(yaml_quote "INITIAL_ADMIN_EMAIL=$ADMIN_EMAIL")"$'\n'"      - \"INITIAL_ADMIN_PASSWORD_FILE=/run/secrets/npmplus_initial_admin_password\""$'\n'"    # NPMPLUS_BOOTSTRAP_ADMIN_ENV_END"
+	ADMIN_SECRET_TOPLEVEL="# NPMPLUS_BOOTSTRAP_ADMIN_SECRET_BEGIN
+secrets:
+  npmplus_initial_admin_password:
+    file: $ADMIN_SECRET_FILE
+# NPMPLUS_BOOTSTRAP_ADMIN_SECRET_END"
 fi
 ENV_TZ="      - $(yaml_quote "TZ=$TZ")"
 # Disable IPv6 only when the host has no global IPv6 address.
@@ -1092,6 +1159,7 @@ services:
 #      - NET_ADMIN # required if you set NGINX_QUIC_BPF to true
     security_opt:
       - no-new-privileges:true
+$ADMIN_SECRET_MOUNT
     volumes:
       - "$DATA_DIR:/data"
     environment:
@@ -1106,9 +1174,10 @@ $ENV_ANUBIS
 $CROWDSEC_BLOCK
 $ANUBIS_BLOCK
 $CADDY_BLOCK
+$ADMIN_SECRET_TOPLEVEL
 EOF
 
-chmod 600 "$COMPOSE_FILE" # contains the admin password if one was set
+chmod 600 "$COMPOSE_FILE"
 mkdir -p "$DATA_DIR/nginx/logs"
 
 if [[ "$USE_ANUBIS" == "y" ]]; then
@@ -1352,6 +1421,10 @@ fi
 say "deploying"
 docker compose -f "$COMPOSE_FILE" up -d
 
+if [[ "$ADMIN_BOOTSTRAP_ENABLED" == "true" ]]; then
+	finalize_admin_bootstrap
+fi
+
 install_host_tooling
 
 say "done"
@@ -1360,7 +1433,7 @@ if [[ "$EXPOSE_ADMIN" == "y" ]]; then
 else
 	echo "admin UI: https://localhost:81 via ssh tunnel: ssh -L 8081:localhost:81 <host>"
 fi
-if [[ -z "$ADMIN_EMAIL" || -z "$ADMIN_PASSWORD" ]]; then
+if [[ "$ADMIN_BOOTSTRAP_ENABLED" != "true" ]]; then
 	echo "first-run admin credentials are in: docker logs npmplus"
 fi
 if [[ "$USE_CADDY" == "y" ]]; then
