@@ -141,6 +141,11 @@ if [[ $fail -eq 0 ]]; then
 fi
 
 hdr "fix"
+if [[ $kcode == 200 && $mcode == 200 ]]; then
+	note "both keys are already accepted - nothing to re-register"
+	note "follow the notes above for the remaining findings"
+	exit 1
+fi
 read -r -p "re-register the rejected keys now? [y/N] " answer || answer=""
 if [[ $answer != "y" ]]; then
 	exit 0
