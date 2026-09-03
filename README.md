@@ -35,7 +35,7 @@ If you don't need the web GUI of NPMplus, you may also have a look at caddy: htt
 - opt-in logging
 - zstd and brotli compression in addition to gzip
 - Goaccess log analytics (/goaccess) and a Swagger UI (/api/docs) for the api, both in the web UI
-- password/mfa reset (only sqlite): `docker exec -it npmplus password-reset.js USER_EMAIL [PASSWORD] [--disable-mfa]`
+- password/mfa reset (only sqlite): `printf '%s' "$NPMPLUS_NEW_PASSWORD" | docker exec -i npmplus password-reset.js USER_EMAIL --password-stdin [--disable-mfa]` (read the password into `NPMPLUS_NEW_PASSWORD` with `read -rs` first; it is never accepted in argv)
 - alpine based, much smaller image
 - punycode domain support
 - option to replace custom certs
@@ -64,6 +64,8 @@ Later updates: repeat the `wget` line, review the downloaded change, and run `su
 
 - generates the compose stack: npmplus (this fork's own image, ghcr.io/mangyan1/npmplus, so the fixes below are included), crowdsec with appsec + firewall bouncer, anubis (optional), caddy (optional). Mutable update channels are resolved to immutable image digests before they are written to compose.
 - keeps an explicitly supplied initial administrator password out of `compose.yaml` by using a root-only, one-time Docker secret; the secret and its Compose references are erased after account creation, and v1.16 scrubs plaintext credentials left by older installer versions during update
+- locks the browser setup wizard behind a generated 256-bit one-time token; retrieve it locally with `docker exec npmplus cat /data/npmplus/setup-token`
+- uses a bridge network, loopback-only admin port, and non-root service UID/GID by default on fresh v1.17 installations; host networking remains an explicit compatibility choice for targets on host `127.0.0.1`
 - UFW firewall: default deny, the detected/configured SSH port plus 80/443 (+81 if you opt in); ssh can be restricted to a subnet (e.g. 192.168.1.0/24), and any pre-existing rule set — including inactive, DENY-only or LIMIT-only configurations — is preserved unless you explicitly approve a reset
 - anubis: image and policy are pinned to the same release, status codes adjusted for auth_request, bbolt store instead of memory, persistent directory ownership matched to the image's non-root user, honeypot IP logging, optional catch-all that challenges everything unmatched
 - honeypot to crowdsec bridge: IPs caught in anubis' honeypot are auto-banned for 24h via a 5 minute cron
@@ -73,7 +75,7 @@ Later updates: repeat the `wget` line, review the downloaded change, and run `su
 - daily backup cron (keeps the last 7, root-only permissions): database (hot-copied so it is never torn mid-write), certificates, crowdsec config, anubis policy
 - daily crowdsec key-heal cron: verifies the UI bouncer, UI machine and nginx bouncer keys against the LAPI every day and re-registers any the LAPI rejects, so a sqlite rollback after an unclean shutdown never leaves the ban view broken or bans unenforced (log: `/var/log/npmplus-crowdsec-heal.log`)
 - unattended-upgrades for OS security patches
-- daily upstream sync workflow: merges ZoeyVid/NPMplus automatically and opens an issue with a resolve recipe if there is a conflict
+- daily upstream sync workflow: opens a reviewable pull request from an automation branch; conflicts open an issue with a resolve recipe
 - boot-resilience CI: on every major change the image is built and proven to survive the boot dns race (container starting before the host's dns answers) and a docker daemon restart, recovering without human help
 
 Admin UI fixes:
@@ -96,13 +98,15 @@ Admin UI fixes:
 1. Install Docker and Docker Compose (podman or docker rootless may also work)
 - [Docker Install documentation](https://docs.docker.com/engine/install)
 - [Docker Compose Install documentation](https://docs.docker.com/compose/install/linux)
-2. Download this [compose.yaml](https://raw.githubusercontent.com/ZoeyVid/NPMplus/refs/heads/develop/compose.yaml) (or use its content as a portainer stack)
+2. Download this fork's [compose.yaml](https://raw.githubusercontent.com/mangyan1/NPMplus/refs/heads/develop/compose.yaml) (or use its content as a portainer stack)
 3. Adjust TZ to match your Timezone and maybe adjust other env options to your needs
 4. Start NPMplus by running (or deploy your portainer stack)
 ```bash
 docker compose up -d
 ```
 5. Log in to the Admin UI: When your docker container is running, connect to the admin interface using `https://` on port `81`.
+
+On first use, the setup form requires the one-time setup token. Read it on the Docker host with `docker exec npmplus cat /data/npmplus/setup-token`. The file is removed after the first administrator is created. The sample publishes port 81 only on host loopback; use an SSH tunnel instead of exposing it publicly.
 
 ## Migration from upstream/vanilla nginx-proxy-manager
 - **NOTE: Migrating back to the original version is not possible.** Please make a **backup** before migrating, so you have the option to revert if needed
@@ -139,7 +143,7 @@ source: appsec
 labels:
   type: appsec
 ```
-4. Make sure to use `network_mode: host` in your compose file for the NPMplus container
+4. On the default Compose bridge network, set `CROWDSEC_LAPI_URL=http://crowdsec:8080`. Host networking is not required.
 5. Run `docker exec crowdsec cscli bouncers add npmplus` and save the api key of the output
 6. Open `/opt/npmplus/crowdsec/crowdsec.conf`
 7. Set `ENABLED` to `true`
@@ -377,7 +381,7 @@ If you need to run scripts before NPMplus launches put them under: `/opt/npmplus
 - to this fork's GitHub commit API for an hourly cached update check while the UI is in use
 - if not disabled gravatar for profile pictures
 - if used to your OIDC
-- if used to pypi to download certbot plugins
+- to PyPI only when the unsafe compatibility setting `ALLOW_RUNTIME_CERTBOT_PLUGIN_INSTALL=true` is explicitly enabled; the secure default requires DNS plugins to be included in the image
 - if used to your dns provider for acme dns challenges
 - if used to www.site24x7.com for the reachability check
 - if enabled to cloudflare to download their IPs

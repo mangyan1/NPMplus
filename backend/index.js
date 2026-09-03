@@ -17,8 +17,6 @@ async function appStart() {
 
 		if (process.env.TRUST_CLOUDFLARE === "true") {
 			logger.info("Cloudflares IPs are trusted");
-			internalIpRanges.initTimer();
-			await internalIpRanges.fetch();
 		} else {
 			logger.info("Cloudflares IPs are NOT trusted");
 			await internalIpRanges.generateConfig([]);
@@ -28,6 +26,10 @@ async function appStart() {
 
 		const server = app.listen("/run/npmplus.sock", () => {
 			logger.info(`Backend PID ${process.pid} listening on unix socket...`);
+			if (process.env.TRUST_CLOUDFLARE === "true") {
+				internalIpRanges.initTimer();
+				void internalIpRanges.fetch();
+			}
 
 			process.on("SIGTERM", () => {
 				logger.info(`PID ${process.pid} received SIGTERM`);

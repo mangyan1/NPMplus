@@ -15,6 +15,7 @@ interface Payload {
 	name: string;
 	email: string;
 	password: string;
+	setupToken: string;
 }
 
 export default function Setup() {
@@ -29,7 +30,7 @@ export default function Setup() {
 		// Set a nickname, which is the first word of the name
 		const nickname = values.name.split(" ")[0];
 
-		const { password, ...payload } = {
+		const { password, setupToken, ...payload } = {
 			...values,
 			...{
 				nickname,
@@ -41,7 +42,7 @@ export default function Setup() {
 		};
 
 		try {
-			const user = await createUser(payload);
+			const user = await createUser(payload, setupToken);
 			if (user?.id) {
 				try {
 					await login(user.email, password);
@@ -80,6 +81,7 @@ export default function Setup() {
 								name: "",
 								email: "",
 								password: "",
+								setupToken: "",
 							} as any
 						}
 						onSubmit={onSubmit}
@@ -96,6 +98,34 @@ export default function Setup() {
 								</div>
 								<hr />
 								<div className="card-body">
+									<div className="mb-3">
+										<Field name="setupToken" validate={validateString(32, 256)}>
+											{({ field, form }: any) => (
+												<div className="form-floating mb-3">
+													<input
+														id="setupToken"
+														type="password"
+														autoComplete="off"
+														className={`form-control ${form.errors.setupToken && form.touched.setupToken ? "is-invalid" : ""}`}
+														placeholder="One-time setup token"
+														{...field}
+													/>
+													<label htmlFor="setupToken">One-time setup token</label>
+													{form.errors.setupToken ? (
+														<div className="invalid-feedback">
+															{form.errors.setupToken && form.touched.setupToken
+																? form.errors.setupToken
+																: null}
+														</div>
+													) : null}
+												</div>
+											)}
+										</Field>
+										<div className="form-hint mb-3">
+											Read it on the host with{" "}
+											<code>docker exec npmplus cat /data/npmplus/setup-token</code>.
+										</div>
+									</div>
 									<div className="mb-3">
 										<Field name="name" validate={validateString(1, 50)}>
 											{({ field, form }: any) => (

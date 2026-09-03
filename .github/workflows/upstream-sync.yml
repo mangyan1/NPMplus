@@ -1,7 +1,7 @@
 name: upstream sync
 
 # keeps the fork up to date with ZoeyVid/NPMplus.
-# clean merge -> pushed to develop automatically.
+# clean merge -> proposed as a pull request for review and required checks.
 # conflict -> an issue is opened listing the conflicted files,
 # with instructions to resolve. nothing is force-pushed, ever.
 
@@ -14,6 +14,7 @@ on:
 permissions:
   contents: write
   issues: write
+  pull-requests: write
 
 concurrency:
   group: upstream-sync
@@ -23,14 +24,10 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      # with a PAT the push (and the runs it triggers) come from the user, not
-      # github-actions[bot], so no "Approve and run" is needed on bot-created
-      # commits. falls back to the bot token until the secret exists.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: develop
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT || github.token }}
 
       - name: merge upstream develop
         id: merge
@@ -39,8 +36,14 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote add upstream https://github.com/ZoeyVid/NPMplus.git
           git fetch upstream develop
+          git switch -C automation/upstream-sync origin/develop
           if git merge --no-ff upstream/develop -m "merge upstream develop"; then
             echo "conflict=false" >> "$GITHUB_OUTPUT"
+            if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/develop)" ]; then
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "conflicted files:"
             git diff --name-only --diff-filter=U | tee conflict-files.txt
@@ -48,9 +51,17 @@ jobs:
             echo "conflict=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: push clean merge
-        if: steps.merge.outputs.conflict == 'false'
-        run: git push origin develop
+      - name: propose clean merge
+        if: steps.merge.outputs.conflict == 'false' && steps.merge.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git push --force-with-lease origin HEAD:automation/upstream-sync
+          if [ "$(gh pr list --head automation/upstream-sync --base develop --state open --json number --jq 'length')" -eq 0 ]; then
+            gh pr create --head automation/upstream-sync --base develop \
+              --title "Merge upstream develop" \
+              --body "Automated upstream merge proposal. Review the diff and required checks before merging."
+          fi
 
       - name: report conflict
         if: steps.merge.outputs.conflict == 'true'
@@ -77,8 +88,11 @@ jobs:
           # drop them by deleting their lines in the editor, then save
           git rebase -i upstream/develop
 
-          # then merge upstream and push
-          git merge upstream/develop && git push --force-with-lease origin develop
+          # then merge upstream, push a review branch, and open a PR
+          git switch -c resolve/upstream-sync
+          git merge upstream/develop
+          git push --set-upstream origin resolve/upstream-sync
+          gh pr create --base develop --head resolve/upstream-sync
           \`\`\`
 
           Close this issue afterwards; the next scheduled run will find a clean tree.

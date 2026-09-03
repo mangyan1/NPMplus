@@ -56,6 +56,9 @@
 		},
 		"forward_host": {
 			"type": "string",
+			"minLength": 1,
+			"maxLength": 2048,
+			"pattern": "^[^\\s;{}$#\"'\\\\]+$",
 			"example": "127.0.0.1"
 		},
 		"forward_port": {

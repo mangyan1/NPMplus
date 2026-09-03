@@ -25,10 +25,10 @@ test("the remote check reads this fork's develop commit with a bounded request",
 			assert.equal(url, "https://api.github.com/repos/mangyan1/NPMplus/commits/develop");
 			assert.match(options.headers["User-Agent"], USER_AGENT_PATTERN);
 			assert.ok(options.signal instanceof AbortSignal);
-			return {
-				ok: true,
-				json: () => ({ sha: `6454c6d${"1".repeat(33)}` }),
-			};
+			return new Response(JSON.stringify({ sha: `6454c6d${"1".repeat(33)}` }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
 		};
 		remoteVersion.last_result = null;
 		remoteVersion.last_fetch_time = null;

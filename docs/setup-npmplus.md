@@ -16,6 +16,16 @@ The interactive prompts cover the initial administrator, CrowdSec and AppSec, th
 
 The generated Compose file is `/opt/npmplus/compose.yaml`. Registry channels are pulled and resolved to immutable `sha256` image digests before that file is written. An explicitly supplied initial administrator password is passed through a root-only, one-time Docker secret under `/run`, never embedded in Compose. After the API confirms that the account exists, the script truncates and removes the secret and removes its Compose references. Setup script v1.16 also scrubs legacy inline `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` entries before an update snapshot is created.
 
+Fresh v1.17 installations use a Compose bridge network, publish the admin listener on host loopback only, and run NPMplus services under UID/GID 1000 after privileged startup. Choose host networking only when an existing proxy target depends on host `127.0.0.1`; with bridge networking, use `host.docker.internal` for a service running directly on the Docker host. Port 81 should remain loopback-only and be reached through an SSH tunnel when remote administration is needed.
+
+If you leave the initial administrator email and password empty, the browser setup wizard is protected by a generated 256-bit one-time token. Retrieve it locally after startup:
+
+```bash
+sudo docker exec npmplus cat /data/npmplus/setup-token
+```
+
+Enter that token in the setup form. The token file is mode `0600` and is removed after the first administrator account is created.
+
 The script installs these root-owned helpers:
 
 - `/usr/local/bin/npmplus-safe-update`: transactional monthly update.
@@ -70,9 +80,28 @@ Setup script v1.15 recognizes and safely recreates an NPMplus container whose Do
 
 Setup script v1.16 removes one-time administrator bootstrap credentials from generated Compose files. Existing inline credentials are scrubbed at the beginning of the next update; new installations use a temporary Docker secret that is erased as soon as account creation is confirmed.
 
+Setup script v1.17 changes fresh-install defaults to bridge networking, loopback-only administration, and UID/GID 1000. It also protects browser-based initial setup with a one-time token. `--update` deliberately preserves an existing installation's network layout and UID/GID to avoid silently breaking proxy targets or filesystem ownership; recreate or edit the stack during a maintenance window if you want to adopt those isolation changes.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.
+
+## Secrets and certificate plugins
+
+Use mounted secret files instead of literal secret values in Compose. NPMplus supports `_FILE` variants for `COOKIE_SECRET`, `OIDC_CLIENT_SECRET`, `INITIAL_ADMIN_PASSWORD`, `INITIAL_SETUP_TOKEN`, `ACME_EAB_HMAC_KEY`, `DB_MYSQL_PASSWORD`, and `DB_POSTGRES_PASSWORD`. The sample `compose.yaml` contains commented Compose-secret examples. Do not set both a value and its `_FILE` variant. A custom `INITIAL_SETUP_TOKEN` must contain at least 32 characters; operator-supplied secret files are not deleted by NPMplus.
+
+NPMplus no longer installs missing Certbot DNS plugins into the running application container by default. Build every required provider plugin into a reviewed custom image with pinned dependencies. A missing plugin is logged without keeping the API offline, but certificate requests and renewals that need it will fail until it is provided. `ALLOW_RUNTIME_CERTBOT_PLUGIN_INSTALL=true` restores the old behavior only as an explicit compatibility escape hatch; it downloads executable code into the live container and exposes the certificate's DNS credential to that code, so it should not be a permanent configuration.
+
+Reset a SQLite user's password without placing it in shell history or process arguments:
+
+```bash
+read -rsp 'New NPMplus password: ' NPMPLUS_NEW_PASSWORD; echo
+printf '%s' "$NPMPLUS_NEW_PASSWORD" | \
+  sudo docker exec -i npmplus password-reset.js user@example.com --password-stdin
+unset NPMPLUS_NEW_PASSWORD
+```
+
+Append `--disable-mfa` when both the password and MFA need to be reset.
 
 ## Backups and restoration
 

@@ -1,6 +1,7 @@
 import _ from "lodash";
 import errs from "../lib/error.js";
 import { castJsonIfNeed } from "../lib/helpers.js";
+import { assertPrivilegedNginxFields } from "../lib/nginx-privilege.js";
 import utils from "../lib/utils.js";
 import redirectionHostModel from "../models/redirection_host.js";
 import internalAuditLog from "./audit-log.js";
@@ -25,6 +26,7 @@ const internalRedirectionHost = {
 		}
 
 		await access.can("redirection_hosts:create", thisData);
+		await assertPrivilegedNginxFields(access, thisData);
 
 		// Get a list of the domain names and check each of them against existing records
 		const checkResults = await Promise.all(
@@ -107,6 +109,7 @@ const internalRedirectionHost = {
 				`Redirection Host could not be updated, IDs do not match: ${existingRow.id} !== ${thisData.id}`,
 			);
 		}
+		await assertPrivilegedNginxFields(access, thisData, existingRow);
 
 		if (createCertificate) {
 			const cert = await internalCertificate.createQuickCertificate(access, {

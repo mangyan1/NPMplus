@@ -148,20 +148,25 @@ router
 			const idTokenClaims = tokens.claims();
 
 			let claims = idTokenClaims;
-			if (!idTokenClaims.email) {
+			if (!idTokenClaims.email || idTokenClaims.email_verified !== true) {
 				const userinfo = await fetchUserInfo(config, tokens.access_token, idTokenClaims.sub);
-				claims = { ...idTokenClaims, ...userinfo };
+				claims = { ...idTokenClaims, ...userinfo, iss: idTokenClaims.iss, sub: idTokenClaims.sub };
 			}
 
 			if (!claims.email) throw new errs.AuthError("The Identity Provider didn't send the 'email' claim");
 
-			if (claims.email_verified === false && process.env.OIDC_REQUIRE_VERIFIED_EMAIL === "true") {
+			if (claims.email_verified !== true && process.env.OIDC_REQUIRE_VERIFIED_EMAIL === "true") {
 				throw new errs.AuthError("The email address has not been verified.");
 			}
 
 			logger.info(`Successful authentication for email: ${claims.email.toLowerCase().trim()}`);
 
-			const data = await internalToken.getTokenFromOAuthClaim({ identity: claims.email.toLowerCase().trim() });
+			const data = await internalToken.getTokenFromOAuthClaim({
+				identity: claims.email.toLowerCase().trim(),
+				issuer: idTokenClaims.iss,
+				subject: idTokenClaims.sub,
+				emailVerified: claims.email_verified === true,
+			});
 
 			res.clearCookie("__Host-Http-npmplus_oidc_state", {
 				httpOnly: true,

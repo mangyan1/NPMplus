@@ -95,13 +95,14 @@ interface PostArgs {
 	url: string;
 	params?: queryString.StringifiableRecord;
 	data?: any;
+	headers?: Record<string, string>;
 }
 
-export async function post({ url, params, data }: PostArgs, abortController?: AbortController) {
+export async function post({ url, params, data, headers: extraHeaders }: PostArgs, abortController?: AbortController) {
 	const apiUrl = buildUrl({ url, params });
 	const method = "POST";
 
-	let headers: Record<string, string> = {};
+	let headers: Record<string, string> = { ...extraHeaders };
 
 	let body: string | FormData | undefined;
 	// Check if the data is an instance of FormData
@@ -111,6 +112,7 @@ export async function post({ url, params, data }: PostArgs, abortController?: Ab
 	} else {
 		// If data is JSON, set the Content-Type header to 'application/json'
 		headers = {
+			...extraHeaders,
 			[contentTypeHeader]: "application/json",
 		};
 		body = buildBody(data);

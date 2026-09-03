@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import errs from "../lib/error.js";
 import { parseDatePeriod } from "../lib/helpers.js";
 import authModel from "../models/auth.js";
@@ -10,6 +11,37 @@ const ERROR_MESSAGE_INVALID_AUTH = "Invalid email or password";
 const ERROR_MESSAGE_INVALID_AUTH_I18N = "error.invalid-auth";
 const ERROR_MESSAGE_INVALID_CODE = "Invalid verification code";
 const ERROR_MESSAGE_INVALID_CODE_I18N = "error.invalid-code";
+
+const issueUserToken = async (user, { skipMfa = false } = {}) => {
+	const Token = TokenModel();
+	const hasMfa = await mfa.isAnyEnabled(user.id);
+	if (hasMfa && !skipMfa) {
+		const challengeToken = await Token.create({
+			iss: "api",
+			attrs: { id: user.id },
+			scope: ["mfa-challenge"],
+			expiresIn: "3m",
+		});
+
+		return {
+			requiresTotp: await totp.isEnabled(user.id),
+			token: challengeToken.token,
+			expires: parseDatePeriod("3m").toISOString(),
+		};
+	}
+
+	const signed = await Token.create({
+		iss: "api",
+		attrs: { id: user.id },
+		scope: ["user"],
+		expiresIn: "1h",
+	});
+
+	return {
+		token: signed.token,
+		expires: parseDatePeriod("1h").toISOString(),
+	};
+};
 
 export default {
 	/**
@@ -88,55 +120,62 @@ export default {
 	/**
 	 * @param   {Object} data
 	 * @param   {String} data.identity
+	 * @param   {String} data.issuer
+	 * @param   {String} data.subject
+	 * @param   {Boolean} data.emailVerified
 	 * @returns {Promise}
 	 */
 	getTokenFromOAuthClaim: async (data) => {
-		const Token = TokenModel();
+		if (!data.issuer || !data.subject) {
+			throw new errs.AuthError("The Identity Provider didn't send a stable identity.");
+		}
 
-		const user = await userModel
-			.query()
-			.where("email", data.identity.toLowerCase().trim())
-			.andWhere("is_deleted", 0)
-			.andWhere("is_disabled", 0)
-			.first();
+		const identityHash = crypto.createHash("sha256").update(`${data.issuer}\0${data.subject}`).digest("hex");
+		let binding = await authModel.getOidcAuth(identityHash);
+		let user;
+
+		if (binding) {
+			user = await userModel
+				.query()
+				.where("id", binding.user_id)
+				.andWhere("is_deleted", 0)
+				.andWhere("is_disabled", 0)
+				.first();
+		} else {
+			// Email is used only for the first link, and only when the provider
+			// explicitly attests that it is verified. Later logins use issuer+sub.
+			if (data.emailVerified !== true) {
+				throw new errs.AuthError("A verified email is required to link this OIDC identity.");
+			}
+			user = await userModel
+				.query()
+				.where("email", data.identity.toLowerCase().trim())
+				.andWhere("is_deleted", 0)
+				.andWhere("is_disabled", 0)
+				.first();
+
+			if (user) {
+				try {
+					binding = await authModel.query().insert({
+						user_id: user.id,
+						type: "oidc",
+						secret: identityHash,
+						meta: { issuer: data.issuer, subject: data.subject },
+					});
+				} catch (err) {
+					binding = await authModel.getOidcAuth(identityHash);
+					if (!binding || binding.user_id !== user.id) {
+						throw new errs.AuthError(ERROR_MESSAGE_INVALID_AUTH, undefined, err);
+					}
+				}
+			}
+		}
 
 		if (!user) {
 			throw new errs.AuthError(ERROR_MESSAGE_INVALID_AUTH);
 		}
 
-		// Check if MFA is enabled
-		const hasMfa = await mfa.isAnyEnabled(user.id);
-		if (hasMfa && process.env.OIDC_SKIP_MFA !== "true") {
-			// Return challenge token instead of full token
-			const challengeToken = await Token.create({
-				iss: "api",
-				attrs: {
-					id: user.id,
-				},
-				scope: ["mfa-challenge"],
-				expiresIn: "3m",
-			});
-
-			return {
-				requiresTotp: await totp.isEnabled(user.id),
-				token: challengeToken.token,
-				expires: parseDatePeriod("3m").toISOString(),
-			};
-		}
-
-		const signed = await Token.create({
-			iss: "api",
-			attrs: {
-				id: user.id,
-			},
-			scope: ["user"],
-			expiresIn: "1h",
-		});
-
-		return {
-			token: signed.token,
-			expires: parseDatePeriod("1h").toISOString(),
-		};
+		return issueUserToken(user, { skipMfa: process.env.OIDC_SKIP_MFA === "true" });
 	},
 
 	/**

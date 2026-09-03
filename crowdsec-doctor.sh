@@ -8,6 +8,22 @@ set -uo pipefail
 DATA_DIR=/opt/npmplus
 KEY="$DATA_DIR/crowdsec/lapi-ui.key"
 MKEY="$DATA_DIR/crowdsec/lapi-ui-machine.key"
+
+bouncer_http_code() {
+	local key
+	key=$(cat "$1" 2>/dev/null || true)
+	[[ -n $key ]] || { echo 000; return; }
+	printf 'header = "X-Api-Key: %s"\n' "$key" | \
+		curl -sS -m 5 -o /dev/null -w '%{http_code}' --config - \
+		"$LAPI/v1/decisions?limit=1" 2>/dev/null || echo 000
+}
+
+machine_http_code() {
+	[[ -n $1 ]] || { echo 000; return; }
+	printf '{"machine_id":"npmplus-ui","password":"%s"}' "$1" | \
+		curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" \
+		--data-binary @- "$LAPI/v1/watchers/login" 2>/dev/null || echo 000
+}
 LAPI=http://127.0.0.1:8080
 
 hdr() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
@@ -65,7 +81,7 @@ else
 fi
 
 hdr "4. the key the UI backend uses"
-kcode=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "X-Api-Key: $(cat "$KEY" 2>/dev/null)" "$LAPI/v1/decisions?limit=1" 2>/dev/null || echo 000)
+kcode=$(bouncer_http_code "$KEY")
 if [[ $kcode == 200 ]]; then
 	ok "LAPI accepts the key (200)"
 else
@@ -100,9 +116,7 @@ else
 fi
 
 hdr "7. machine key (unban + alert context only)"
-mcode=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" \
-	-d "{\"machine_id\": \"npmplus-ui\", \"password\": \"$(cat "$MKEY" 2>/dev/null)\"}" \
-	"$LAPI/v1/watchers/login" 2>/dev/null || echo 000)
+mcode=$(machine_http_code "$(cat "$MKEY" 2>/dev/null || true)")
 if [[ $mcode == 200 ]]; then
 	ok "machine login works"
 else
@@ -161,7 +175,7 @@ if [[ $kcode != 200 ]]; then
 	key=$(docker exec crowdsec cscli bouncers add npmplus-ui -o raw 2>/dev/null)
 	echo "$key" >"$KEY"
 	chmod 600 "$KEY"
-	code=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "X-Api-Key: $(cat "$KEY")" "$LAPI/v1/decisions?limit=1" 2>/dev/null || echo 000)
+	code=$(bouncer_http_code "$KEY")
 	if [[ $code == 200 ]]; then
 		ok "bouncer re-registered, verified against the LAPI (200)"
 	else
@@ -175,8 +189,7 @@ if [[ $mcode != 200 ]]; then
 	if [[ -n $pw ]]; then
 		echo "$pw" >"$MKEY"
 		chmod 600 "$MKEY"
-		code=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" \
-			-d "{\"machine_id\": \"npmplus-ui\", \"password\": \"$pw\"}" "$LAPI/v1/watchers/login" 2>/dev/null || echo 000)
+		code=$(machine_http_code "$pw")
 		if [[ $code == 200 ]]; then
 			ok "machine re-registered, verified (200)"
 		else

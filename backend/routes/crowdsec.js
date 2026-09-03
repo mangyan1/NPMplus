@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import process from "node:process";
 import express from "express";
 import internalAuditLog from "../internal/audit-log.js";
+import { fetchWithTimeout, readBoundedJson } from "../lib/bounded-fetch.js";
 import jwtdecode from "../lib/express/jwt-decode.js";
 import { debug, express as logger } from "../logger.js";
 
@@ -27,7 +28,7 @@ const LAPI_DECISION_LIMIT = 200;
 const SCOPE_PATTERN = /^[a-zA-Z]{1,32}$/;
 const configuredTimeout = Number.parseInt(process.env.CROWDSEC_LAPI_TIMEOUT_MS || "5000", 10);
 const LAPI_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 5000;
-const lapiSignal = () => AbortSignal.timeout(LAPI_TIMEOUT_MS);
+const LAPI_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 // live decisions need a fresh key read: the file is rotated on re-runs
 const lapiFetch = async (path) => {
@@ -44,10 +45,7 @@ const lapiFetch = async (path) => {
 		err.status = 503;
 		throw err;
 	}
-	const response = await fetch(`${LAPI_URL}${path}`, {
-		headers: { "X-Api-Key": key },
-		signal: lapiSignal(),
-	});
+	const response = await fetchWithTimeout(`${LAPI_URL}${path}`, { headers: { "X-Api-Key": key } }, LAPI_TIMEOUT_MS);
 	if (!response.ok) {
 		// a rejected key means the bouncer was deleted or the file is stale,
 		// anything else is a real lapi problem worth seeing the status of
@@ -59,7 +57,7 @@ const lapiFetch = async (path) => {
 		err.status = 502;
 		throw err;
 	}
-	return response.json();
+	return readBoundedJson(response, LAPI_MAX_RESPONSE_BYTES);
 };
 
 // machine login for the endpoints a bouncer key cannot serve (alerts, deletes).
@@ -77,12 +75,15 @@ const lapiLogin = async () => {
 		err.status = 503;
 		throw err;
 	}
-	const response = await fetch(`${LAPI_URL}/v1/watchers/login`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ machine_id: LAPI_MACHINE_ID, password }),
-		signal: lapiSignal(),
-	});
+	const response = await fetchWithTimeout(
+		`${LAPI_URL}/v1/watchers/login`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ machine_id: LAPI_MACHINE_ID, password }),
+		},
+		LAPI_TIMEOUT_MS,
+	);
 	if (!response.ok) {
 		const err = new Error(
 			response.status === 401 || response.status === 403
@@ -92,7 +93,7 @@ const lapiLogin = async () => {
 		err.status = 502;
 		throw err;
 	}
-	const body = await response.json();
+	const body = await readBoundedJson(response, 64 * 1024);
 	if (!body?.token) {
 		const err = new Error("crowdsec LAPI login returned no token");
 		err.status = 502;
@@ -104,11 +105,14 @@ const lapiLogin = async () => {
 // any request the machine jwt serves
 const lapiMachineFetch = async (path, method = "GET") => {
 	const token = await lapiLogin();
-	const response = await fetch(`${LAPI_URL}${path}`, {
-		method,
-		headers: { Authorization: `Bearer ${token}` },
-		signal: lapiSignal(),
-	});
+	const response = await fetchWithTimeout(
+		`${LAPI_URL}${path}`,
+		{
+			method,
+			headers: { Authorization: `Bearer ${token}` },
+		},
+		LAPI_TIMEOUT_MS,
+	);
 	if (!response.ok) {
 		const err = new Error(
 			response.status === 401 || response.status === 403
@@ -118,7 +122,7 @@ const lapiMachineFetch = async (path, method = "GET") => {
 		err.status = 502;
 		throw err;
 	}
-	return response.json();
+	return readBoundedJson(response, LAPI_MAX_RESPONSE_BYTES);
 };
 
 // the admin gate every crowdsec endpoint shares, mirrors the audit log's

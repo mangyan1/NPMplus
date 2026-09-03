@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
 import _ from "lodash";
+import { fetchWithTimeout, readBoundedBuffer } from "../lib/bounded-fetch.js";
 import errs from "../lib/error.js";
 import utils from "../lib/utils.js";
 import { gravatar as logger } from "../logger.js";
@@ -64,7 +65,7 @@ const internalUser = {
 		} else {
 			try {
 				const hash = crypto.createHash("sha256").update(data.email.trim().toLowerCase()).digest("hex");
-				const response = await fetch(
+				const response = await fetchWithTimeout(
 					`https://www.gravatar.com/avatar/${hash}?s=64&default=initials&name=${encodeURIComponent(
 						data.name
 							.split(" ")
@@ -76,6 +77,7 @@ const internalUser = {
 							"User-Agent": `NPMplus/${pjson.version}`,
 						},
 					},
+					5_000,
 				);
 
 				if (!response.ok) throw new Error(`Status code: ${response.status}`);
@@ -95,8 +97,8 @@ const internalUser = {
 						throw new Error(`Unsupported content-type: ${response.headers.get("content-type")}`);
 				}
 
-				const buffer = await response.arrayBuffer();
-				await writeFile(`/data/npmplus/gravatar/${hash}.${ext}`, Buffer.from(buffer));
+				const buffer = await readBoundedBuffer(response, 1024 * 1024);
+				await writeFile(`/data/npmplus/gravatar/${hash}.${ext}`, buffer);
 
 				data.avatar = `/images/gravatar/${hash}.${ext}`;
 			} catch (err) {
@@ -121,12 +123,12 @@ const internalUser = {
 		await userPermissionModel.query().insert({
 			user_id: user.id,
 			visibility: isAdmin ? "all" : "user",
-			proxy_hosts: "manage",
-			redirection_hosts: "manage",
-			dead_hosts: "manage",
-			streams: "manage",
-			access_lists: "manage",
-			certificates: "manage",
+			proxy_hosts: isAdmin ? "manage" : "view",
+			redirection_hosts: isAdmin ? "manage" : "view",
+			dead_hosts: isAdmin ? "manage" : "view",
+			streams: isAdmin ? "manage" : "view",
+			access_lists: isAdmin ? "manage" : "view",
+			certificates: isAdmin ? "manage" : "view",
 		});
 
 		user = await internalUser.get(access, { id: user.id, expand: ["permissions"] });
@@ -207,7 +209,7 @@ const internalUser = {
 					.createHash("sha256")
 					.update((data.email || existingUser.email).trim().toLowerCase())
 					.digest("hex");
-				const response = await fetch(
+				const response = await fetchWithTimeout(
 					`https://www.gravatar.com/avatar/${hash}?s=64&default=initials&name=${encodeURIComponent(
 						(data.name || existingUser.name)
 							.split(" ")
@@ -219,6 +221,7 @@ const internalUser = {
 							"User-Agent": `NPMplus/${pjson.version}`,
 						},
 					},
+					5_000,
 				);
 
 				if (!response.ok) throw new Error(`Status code: ${response.status}`);
@@ -238,8 +241,8 @@ const internalUser = {
 						throw new Error(`Unsupported content-type: ${response.headers.get("content-type")}`);
 				}
 
-				const buffer = await response.arrayBuffer();
-				await writeFile(`/data/npmplus/gravatar/${hash}.${ext}`, Buffer.from(buffer));
+				const buffer = await readBoundedBuffer(response, 1024 * 1024);
+				await writeFile(`/data/npmplus/gravatar/${hash}.${ext}`, buffer);
 
 				data.avatar = `/images/gravatar/${hash}.${ext}`;
 			} catch (err) {

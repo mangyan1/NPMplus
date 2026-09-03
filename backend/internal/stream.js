@@ -1,6 +1,7 @@
 import _ from "lodash";
 import errs from "../lib/error.js";
 import { castJsonIfNeed } from "../lib/helpers.js";
+import { assertPrivilegedNginxFields } from "../lib/nginx-privilege.js";
 import utils from "../lib/utils.js";
 import streamModel from "../models/stream.js";
 import internalAuditLog from "./audit-log.js";
@@ -50,6 +51,7 @@ const internalStream = {
 		}
 
 		await access.can("streams:create", thisData);
+		await assertPrivilegedNginxFields(access, thisData);
 
 		await validateIncomingPort(thisData.incoming_port);
 
@@ -114,6 +116,7 @@ const internalStream = {
 				`Stream could not be updated, IDs do not match: ${existingRow.id} !== ${thisData.id}`,
 			);
 		}
+		await assertPrivilegedNginxFields(access, thisData, existingRow);
 
 		if (createCertificate) {
 			const cert = await internalCertificate.createQuickCertificate(access, {

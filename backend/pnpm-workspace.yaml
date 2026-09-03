@@ -1,4 +1,24 @@
-minimumReleaseAge: 0
+minimumReleaseAge: 10080
+# Exact versions already present in the reviewed lockfile when quarantine was enabled.
+minimumReleaseAgeExclude:
+  - '@apidevtools/swagger-parser@13.0.0' # reviewed upstream update fe15654e; remove after the quarantine window
+  - '@biomejs/biome@2.5.11'
+  - '@biomejs/cli-darwin-arm64@2.5.11'
+  - '@biomejs/cli-darwin-x64@2.5.11'
+  - '@biomejs/cli-linux-arm64-musl@2.5.11'
+  - '@biomejs/cli-linux-arm64@2.5.11'
+  - '@biomejs/cli-linux-x64-musl@2.5.11'
+  - '@biomejs/cli-linux-x64@2.5.11'
+  - '@biomejs/cli-win32-arm64@2.5.11'
+  - '@biomejs/cli-win32-x64@2.5.11'
+  - '@noble/hashes@2.4.0'
+  - '@scure/base@2.4.0'
+  - express-rate-limit@8.7.0
+  - ip-address@10.7.0
+  - mysql2@3.24.3 # reviewed lockfile exception; remove after this version ages past the policy window
+  - multer@2.3.0
+  - qs@6.16.0
+minimumReleaseAgeExcludePrune: true
 allowBuilds:
   '@scarf/scarf': false
   better-sqlite3: false

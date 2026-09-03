@@ -15,9 +15,10 @@ interface NewUser {
 	roles?: string[];
 }
 
-export async function createUser(item: NewUser): Promise<User> {
+export async function createUser(item: NewUser, setupToken?: string): Promise<User> {
 	return await api.post({
 		url: "/users",
 		data: item,
+		headers: setupToken ? { "X-NPMplus-Setup-Token": setupToken } : undefined,
 	});
 }

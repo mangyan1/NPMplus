@@ -1,3 +1,4 @@
+import { fetchWithTimeout, readBoundedJson } from "../lib/bounded-fetch.js";
 import { remoteVersion as logger } from "../logger.js";
 import pjson from "../package.json" with { type: "json" };
 
@@ -25,18 +26,21 @@ const internalRemoteVersion = {
 			) {
 				const repository = process.env.NPMPLUS_GITHUB_REPOSITORY || "mangyan1/NPMplus";
 				const branch = process.env.NPMPLUS_GITHUB_BRANCH || "develop";
-				const response = await fetch(`https://api.github.com/repos/${repository}/commits/${branch}`, {
-					headers: {
-						"User-Agent": `NPMplus/${pjson.version}`,
+				const response = await fetchWithTimeout(
+					`https://api.github.com/repos/${repository}/commits/${branch}`,
+					{
+						headers: {
+							"User-Agent": `NPMplus/${pjson.version}`,
+						},
 					},
-					signal: AbortSignal.timeout(10_000),
-				});
+					10_000,
+				);
 
 				if (!response.ok) {
 					throw new Error(`Status code: ${response.status}`);
 				}
 
-				const data = await response.json();
+				const data = await readBoundedJson(response, 256 * 1024);
 
 				internalRemoteVersion.last_result = data;
 				internalRemoteVersion.last_fetch_time = Date.now();

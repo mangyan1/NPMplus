@@ -214,6 +214,8 @@ ARG LRL_VER=3ff6300e68b73ba20e909c7d16bd839aef2e5a4b # v0.15
 ARG LCSB_VER=59f3521e3918377fc1eb97d59a4056b6e9f5782f # v1.0.18
 ARG COF_VER=da93e0cec7fdb1a80f4972f75b3638763d012c0e # main
 ARG NBF_VER=5cee8db2a505f2a253e24691399c828c043071fc # master
+ARG PIP_VER=26.2.1
+ARG CERTBOT_VER=5.7.0
 
 COPY --from=nginx /usr/local/nginx                                                                         /usr/local/nginx
 COPY --from=nginx /usr/local/bin/bssl                                                                      /usr/local/bin/bssl
@@ -236,9 +238,9 @@ RUN apk upgrade --no-cache -a && \
                        luarocks5.1 git make \
                        nodejs python3 && \
     \
-    luarocks-5.1 install lua-resty-http && \
-    luarocks-5.1 install lua-resty-string && \
-    luarocks-5.1 install lua-resty-openssl && \
+    luarocks-5.1 install lua-resty-http 0.18.0-0 && \
+    luarocks-5.1 install lua-resty-string 0.09-0 && \
+    luarocks-5.1 install lua-resty-openssl 1.9.0-1 && \
     \
     git config --global advice.detachedHead false && \
     git config --global init.defaultBranch main && \
@@ -263,7 +265,7 @@ RUN apk upgrade --no-cache -a && \
     sed -i "s|placeholder|$(jq -r .version /app/package.json)|g" /usr/local/nginx/conf/conf.d/crowdsec.conf.disabled && \
     \
     python3 -m venv /usr/local && \
-    pip install --no-cache-dir --upgrade pip certbot && \
+    pip install --no-cache-dir --upgrade "pip==$PIP_VER" "certbot==$CERTBOT_VER" && \
     \
     wget -q https://raw.githubusercontent.com/tomwassenberg/certbot-ocsp-fetcher/"$COF_VER"/certbot-ocsp-fetcher -O /usr/local/bin/certbot-ocsp-fetcher.sh && \
     echo "60148ed2ffef2f1354427d3e080400d008132f8e5fb014f721f5986f438dd621  /usr/local/bin/certbot-ocsp-fetcher.sh" | sha256sum -c - && \

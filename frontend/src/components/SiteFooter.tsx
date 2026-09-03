@@ -33,6 +33,17 @@ export function SiteFooter() {
 						<ul className="list-inline list-inline-dots mb-0">
 							<li className="list-inline-item">© {new Date().getFullYear()} AGPL-3.0 (and MIT)</li>
 							<li className="list-inline-item">
+								Fork maintained by{" "}
+								<a
+									href="https://github.com/mangyan1"
+									rel="noreferrer"
+									target="_blank"
+									className="link-secondary"
+								>
+									mangyan1
+								</a>
+							</li>
+							<li className="list-inline-item">
 								<a href="https://jc21.com" rel="noreferrer" target="_blank" className="link-secondary">
 									jc21.com
 								</a>

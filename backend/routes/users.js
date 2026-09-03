@@ -12,7 +12,9 @@ import apiValidator from "../lib/validator/api.js";
 import validator from "../lib/validator/index.js";
 import { debug, express as logger } from "../logger.js";
 import { getValidationSchema } from "../schema/index.js";
-import { isSetup } from "../setup.js";
+import { isSetup, removeSetupToken, verifySetupToken } from "../setup.js";
+
+let setupCreationInProgress = false;
 
 const router = express.Router({
 	caseSensitive: true,
@@ -82,11 +84,23 @@ router
 	 */
 	.post(async (req, res, next) => {
 		const { body } = req;
+		let claimedSetup = false;
 
 		try {
 			// If we are in setup mode, we don't check access for current user
 			const setup = await isSetup();
 			if (!setup) {
+				if (setupCreationInProgress) {
+					throw new errs.AuthError("Initial setup is already in progress. Please retry.");
+				}
+				setupCreationInProgress = true;
+				claimedSetup = true;
+				if (await isSetup()) {
+					throw new errs.AuthError("Initial setup has already been completed.");
+				}
+				if (!(await verifySetupToken(req.get("x-npmplus-setup-token")))) {
+					throw new errs.AuthError("Invalid initial setup token.");
+				}
 				logger.info("Creating a new user in setup mode");
 				const access = new Access(null);
 				await access.load(true);
@@ -105,10 +119,13 @@ router
 
 			const payload = apiValidator(getValidationSchema("/users", "post"), body);
 			const user = await internalUser.create(res.locals.access, payload);
+			if (claimedSetup) await removeSetupToken();
 			res.status(201).send(user);
 		} catch (err) {
 			debug(logger, `${req.method.toUpperCase()} ${req.originalUrl}: ${err}`);
 			next(err);
+		} finally {
+			if (claimedSetup) setupCreationInProgress = false;
 		}
 	});
 
@@ -452,7 +469,10 @@ router
 	 * Upload a custom avatar
 	 */
 	.post(
-		multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } }).single("avatar"),
+		multer({
+			storage: multer.memoryStorage(),
+			limits: { fileSize: 1024 * 1024, files: 1, fields: 0, parts: 1, fieldNameSize: 32 },
+		}).single("avatar"),
 		async (req, res, next) => {
 			try {
 				const result = await internalUser.setAvatar(res.locals.access, req.params.user_id, req.file);

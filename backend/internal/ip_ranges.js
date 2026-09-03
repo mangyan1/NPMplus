@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fetchWithTimeout, readBoundedText } from "../lib/bounded-fetch.js";
 import utils from "../lib/utils.js";
 import { ipRanges as logger } from "../logger.js";
 import pjson from "../package.json" with { type: "json" };
@@ -26,15 +27,19 @@ const internalIpRanges = {
 	},
 
 	fetchUrl: async (url) => {
-		const res = await fetch(url, {
-			headers: { "User-Agent": `NPMplus/${pjson.version}` },
-		});
+		const res = await fetchWithTimeout(
+			url,
+			{
+				headers: { "User-Agent": `NPMplus/${pjson.version}` },
+			},
+			10_000,
+		);
 
 		if (!res.ok) {
 			throw new Error(`Status code: ${res.status}`);
 		}
 
-		return res.text();
+		return readBoundedText(res, 64 * 1024);
 	},
 
 	/**

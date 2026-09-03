@@ -2,20 +2,19 @@
 
 // based on: https://github.com/jlesage/docker-nginx-proxy-manager/blob/796734a3f9a87e0b1561b47fd418f82216359634/rootfs/opt/nginx-proxy-manager/bin/reset-password
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import bcrypt from "bcryptjs";
 
 function usage() {
-	console.log(`usage: ${process.argv[1]} USER_EMAIL [PASSWORD] [--disable-mfa]
+	console.log(`usage: ${process.argv[1]} USER_EMAIL [--password-stdin] [--disable-mfa]
 
 	Reset the password and/or disable MFA of a NPMplus user.
 
 	Arguments:
 	USER_EMAIL      Email address of the user.
-	PASSWORD        New password of the user, omit it to keep the current one.
-
 	Options:
+	--password-stdin Read the new password from standard input so it is not exposed in the process list.
 	--disable-mfa   Disable TOTP and delete the backup codes of the user.`);
 	process.exit(1);
 }
@@ -23,12 +22,16 @@ function usage() {
 const args = process.argv.slice(2);
 const DISABLE_MFA = args.includes("--disable-mfa");
 if (DISABLE_MFA) args.splice(args.indexOf("--disable-mfa"), 1);
+const PASSWORD_STDIN = args.includes("--password-stdin");
+if (PASSWORD_STDIN) args.splice(args.indexOf("--password-stdin"), 1);
 const EMAIL = args[0]?.toLowerCase().trim();
-const PASSWORD = args[1];
+if (args.length > 1 || args.some((arg) => arg.startsWith("--"))) usage();
+const PASSWORD = PASSWORD_STDIN ? readFileSync(0, "utf8").replace(/\r?\n$/, "") : undefined;
 
-if (!EMAIL || (!PASSWORD && !DISABLE_MFA)) {
+if (!EMAIL || (PASSWORD_STDIN && !PASSWORD) || (!PASSWORD_STDIN && !DISABLE_MFA)) {
 	if (!EMAIL) console.error("ERROR: User email address must be set.");
-	if (!PASSWORD && !DISABLE_MFA) console.error("ERROR: Password and/or --disable-mfa must be set.");
+	if (PASSWORD_STDIN && !PASSWORD) console.error("ERROR: Standard input did not contain a password.");
+	if (!PASSWORD_STDIN && !DISABLE_MFA) console.error("ERROR: --password-stdin and/or --disable-mfa must be set.");
 	usage();
 }
 

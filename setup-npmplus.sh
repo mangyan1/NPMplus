@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.16"
+SCRIPT_VERSION="1.17"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -322,14 +322,16 @@ register_bouncer() { # $1 = name -> key on stdout (empty on failure)
 # verify = ask the lapi, so a heal only fires on a key it actually rejects.
 bouncer_key_works() { # $1 = bouncer key -> 0 when the lapi accepts it
 	[[ -n "$1" ]] || return 1
-	curl -sS -m 5 -o /dev/null -w '%{http_code}' \
-		-H "X-Api-Key: $1" "http://127.0.0.1:8080/v1/decisions?limit=1" 2>/dev/null | grep -q '^200'
+	printf 'header = "X-Api-Key: %s"\n' "$1" | \
+		curl -sS -m 5 -o /dev/null -w '%{http_code}' --config - \
+		"http://127.0.0.1:8080/v1/decisions?limit=1" 2>/dev/null | grep -q '^200'
 }
 
 machine_key_works() { # $1 = machine id, $2 = password -> 0 on a working login
 	[[ -n "$2" ]] || return 1
-	curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" \
-		-d "{\"machine_id\": \"$1\", \"password\": \"$2\"}" "http://127.0.0.1:8080/v1/watchers/login" 2>/dev/null | grep -q '^200'
+	printf '{"machine_id":"%s","password":"%s"}' "$1" "$2" | \
+		curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" \
+		--data-binary @- "http://127.0.0.1:8080/v1/watchers/login" 2>/dev/null | grep -q '^200'
 }
 
 register_machine() { # $1 = name -> machine password on stdout (empty on failure)
@@ -539,6 +541,15 @@ fi
 
 # Health check every configured service, Docker health where present, both
 # NPMplus listeners, and CrowdSec's own LAPI. HTTP error responses must fail.
+bouncer_http_code() {
+	printf 'header = "X-Api-Key: %s"\n' "$1" | curl -sS --connect-timeout 5 --max-time 10 \
+		-o /dev/null -w '%{http_code}' --config - 'http://127.0.0.1:8080/v1/decisions?limit=1'
+}
+machine_http_code() {
+	printf '{"machine_id":"npmplus-ui","password":"%s"}' "$1" | curl -sS --connect-timeout 5 --max-time 10 \
+		-o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data-binary @- \
+		'http://127.0.0.1:8080/v1/watchers/login'
+}
 check() {
 	local svc cid state health key machine_password
 	while read -r svc; do
@@ -555,13 +566,13 @@ check() {
 		docker exec crowdsec cscli lapi status >/dev/null 2>&1 || return 1
 		key=$(cat /opt/npmplus/crowdsec/lapi-ui.key 2>/dev/null || true)
 		[[ -n "$key" ]] || return 1
-		[[ "$(curl -sS --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' -H "X-Api-Key: $key" 'http://127.0.0.1:8080/v1/decisions?limit=1')" == "200" ]] || return 1
+		[[ "$(bouncer_http_code "$key")" == "200" ]] || return 1
 		key=$(sed -n 's/^API_KEY=//p' /opt/npmplus/crowdsec/crowdsec.conf 2>/dev/null)
 		[[ -n "$key" ]] || return 1
-		[[ "$(curl -sS --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' -H "X-Api-Key: $key" 'http://127.0.0.1:8080/v1/decisions?limit=1')" == "200" ]] || return 1
+		[[ "$(bouncer_http_code "$key")" == "200" ]] || return 1
 		machine_password=$(cat /opt/npmplus/crowdsec/lapi-ui-machine.key 2>/dev/null || true)
 		[[ -n "$machine_password" ]] || return 1
-		[[ "$(curl -sS --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d "{\"machine_id\":\"npmplus-ui\",\"password\":\"$machine_password\"}" 'http://127.0.0.1:8080/v1/watchers/login')" == "200" ]] || return 1
+		[[ "$(machine_http_code "$machine_password")" == "200" ]] || return 1
 	fi
 }
 sleep 30
@@ -647,14 +658,16 @@ dpkg -s crowdsec >/dev/null 2>&1 && log "WARNING: native crowdsec package instal
 
 bouncer_key_works() { # $1 = bouncer key -> 0 when the lapi accepts it
 	[[ -n "$1" ]] || return 1
-	curl -sS -m 5 -o /dev/null -w '%{http_code}' \
-		-H "X-Api-Key: $1" "http://127.0.0.1:8080/v1/decisions?limit=1" 2>/dev/null | grep -q '^200'
+	printf 'header = "X-Api-Key: %s"\n' "$1" | \
+		curl -sS -m 5 -o /dev/null -w '%{http_code}' --config - \
+		"http://127.0.0.1:8080/v1/decisions?limit=1" 2>/dev/null | grep -q '^200'
 }
 
 machine_key_works() { # $1 = machine id, $2 = password -> 0 on a working login
 	[[ -n "$2" ]] || return 1
-	curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" \
-		-d "{\"machine_id\": \"$1\", \"password\": \"$2\"}" "http://127.0.0.1:8080/v1/watchers/login" 2>/dev/null | grep -q '^200'
+	printf '{"machine_id":"%s","password":"%s"}' "$1" "$2" | \
+		curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" \
+		--data-binary @- "http://127.0.0.1:8080/v1/watchers/login" 2>/dev/null | grep -q '^200'
 }
 
 register_bouncer() { # $1 = name -> key on stdout (empty on failure)
@@ -966,7 +979,11 @@ fi
 
 TZ=$(ask "Timezone (TZ identifier, e.g. Europe/Berlin)" "$(cat /etc/timezone 2>/dev/null || echo UTC)")
 ADMIN_EMAIL=$(ask "Initial admin email (empty = use setup wizard)" "")
-ADMIN_PASSWORD=$(askpw "Initial admin password (empty = random, shown in docker logs once)" "")
+ADMIN_PASSWORD=$(askpw "Initial admin password (empty = use setup wizard)" "")
+if [[ -n "$ADMIN_EMAIL" && -z "$ADMIN_PASSWORD" ]] || [[ -z "$ADMIN_EMAIL" && -n "$ADMIN_PASSWORD" ]]; then
+	echo "initial admin email and password must either both be set or both be empty" >&2
+	exit 1
+fi
 
 USE_CROWDSEC="n"; confirm "Enable crowdsec?" "y" && USE_CROWDSEC="y"
 USE_APPSEC="n"
@@ -986,6 +1003,8 @@ USE_CADDY="n"; confirm "Enable caddy (port 80 -> https redirect, so NPMplus only
 # orange cloud only: with plain dns the visitor ips arrive directly and must NOT be
 # taken from cloudflare headers (spoofable by anyone then)
 USE_CF="n"; confirm "Are your sites proxied through Cloudflare (orange cloud)?" "y" && USE_CF="y"
+USE_HOST_NETWORK="n"
+confirm "Use host networking (only needed when proxy targets use host localhost/127.0.0.1)?" "n" && USE_HOST_NETWORK="y"
 
 # HTTP/3 is always available in NPMplus (enable per host in the UI); it needs 443/udp.
 USE_UFW="n"
@@ -1058,10 +1077,6 @@ fi
 # needed for real visitor ips in logs/crowdsec when cloudflare proxies the traffic
 ENV_CF=""
 [[ "$USE_CF" == "y" ]] && ENV_CF="      - \"TRUST_CLOUDFLARE=true\""
-ENV_ANUBIS=""
-if [[ "$USE_ANUBIS" == "y" ]]; then
-	ENV_ANUBIS="      - \"AUTH_REQUEST_ANUBIS_UPSTREAM=http://127.0.0.1:8923\""
-fi
 ENV_DISABLE_HTTP=""
 if [[ "$USE_CADDY" == "y" ]]; then
 	ENV_DISABLE_HTTP="      - \"DISABLE_HTTP=true\""
@@ -1072,6 +1087,42 @@ ENV_LOGROTATE="      - \"LOGROTATE=true\""
 # http/3/quic tuning, optional (needs BPF/PERFMON/NET_ADMIN caps, see commented cap_add):
 ENV_QUIC_BPF="#      - \"NGINX_QUIC_BPF=true\""
 
+CROWDSEC_SERVICE_HOST="crowdsec"
+ANUBIS_SERVICE_HOST="anubis"
+BRIDGE_HTTP_PORT='      - "80:80/tcp"'
+[[ "$USE_CADDY" == "y" ]] && BRIDGE_HTTP_PORT=""
+IFS= read -r -d '' NPMPLUS_NETWORK_BLOCK <<EOF || true
+    ports:
+$BRIDGE_HTTP_PORT
+      - "443:443/tcp"
+      - "443:443/udp"
+      - "127.0.0.1:81:81/tcp"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+EOF
+if [[ "$EXPOSE_ADMIN" == "y" ]]; then
+	NPMPLUS_NETWORK_BLOCK=${NPMPLUS_NETWORK_BLOCK/127.0.0.1:81:81\/tcp/81:81\/tcp}
+fi
+ENV_ADMIN_BINDING='      - "NPM_LISTEN_LOCALHOST=false"'
+if [[ "$USE_HOST_NETWORK" == "y" ]]; then
+	CROWDSEC_SERVICE_HOST="127.0.0.1"
+	ANUBIS_SERVICE_HOST="127.0.0.1"
+	NPMPLUS_NETWORK_BLOCK='    network_mode: host'
+	if [[ "$EXPOSE_ADMIN" == "y" ]]; then
+		ENV_ADMIN_BINDING='      - "NPM_LISTEN_LOCALHOST=false"'
+	else
+		ENV_ADMIN_BINDING='      - "NPM_LISTEN_LOCALHOST=true"'
+	fi
+fi
+ENV_ANUBIS=""
+if [[ "$USE_ANUBIS" == "y" ]]; then
+	ENV_ANUBIS="      - \"AUTH_REQUEST_ANUBIS_UPSTREAM=http://$ANUBIS_SERVICE_HOST:8923\""
+fi
+ENV_CROWDSEC=""
+if [[ "$USE_CROWDSEC" == "y" ]]; then
+	ENV_CROWDSEC="      - \"CROWDSEC_LAPI_URL=http://$CROWDSEC_SERVICE_HOST:8080\""
+fi
+
 CROWDSEC_BLOCK=""
 if [[ "$USE_CROWDSEC" == "y" ]]; then
 	IFS= read -r -d '' CROWDSEC_BLOCK <<EOF || true
@@ -1081,7 +1132,6 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
     restart: unless-stopped
     image: $CROWDSEC_IMAGE
     pull_policy: missing
-    network_mode: bridge
     ports:
       - "127.0.0.1:7422:7422"
       - "127.0.0.1:8080:8080"
@@ -1110,7 +1160,6 @@ if [[ "$USE_ANUBIS" == "y" ]]; then
     restart: unless-stopped
     image: $ANUBIS_IMAGE
     pull_policy: missing
-    network_mode: bridge
     ports:
       - "127.0.0.1:8923:8923"
     environment:
@@ -1132,7 +1181,6 @@ if [[ "$USE_CADDY" == "y" ]]; then
     restart: unless-stopped
     image: $CADDY_IMAGE
     pull_policy: missing
-    network_mode: bridge
     ports:
       - "80:80"
     environment:
@@ -1148,12 +1196,16 @@ services:
     restart: unless-stopped
     image: $NPMPLUS_IMAGE
     pull_policy: missing
-    network_mode: host
+$NPMPLUS_NETWORK_BLOCK
     cap_drop:
       - ALL
     cap_add:
       - NET_BIND_SERVICE
       - SETGID
+      - SETUID
+      - CHOWN
+      - FOWNER
+      - DAC_OVERRIDE
 #      - BPF # required if you set NGINX_QUIC_BPF to true
 #      - PERFMON # required if you set NGINX_QUIC_BPF to true
 #      - NET_ADMIN # required if you set NGINX_QUIC_BPF to true
@@ -1164,6 +1216,9 @@ $ADMIN_SECRET_MOUNT
       - "$DATA_DIR:/data"
     environment:
 $ENV_TZ
+      - "PUID=1000"
+      - "PGID=1000"
+$ENV_ADMIN_BINDING
 $ENV_ADMIN
 $ENV_LOGROTATE
 $ENV_QUIC_BPF
@@ -1171,6 +1226,7 @@ $ENV_DISABLE_HTTP
 $ENV_DISABLE_IPV6
 $ENV_CF
 $ENV_ANUBIS
+$ENV_CROWDSEC
 $CROWDSEC_BLOCK
 $ANUBIS_BLOCK
 $CADDY_BLOCK
@@ -1253,7 +1309,7 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 			# same defaults the image would seed on first start
 			cat >"$CONF" <<EOF
 ENABLED=true
-API_URL=http://127.0.0.1:8080
+API_URL=http://$CROWDSEC_SERVICE_HOST:8080
 API_KEY=$KEY
 USE_TLS_AUTH=false
 CACHE_EXPIRATION=1
@@ -1286,14 +1342,14 @@ APPSEC_DROP_UNREADABLE_BODY=false
 SSL_VERIFY=true
 EOF
 			# appsec is opt-in only, see issue #3804: empty unless explicitly chosen
-			[[ "$USE_APPSEC" == "y" ]] && sed -i 's|^APPSEC_URL=.*|APPSEC_URL=http://127.0.0.1:7422|' "$CONF"
+			[[ "$USE_APPSEC" == "y" ]] && sed -i "s|^APPSEC_URL=.*|APPSEC_URL=http://$CROWDSEC_SERVICE_HOST:7422|" "$CONF"
 			chmod 600 "$CONF"
 		else
 			# existing conf: just flip ENABLED and rotate the key
 			sed -i "s|^ENABLED=.*|ENABLED=true|" "$CONF"
 			sed -i "s|^API_KEY=.*|API_KEY=$KEY|" "$CONF"
 			if [[ "$USE_APPSEC" == "y" ]] && grep -q '^APPSEC_URL=$' "$CONF"; then
-				sed -i 's|^APPSEC_URL=.*|APPSEC_URL=http://127.0.0.1:7422|' "$CONF"
+				sed -i "s|^APPSEC_URL=.*|APPSEC_URL=http://$CROWDSEC_SERVICE_HOST:7422|" "$CONF"
 			fi
 		fi
 	fi
@@ -1434,7 +1490,10 @@ else
 	echo "admin UI: https://localhost:81 via ssh tunnel: ssh -L 8081:localhost:81 <host>"
 fi
 if [[ "$ADMIN_BOOTSTRAP_ENABLED" != "true" ]]; then
-	echo "first-run admin credentials are in: docker logs npmplus"
+	echo "first-run setup token: docker exec npmplus cat /data/npmplus/setup-token"
+fi
+if [[ "$USE_HOST_NETWORK" != "y" ]]; then
+	echo "container networking: bridge (use host.docker.internal for proxy targets running on this host)"
 fi
 if [[ "$USE_CADDY" == "y" ]]; then
 	echo "caddy: port 80 now redirects everything to https"

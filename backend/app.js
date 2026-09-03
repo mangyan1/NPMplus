@@ -19,8 +19,8 @@ app.disable("x-powered-by");
 app.set("json spaces", 2);
 
 app.use(cookieParser(process.env.COOKIE_SECRET || crypto.randomBytes(16).toString("hex")));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb", parameterLimit: 1000 }));
 
 /**
  * General Logging, BEFORE routes
@@ -55,10 +55,12 @@ app.use("/", mainRoutes);
 // production error handler
 // no stacktraces leaked to user
 app.use((err, req, res, _) => {
+	const requestId = crypto.randomUUID();
 	const payload = {
 		error: {
 			code: err.status || 500,
 			message: err.public ? err.message : "Internal Error",
+			request_id: requestId,
 		},
 	};
 
@@ -66,18 +68,11 @@ app.use((err, req, res, _) => {
 		payload.error.message_i18n = err.message_i18n;
 	}
 
-	if ((req.baseUrl + req.originalUrl).includes("nginx/certificates")) {
-		payload.debug = {
-			stack: typeof err.stack !== "undefined" && err.stack ? err.stack.split("\n") : null,
-			previous: err.previous,
-		};
-	}
-
 	// Not every error is worth logging - but this is good for now until it gets annoying.
 	if (typeof err.stack !== "undefined" && err.stack) {
-		debug(logger, err.stack);
+		debug(logger, `[${requestId}] ${err.stack}`);
 		if (typeof err.public === "undefined" || !err.public) {
-			logger.warn(`${req.method.toUpperCase()} ${req.originalUrl}: ${err}`);
+			logger.warn(`[${requestId}] ${req.method.toUpperCase()} ${req.originalUrl}: ${err}`);
 		}
 	}
 

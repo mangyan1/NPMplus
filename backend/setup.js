@@ -1,10 +1,12 @@
-import { readFile, writeFile } from "node:fs/promises";
+import crypto from "node:crypto";
+import { readFile, unlink, writeFile } from "node:fs/promises";
 import internalHost from "./internal/host.js";
 import internalNginx from "./internal/nginx.js";
 import internalProxyHost from "./internal/proxy-host.js";
 import internalProxyHostAccessList from "./internal/proxy-host-access-list.js";
 import Access from "./lib/access.js";
 import { installPlugins } from "./lib/certbot.js";
+import errs from "./lib/error.js";
 import utils from "./lib/utils.js";
 import { setup as logger } from "./logger.js";
 import authModel from "./models/auth.js";
@@ -16,6 +18,62 @@ import settingModel from "./models/setting.js";
 import streamModel from "./models/stream.js";
 import userModel from "./models/user.js";
 import userPermissionModel from "./models/user_permission.js";
+
+const setupTokenPath = process.env.INITIAL_SETUP_TOKEN_FILE || "/data/npmplus/setup-token";
+const setupTokenIsManaged = !process.env.INITIAL_SETUP_TOKEN && !process.env.INITIAL_SETUP_TOKEN_FILE;
+
+const readConfiguredSetupToken = async () => {
+	if (process.env.INITIAL_SETUP_TOKEN) return process.env.INITIAL_SETUP_TOKEN.trim();
+	try {
+		return (await readFile(setupTokenPath, "utf8")).trim();
+	} catch (err) {
+		if (err.code !== "ENOENT") throw err;
+		return "";
+	}
+};
+
+const ensureSetupToken = async () => {
+	if (await isSetup()) {
+		await removeSetupToken();
+		return;
+	}
+
+	const configuredToken = await readConfiguredSetupToken();
+	if (configuredToken) {
+		if (configuredToken.length < 32) {
+			throw new errs.ConfigurationError(
+				"The configured initial setup token must contain at least 32 characters.",
+			);
+		}
+		return;
+	}
+
+	const token = crypto.randomBytes(32).toString("hex");
+	try {
+		await writeFile(setupTokenPath, `${token}\n`, { mode: 0o600, flag: "wx" });
+	} catch (err) {
+		if (err.code !== "EEXIST") throw err;
+	}
+	logger.warn(`Initial setup is locked. Read the one-time token with: docker exec npmplus cat ${setupTokenPath}`);
+};
+
+const verifySetupToken = async (candidate) => {
+	const expected = await readConfiguredSetupToken();
+	if (!expected || typeof candidate !== "string") return false;
+	const supplied = candidate.trim();
+	const expectedBuffer = Buffer.from(expected);
+	const suppliedBuffer = Buffer.from(supplied);
+	return expectedBuffer.length === suppliedBuffer.length && crypto.timingSafeEqual(expectedBuffer, suppliedBuffer);
+};
+
+const removeSetupToken = async () => {
+	if (!setupTokenIsManaged) return;
+	try {
+		await unlink(setupTokenPath);
+	} catch (err) {
+		if (err.code !== "ENOENT") throw err;
+	}
+};
 
 /**
  * Creates a default admin users if one doesn't already exist in the database
@@ -70,6 +128,7 @@ const setupDefaultUser = async () => {
 			access_lists: "manage",
 			certificates: "manage",
 		});
+		await removeSetupToken();
 		logger.info(`Initial admin user creation completed: ${initialAdminEmail}`);
 	}
 };
@@ -123,10 +182,16 @@ const setupCertbotPlugins = async () => {
 			}
 		}
 
-		await installPlugins(plugins);
-
 		if (plugins.length > 0) {
-			logger.info(`Added Certbot plugins ${plugins.join(", ")}`);
+			try {
+				await installPlugins(plugins);
+				logger.info(`Certbot plugins are available: ${plugins.join(", ")}`);
+			} catch (err) {
+				// A missing optional DNS plugin must not keep the API offline. The
+				// affected renewal will fail explicitly until the operator uses an
+				// image that contains the reviewed plugin.
+				logger.warn(`Certbot plugin preload skipped: ${err.message}`);
+			}
 		}
 	}
 };
@@ -224,15 +289,19 @@ const setupAio = async () => {
 	}
 };
 
-export const isSetup = async () => {
+const isSetup = async () => {
 	const row = await userModel.query().select("id").where("is_deleted", 0).first();
 	return row?.id > 0;
 };
 
-export default async () => {
+const setup = async () => {
 	await setupDefaultUser();
+	await ensureSetupToken();
 	await setupDefaultSettings();
 	await setupCertbotPlugins();
 	await regenerateAllHosts();
 	await setupAio();
 };
+
+export { ensureSetupToken, isSetup, removeSetupToken, verifySetupToken };
+export default setup;

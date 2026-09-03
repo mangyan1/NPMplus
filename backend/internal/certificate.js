@@ -8,6 +8,7 @@ import { ZipArchive } from "archiver";
 import dayjs from "dayjs";
 import _ from "lodash";
 import dnsPlugins from "../certbot/dns-plugins.json" with { type: "json" };
+import { fetchWithTimeout, readBoundedJson } from "../lib/bounded-fetch.js";
 import { installPlugin } from "../lib/certbot.js";
 import error from "../lib/error.js";
 import utils from "../lib/utils.js";
@@ -932,17 +933,21 @@ const internalCertificate = {
 		logger.info(`Testing http challenge for ${domain}`);
 		let result;
 		try {
-			const response = await fetch("https://www.site24x7.com/tools/restapi-tester", {
-				method: "POST",
-				headers: {
-					"User-Agent": `NPMplus/${pjson.version}`,
-					"Content-Type": "application/x-www-form-urlencoded",
+			const response = await fetchWithTimeout(
+				"https://www.site24x7.com/tools/restapi-tester",
+				{
+					method: "POST",
+					headers: {
+						"User-Agent": `NPMplus/${pjson.version}`,
+						"Content-Type": "application/x-www-form-urlencoded",
+					},
+					body: `method=G&url=${encodeURI(`http://${domainToASCII(domain)}/.well-known/acme-challenge/test-challenge`)}&bodytype=T&locationid=10`,
 				},
-				body: `method=G&url=${encodeURI(`http://${domainToASCII(domain)}/.well-known/acme-challenge/test-challenge`)}&bodytype=T&locationid=10`,
-			});
+				10_000,
+			);
 
 			try {
-				result = await response.json();
+				result = await readBoundedJson(response, 256 * 1024);
 
 				if (!response.ok) {
 					logger.warn(

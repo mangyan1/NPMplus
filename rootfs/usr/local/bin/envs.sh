@@ -38,6 +38,36 @@ if [ -s /tmp/env.sha512sum ] && [ "$(cat /tmp/env.sha512sum)" != "$(sha512sum < 
 fi
 sha512sum < /data/.env > /tmp/env.sha512sum
 
+# Docker/Kubernetes secret-file support. A value and its corresponding _FILE
+# variable are mutually exclusive to avoid surprising precedence.
+load_secret() {
+    secret_name="$1"
+    eval "secret_value=\${$secret_name:-}"
+    eval "secret_file=\${${secret_name}_FILE:-}"
+    if [ -n "$secret_value" ] && [ -n "$secret_file" ]; then
+        echo "$secret_name and ${secret_name}_FILE cannot both be set."
+        sleep inf
+    fi
+    if [ -n "$secret_file" ]; then
+        if [ ! -r "$secret_file" ]; then
+            echo "Secret file for $secret_name is not readable."
+            sleep inf
+        fi
+        secret_value=$(cat "$secret_file")
+        export "$secret_name=$secret_value"
+        # Downstream processes only need the resolved value. Removing the file
+        # pointer also prevents later validation from mistaking this supported
+        # configuration for value-plus-file ambiguity.
+        unset "${secret_name}_FILE"
+    fi
+}
+
+for secret_name in COOKIE_SECRET OIDC_CLIENT_SECRET INITIAL_ADMIN_PASSWORD INITIAL_SETUP_TOKEN \
+    ACME_EAB_HMAC_KEY DB_MYSQL_PASSWORD DB_POSTGRES_PASSWORD; do
+    load_secret "$secret_name"
+done
+unset secret_name secret_value secret_file
+
 
 if [ -n "$NC_AIO" ] && ! echo "$NC_AIO" | grep -q "^true$\|^false$"; then
     echo "NC_AIO needs to be true or false."
@@ -134,6 +164,7 @@ export NGINX_LOAD_VHOST_TRAFFIC_STATUS_MODULE="${NGINX_LOAD_VHOST_TRAFFIC_STATUS
 export OIDC_REQUIRE_VERIFIED_EMAIL="${OIDC_REQUIRE_VERIFIED_EMAIL:-true}"
 export OIDC_DISABLE_PASSWORD="${OIDC_DISABLE_PASSWORD:-false}"
 export OIDC_SKIP_MFA="${OIDC_SKIP_MFA:-false}"
+export ALLOW_RUNTIME_CERTBOT_PLUGIN_INSTALL="${ALLOW_RUNTIME_CERTBOT_PLUGIN_INSTALL:-false}"
 if [ -s /data/anubis/happy.webp ] && [ -s /data/anubis/reject.webp ] && [ -s /data/anubis/pensive.webp ]; then
     export AUTH_REQUEST_ANUBIS_USE_CUSTOM_IMAGES="${AUTH_REQUEST_ANUBIS_USE_CUSTOM_IMAGES:-true}"
 else

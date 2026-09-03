@@ -6,8 +6,7 @@ on:
   pull_request:
   workflow_dispatch:
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -17,8 +16,6 @@ defaults:
 jobs:
   lint-and-format:
     runs-on: ubuntu-slim
-    env:
-      BIOME: ${{ github.event_name == 'pull_request' && 'ci' || 'check --write' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -26,41 +23,21 @@ jobs:
           node-version: lts/*
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
-          version: latest
+          version: 11.22.0
       - name: backend
         run: |
-          set -x
           cd backend
           pnpm install --frozen-lockfile
-          pnpm biome $BIOME --reporter=default --reporter=github | sed "s|,file=|,file=backend/|g" || echo "BIOME_FAILED=1" >> "$GITHUB_ENV"
+          pnpm biome ci --reporter=default --reporter=github
           node validate-schema.js
           pnpm test
       - name: frontend
         run: |
-          set -x
           cd frontend
           pnpm install --frozen-lockfile
-          pnpm biome $BIOME --reporter=default --reporter=github | sed "s|,file=|,file=frontend/|g" || echo "BIOME_FAILED=1" >> "$GITHUB_ENV"
+          pnpm biome ci --reporter=default --reporter=github
           ./translations/sort-locale.sh
           pnpm test
           pnpm vite build
-      - name: nginxbeautifier
-        run: |
-          pnpm add -g nginxbeautifier
-          nginxbeautifier -s 2 -r rootfs/usr/local/nginx/conf
-      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
-        if: ${{ github.event_name != 'pull_request' }}
-        with:
-          token: ${{ secrets.GH_PAT || github.token }}
-          signoff: true
-          delete-branch: true
-          commit-message: lint-and-format
-          branch: lint-and-format
-          title: lint-and-format
-          body: lint-and-format
       - name: diff
-        if: ${{ github.event_name == 'pull_request' }}
         run: git diff --exit-code
-      - name: biome
-        if: ${{ env.BIOME_FAILED == '1' }}
-        run: exit 1

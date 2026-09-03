@@ -69,6 +69,16 @@ class Auth extends Model {
 		return Auth.query().where("user_id", userId).andWhere("type", "password").first();
 	}
 
+	/**
+	 * Get an active OIDC identity binding.
+	 *
+	 * @param {string} identityHash
+	 * @returns {Promise<object|undefined>}
+	 */
+	static getOidcAuth(identityHash) {
+		return Auth.query().where("type", "oidc").andWhere("secret", identityHash).andWhere("is_deleted", 0).first();
+	}
+
 	static get name() {
 		return "Auth";
 	}
