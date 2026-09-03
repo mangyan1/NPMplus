@@ -64,6 +64,8 @@ Setup script v1.12 updates image references within their specific Compose servic
 
 Setup script v1.13 discovers the latest Anubis release through GitHub's public release redirect instead of the rate-limited anonymous REST API. An exhausted API quota can therefore no longer abort an otherwise healthy safe update.
 
+Setup script v1.14 installs a Docker `ExecStartPre` resolver-file gate for hosts where `network-online.target` becomes active before DHCP or resolvconf publishes a nameserver. It also recognizes and safely recreates an NPMplus container already stuck on `no name servers defined`; this repairs the failed boot before the transactional update takes its rollback baseline.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 ## Backups and restoration
@@ -128,7 +130,7 @@ sudo install -m 0755 /tmp/npmplus-boot-trace.sh /usr/local/sbin/npmplus-boot-tra
 sudo npmplus-boot-trace
 ```
 
-The report is written with mode `0600` under `/tmp/npmplus-boot-trace-*.log`. It includes systemd's Docker critical chain, network-online services, the current boot journal, container state/restart policy, recent container logs, Docker events, port listeners, and basic resource checks. Review it for hostnames and IP addresses before sharing it.
+The report is written with mode `0600` under `/tmp/npmplus-boot-trace-*.log`. It includes systemd's Docker critical chain, network-online services, host and NPMplus resolver files, the current boot journal, container state/restart policy, recent container logs, Docker events, port listeners, and basic resource checks. Review it for hostnames and IP addresses before sharing it.
 
 After a failed update, the last-good directory also contains `failed-ps.txt` and `failed-logs.txt`. The maintenance lock is `/run/lock/npmplus-maintenance.lock`; an update and a backup will not run concurrently.
 

@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.13"
+SCRIPT_VERSION="1.14"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -82,7 +82,8 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 	rm -f /etc/cron.d/npmplus-safe-update /etc/cron.d/npmplus-backup \
 		/etc/cron.d/npmplus-crowdsec-heal /etc/cron.d/anubis-honeypot
 	rm -f /usr/local/bin/npmplus-safe-update /usr/local/bin/npmplus-backup \
-		/usr/local/bin/npmplus-crowdsec-heal /usr/local/bin/anubis-honeypot-ban
+		/usr/local/bin/npmplus-crowdsec-heal /usr/local/bin/anubis-honeypot-ban \
+		/usr/local/sbin/npmplus-wait-for-dns
 	rm -f /var/log/npmplus-update.log /var/log/npmplus-backup.log /var/log/npmplus-crowdsec-heal.log
 
 	# Remove only the drop-in owned by this script. Other Docker overrides belong
@@ -706,20 +707,39 @@ fi
 # reboot leaves the whole stack down until someone starts docker by hand
 if command -v systemctl >/dev/null; then
 	systemctl enable docker.service >/dev/null 2>&1 || true
-	# ...and the daemon must not start containers before the vm's dns answers:
-	# nginx dies with "no name servers defined" and the ui stays down until
-	# restarted by hand. network-online.target is a no-op unless a wait-online
-	# service exists, so enable the one matching the active network stack
+	# The daemon must not snapshot an empty /etc/resolv.conf into host-networked
+	# containers. network-online.target is a no-op on some ifupdown/dhcpcd hosts,
+	# so also put an explicit resolver-file gate in Docker's startup path.
 	if systemctl is-active --quiet systemd-networkd.service; then
 		systemctl enable systemd-networkd-wait-online.service >/dev/null 2>&1 || true
 	elif systemctl is-active --quiet NetworkManager.service; then
 		systemctl enable NetworkManager-wait-online.service >/dev/null 2>&1 || true
 	fi
+	cat >/usr/local/sbin/npmplus-wait-for-dns <<'EOF'
+#!/bin/sh
+# Docker copies the host resolver file into existing containers when it starts.
+# Wait until DHCP/resolvconf has published at least one server. This intentionally
+# checks configuration rather than an Internet hostname, so an offline LAN can
+# still start Docker and serve existing proxy routes.
+resolver_file=${NPMPLUS_RESOLV_CONF:-/etc/resolv.conf}
+if ! awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' \
+	"$resolver_file" 2>/dev/null; then
+	echo "npmplus: waiting for a nameserver in $resolver_file before Docker starts" >&2
+	until awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' \
+		"$resolver_file" 2>/dev/null; do
+		sleep 1
+	done
+fi
+EOF
+	chmod 755 /usr/local/sbin/npmplus-wait-for-dns
 	mkdir -p /etc/systemd/system/docker.service.d
 	cat >/etc/systemd/system/docker.service.d/10-wait-for-dns.conf <<'UNIT'
 [Unit]
-After=network-online.target systemd-resolved.service
+After=network-online.target nss-lookup.target systemd-resolved.service dhcpcd.service
 Wants=network-online.target
+
+[Service]
+ExecStartPre=/usr/local/sbin/npmplus-wait-for-dns
 UNIT
 	systemctl daemon-reload >/dev/null 2>&1 || true
 fi
@@ -774,6 +794,30 @@ if [[ "${1:-}" == "--update" ]]; then
 			prepare_anubis_data "$ANUBIS_CURRENT_IMAGE"
 			if [[ "$(docker inspect --format '{{.State.Restarting}}' npmplus-anubis)" == "true" ]]; then
 				docker restart npmplus-anubis >/dev/null
+			fi
+		fi
+		# Docker can snapshot an empty host resolv.conf into this host-networked
+		# container during boot. Its nginx retry cannot see the host file recover
+		# because Docker's copy stays empty. Repair only this exact failure before
+		# the safe-update wrapper evaluates the rollback baseline.
+		if docker inspect npmplus >/dev/null 2>&1 && \
+			grep -q 'no name servers defined' <<<"$(docker logs --tail 200 npmplus 2>&1)" && \
+			! docker exec npmplus awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' /etc/resolv.conf >/dev/null 2>&1 && \
+			awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' /etc/resolv.conf; then
+			say "repairing npmplus container created with an empty boot resolver"
+			docker compose -f "$COMPOSE_FILE" up -d --no-deps --force-recreate npmplus
+			repaired=false
+			for _ in $(seq 1 180); do
+				if [[ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' npmplus)" == "healthy" ]]; then
+					repaired=true
+					break
+				fi
+				sleep 1
+			done
+			if [[ "$repaired" != "true" ]]; then
+				docker logs --tail 100 npmplus >&2 || true
+				echo "npmplus resolver repair did not become healthy" >&2
+				exit 1
 			fi
 		fi
 		candidate=$(readlink -f "$0")

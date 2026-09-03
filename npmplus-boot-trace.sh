@@ -50,6 +50,8 @@ for unit in \
 done
 
 run ip -brief address
+run readlink -f /etc/resolv.conf
+run cat /etc/resolv.conf
 run getent ahosts ghcr.io
 if command -v resolvectl >/dev/null; then
 	run resolvectl query ghcr.io
@@ -88,6 +90,9 @@ if [[ -s "$COMPOSE" ]]; then
 		run docker inspect --format \
 			'name={{.Name}} state={{.State.Status}} exit={{.State.ExitCode}} error={{printf "%q" .State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} restart={{.HostConfig.RestartPolicy.Name}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
 			"$cid"
+		if [[ "$service" == "npmplus" ]]; then
+			run docker exec "$cid" cat /etc/resolv.conf
+		fi
 		run docker logs --since "$BOOT_TIME" --tail 200 "$cid"
 	done
 else
