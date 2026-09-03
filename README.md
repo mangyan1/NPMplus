@@ -58,7 +58,7 @@ wget -O setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/deve
 sudo bash setup-npmplus.sh
 ```
 
-See [docs/setup-npmplus.md](docs/setup-npmplus.md) for update, rollback, backup restoration, uninstall, and troubleshooting procedures.
+See [docs/setup-npmplus.md](docs/setup-npmplus.md) for update, rollback, backup restoration, uninstall, and reboot diagnostics with `npmplus-boot-trace.sh`.
 
 Later updates: repeat the `wget` line, review the downloaded change, and run `sudo bash setup-npmplus.sh --update` instead. Manual and scheduled updates both go through the transactional snapshot/health/revert wrapper. The script checks its version and content against GitHub at startup; `--update` stops when a newer script exists instead of silently using stale host logic. To wipe the install completely: `sudo bash setup-npmplus.sh --uninstall` — it takes one final backup first (kept in `/var/backups/npmplus`, `--no-backup` skips that) and aborts if that backup fails. It removes only NPMplus containers, data and owned tooling; shared images, unrelated Docker drop-ins/packages and UFW rules are left alone.
 

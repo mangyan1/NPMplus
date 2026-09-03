@@ -99,6 +99,23 @@ sudo tail -n 200 /var/log/npmplus-crowdsec-heal.log
 sudo bash crowdsec-doctor.sh
 ```
 
+For a failure after reboot, run the read-only boot tracer before manually restarting Docker or the Compose stack. This preserves the failed state in its report:
+
+```bash
+sudo bash npmplus-boot-trace.sh
+```
+
+If the repository is not present on the VM, install the tracer directly from this fork:
+
+```bash
+curl -fL --retry 5 -o /tmp/npmplus-boot-trace.sh \
+  https://raw.githubusercontent.com/mangyan1/NPMplus/develop/npmplus-boot-trace.sh
+sudo install -m 0755 /tmp/npmplus-boot-trace.sh /usr/local/sbin/npmplus-boot-trace
+sudo npmplus-boot-trace
+```
+
+The report is written with mode `0600` under `/tmp/npmplus-boot-trace-*.log`. It includes systemd's Docker critical chain, network-online services, the current boot journal, container state/restart policy, recent container logs, Docker events, port listeners, and basic resource checks. Review it for hostnames and IP addresses before sharing it.
+
 After a failed update, the last-good directory also contains `failed-ps.txt` and `failed-logs.txt`. The maintenance lock is `/run/lock/npmplus-maintenance.lock`; an update and a backup will not run concurrently.
 
 The GitHub smoke workflow exercises default and alternate installations on disposable Ubuntu runners. It verifies digest-pinned Compose images, administrator login with Compose-sensitive password characters, transactional update health checks, and uninstall preservation of operator-owned Docker configuration.
