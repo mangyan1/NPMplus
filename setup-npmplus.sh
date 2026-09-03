@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.14"
+SCRIPT_VERSION="1.15"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -798,10 +798,9 @@ if [[ "${1:-}" == "--update" ]]; then
 		fi
 		# Docker can snapshot an empty host resolv.conf into this host-networked
 		# container during boot. Its nginx retry cannot see the host file recover
-		# because Docker's copy stays empty. Repair only this exact failure before
-		# the safe-update wrapper evaluates the rollback baseline.
+		# because Docker's copy stays empty. Repair that broken resolver before the
+		# safe-update wrapper evaluates the rollback baseline.
 		if docker inspect npmplus >/dev/null 2>&1 && \
-			grep -q 'no name servers defined' <<<"$(docker logs --tail 200 npmplus 2>&1)" && \
 			! docker exec npmplus awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' /etc/resolv.conf >/dev/null 2>&1 && \
 			awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' /etc/resolv.conf; then
 			say "repairing npmplus container created with an empty boot resolver"

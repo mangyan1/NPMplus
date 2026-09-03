@@ -64,7 +64,9 @@ Setup script v1.12 updates image references within their specific Compose servic
 
 Setup script v1.13 discovers the latest Anubis release through GitHub's public release redirect instead of the rate-limited anonymous REST API. An exhausted API quota can therefore no longer abort an otherwise healthy safe update.
 
-Setup script v1.14 installs a Docker `ExecStartPre` resolver-file gate for hosts where `network-online.target` becomes active before DHCP or resolvconf publishes a nameserver. It also recognizes and safely recreates an NPMplus container already stuck on `no name servers defined`; this repairs the failed boot before the transactional update takes its rollback baseline.
+Setup script v1.14 installs a Docker `ExecStartPre` resolver-file gate for hosts where `network-online.target` becomes active before DHCP or resolvconf publishes a nameserver.
+
+Setup script v1.15 recognizes and safely recreates an NPMplus container whose Docker-managed resolver file is empty while the host resolver is populated. This repairs an existing `no name servers defined` boot failure before the transactional update takes its rollback baseline.
 
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 

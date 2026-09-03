@@ -115,7 +115,7 @@ jobs:
           # copy installed without its execute bit, plus the root-owned Anubis
           # data directory produced by v1.6. Also reproduce the real reboot
           # failure: Docker preserved an empty resolver file in the existing
-          # host-networked container. The downloaded v1.14 script must repair
+          # host-networked container. The downloaded v1.15 script must repair
           # all three before entering the transactional update.
           sudo sed -i 's/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=3/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=2/' /usr/local/bin/npmplus-safe-update
           sudo chmod 0644 /opt/npmplus/setup-npmplus.sh
@@ -138,16 +138,10 @@ jobs:
           sudo chown -R 0:0 /opt/anubis-data
           sudo docker restart npmplus-anubis
           sudo docker exec npmplus sh -c ': > /etc/resolv.conf'
-          sudo docker restart npmplus
-          resolver_failure=false
-          for _ in $(seq 1 30); do
-            if grep -q 'no name servers defined' <<<"$(sudo docker logs --tail 100 npmplus 2>&1)"; then
-              resolver_failure=true
-              break
-            fi
-            sleep 1
-          done
-          test "$resolver_failure" = true
+          if sudo docker exec npmplus awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' /etc/resolv.conf; then
+            echo "resolver failure fixture is not empty" >&2
+            exit 1
+          fi
           sudo bash setup-npmplus.sh --update
           sudo test -x /opt/npmplus/setup-npmplus.sh
           sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=3' /usr/local/bin/npmplus-safe-update
