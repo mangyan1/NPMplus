@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.11"
+SCRIPT_VERSION="1.12"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -157,7 +157,32 @@ pin_image() { # mutable channel -> immutable local platform repo digest
 		echo "could not resolve an immutable digest for $channel" >&2
 		return 1
 	}
-	printf '%s\n' "$digest"
+	# Keep the channel tag before the digest. NPMplus and Caddy deliberately use
+	# different tags in the same repository, so dropping it makes their pinned
+	# references indistinguishable during a later update.
+	printf '%s@%s\n' "$channel" "${digest#*@}"
+}
+
+set_compose_service_image() { # set_compose_service_image <service> <image-ref>
+	local service="$1" image_ref="$2" tmp
+	tmp=$(mktemp "${COMPOSE_FILE}.XXXXXX")
+	if ! awk -v service="$service" -v image_ref="$image_ref" '
+		$0 == "  " service ":" { in_service=1 }
+		in_service && $0 ~ /^  [^ ]/ && $0 != "  " service ":" { in_service=0 }
+		in_service && $0 ~ /^    image:/ {
+			print "    image: " image_ref
+			replaced=1
+			next
+		}
+		{ print }
+		END { if (!replaced) exit 1 }
+	' "$COMPOSE_FILE" >"$tmp"; then
+		rm -f "$tmp"
+		echo "could not update image for Compose service $service" >&2
+		return 1
+	fi
+	chmod --reference="$COMPOSE_FILE" "$tmp"
+	mv "$tmp" "$COMPOSE_FILE"
 }
 
 # The official Anubis image is non-root. A root-owned bind mount lets it read
@@ -748,14 +773,14 @@ if [[ "${1:-}" == "--update" ]]; then
 	# Resolve update channels once, then persist immutable digests in compose.
 	# Later registry tag movement cannot silently change a deployed stack.
 	NPMPLUS_IMAGE=$(pin_image "$NPMPLUS_IMAGE_CHANNEL")
-	sed -i -E "s|^(    image: )ghcr.io/mangyan1/npmplus(:develop)?(@sha256:[0-9a-f]{64})?$|\1$NPMPLUS_IMAGE|" "$COMPOSE_FILE"
+	set_compose_service_image npmplus "$NPMPLUS_IMAGE"
 	if grep -q "container_name: crowdsec" "$COMPOSE_FILE"; then
 		CROWDSEC_IMAGE=$(pin_image "$CROWDSEC_IMAGE_CHANNEL")
-		sed -i -E "s|^(    image: )(docker.io/)?crowdsecurity/crowdsec(:latest)?(@sha256:[0-9a-f]{64})?$|\1$CROWDSEC_IMAGE|" "$COMPOSE_FILE"
+		set_compose_service_image crowdsec "$CROWDSEC_IMAGE"
 	fi
 	if grep -q "container_name: npmplus-caddy" "$COMPOSE_FILE"; then
 		CADDY_IMAGE=$(pin_image "$CADDY_IMAGE_CHANNEL")
-		sed -i -E "s|^(    image: )ghcr.io/mangyan1/npmplus(:caddy)?(@sha256:[0-9a-f]{64})?$|\1$CADDY_IMAGE|" "$COMPOSE_FILE"
+		set_compose_service_image npmplus-caddy "$CADDY_IMAGE"
 	fi
 	# refresh the generated host tooling (safe-update, backup, key heal) so
 	# improvements reach existing installs, not just fresh ones
@@ -765,7 +790,7 @@ if [[ "${1:-}" == "--update" ]]; then
 	if grep -q "npmplus-anubis" "$COMPOSE_FILE"; then
 		ANUBIS_VERSION=$(anubis_latest_version)
 		ANUBIS_IMAGE=$(pin_image "ghcr.io/techarohq/anubis:$ANUBIS_VERSION")
-		sed -i -E "s|^(    image: )ghcr.io/techarohq/anubis(:[^@[:space:]]+)?@?((sha256:)?[0-9a-f]{64})?$|\1$ANUBIS_IMAGE|" "$COMPOSE_FILE"
+		set_compose_service_image anubis "$ANUBIS_IMAGE"
 		# keep the catchall choice from the existing policy
 		CATCHALL="n"
 		grep -q "name: everything-else" /opt/anubis.yaml 2>/dev/null && CATCHALL="y"

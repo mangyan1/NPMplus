@@ -60,6 +60,8 @@ Setup script v1.10 bumps the generated safe-update wrapper to version 3, ensurin
 
 Setup script v1.11 retries Compose deployment once when Docker has not yet released a published port from the container being replaced. Persistent port conflicts still trigger the normal automatic rollback.
 
+Setup script v1.12 updates image references within their specific Compose service and retains the source tag alongside each immutable digest. This prevents the `develop` application and `caddy` images, which share one container repository, from being confused during an update.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 ## Backups and restoration
