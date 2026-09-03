@@ -141,7 +141,7 @@ jobs:
           sudo docker restart npmplus
           resolver_failure=false
           for _ in $(seq 1 30); do
-            if sudo docker logs --tail 100 npmplus 2>&1 | grep -q 'no name servers defined'; then
+            if grep -q 'no name servers defined' <<<"$(sudo docker logs --tail 100 npmplus 2>&1)"; then
               resolver_failure=true
               break
             fi
