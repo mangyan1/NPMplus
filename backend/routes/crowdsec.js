@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import process from "node:process";
 import express from "express";
 import internalAuditLog from "../internal/audit-log.js";
-import { fetchWithTimeout, readBoundedJson } from "../lib/bounded-fetch.js";
+import { fetchWithTimeout, readBoundedJson, readBoundedText } from "../lib/bounded-fetch.js";
 import {
 	hasCrowdsecAdminAccess,
 	normalizeCrowdsecAlerts,
@@ -21,17 +21,25 @@ const LAPI_MACHINE_ID = process.env.CROWDSEC_LAPI_MACHINE_ID || "npmplus-ui";
 const LAPI_MACHINE_KEY_FILE = process.env.CROWDSEC_LAPI_MACHINE_KEY_FILE || "/data/crowdsec/lapi-ui-machine.key";
 const LAPI_DECISION_LIMIT = 200;
 const LAPI_ALERT_LIMIT = 5;
+const LAPI_HONEYPOT_LIMIT = 25;
 const MACHINE_TOKEN_TTL_MS = 30 * 1000;
 const SCOPE_PATTERN = /^[a-zA-Z]{1,32}$/;
 const configuredTimeout = Number.parseInt(process.env.CROWDSEC_LAPI_TIMEOUT_MS || "5000", 10);
 const LAPI_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 5000;
 const LAPI_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const ANUBIS_UPSTREAM = process.env.AUTH_REQUEST_ANUBIS_UPSTREAM || "";
+const ANUBIS_TIMEOUT_MS = 3000;
+const ANUBIS_MAX_RESPONSE_BYTES = 64 * 1024;
+const HONEYPOT_SCENARIO = "anubis-honeypot";
+const HONEYPOT_IP_PATTERN = /^[0-9a-fA-F.:]+$/;
+const HONEYPOT_LOG_PATH = process.env.ANUBIS_HONEYPOT_LOG_FILE || "/data/anubis/honeypot.addrs";
+const HONEYPOT_LOG_MAX_BYTES = 256 * 1024;
 
 const publicError = (message, status) => Object.assign(new Error(message), { public: true, status });
 
-const fetchCrowdsec = async (url, options) => {
+const fetchCrowdsec = async (url, options = {}, timeoutMs = LAPI_TIMEOUT_MS) => {
 	try {
-		return await fetchWithTimeout(url, options, LAPI_TIMEOUT_MS);
+		return await fetchWithTimeout(url, options, timeoutMs);
 	} catch (err) {
 		debug(logger, `CrowdSec request failed: ${err}`);
 		throw publicError("crowdsec.unavailable", 502);
@@ -45,6 +53,27 @@ const readCrowdsecJson = async (response, maxBytes = LAPI_MAX_RESPONSE_BYTES) =>
 		debug(logger, `CrowdSec response was invalid: ${err}`);
 		throw publicError("crowdsec.invalid-response", 502);
 	}
+};
+
+// the honeypot log lives on the anubis data volume, readable by the backend;
+// newest-last per the writer (anubis appends), capped at the configured size
+const readRecentHoneypotIps = async () => {
+	let content;
+	try {
+		content = await readFile(HONEYPOT_LOG_PATH, "utf8");
+	} catch (err) {
+		if (err?.code === "ENOENT") return [];
+		debug(logger, `Anubis honeypot log is unreadable: ${err}`);
+		return [];
+	}
+	if (content.length > HONEYPOT_LOG_MAX_BYTES) {
+		content = content.slice(-HONEYPOT_LOG_MAX_BYTES);
+	}
+	return content
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0 && line.length <= 45)
+		.filter((line) => HONEYPOT_IP_PATTERN.test(line));
 };
 
 const lapiFetch = async (path) => {
@@ -136,6 +165,82 @@ const sendError = (req, res, next, err) => {
 	}
 	next(err);
 };
+
+router
+	.route("/anubis")
+	.options((_, res) => res.sendStatus(204))
+	.all(jwtdecode())
+	.get(async (req, res, next) => {
+		try {
+			if (!(await requireAdmin(res))) {
+				res.status(403).send({ error: { message: "access.denied" } });
+				return;
+			}
+
+			const response = {
+				configured: Boolean(ANUBIS_UPSTREAM),
+				honeypot: { activeCount: 0, truncated: false, items: [] },
+				container: { up: null, error: null },
+				recent: [],
+			};
+
+			// 1. active honeypot bans straight from the LAPI, filtered by scenario.
+			//    run in parallel with the other probes; a LAPI outage must not hide
+			//    the container state and vice versa.
+			const probes = [];
+			probes.push(
+				lapiFetch(`/v1/decisions?scenarios_containing=${HONEYPOT_SCENARIO}&limit=${LAPI_HONEYPOT_LIMIT + 1}`)
+					.then((payload) => {
+						const decisions = normalizeCrowdsecDecisions(payload);
+						response.honeypot = {
+							activeCount: decisions.length,
+							truncated: decisions.length > LAPI_HONEYPOT_LIMIT,
+							items: decisions.slice(0, LAPI_HONEYPOT_LIMIT),
+						};
+					})
+					.catch((err) => {
+						debug(logger, `Anubis honeypot decisions unavailable: ${err.message}`);
+						throw err;
+					}),
+			);
+
+			// 2. container health via anubis' own /healthz (only when wired up).
+			//    The upstream env is the same one nginx uses for auth_request, so
+			//    this works in every install the integration works in.
+			if (ANUBIS_UPSTREAM) {
+				probes.push(
+					fetchCrowdsec(`${ANUBIS_UPSTREAM}/healthz`, { method: "GET" }, ANUBIS_TIMEOUT_MS)
+						.then(async (upstreamResponse) => {
+							// discard the body but keep it bounded: it is public text
+							await readBoundedText(upstreamResponse, ANUBIS_MAX_RESPONSE_BYTES);
+							response.container.up = upstreamResponse.ok;
+							if (!upstreamResponse.ok) response.container.error = `http-${upstreamResponse.status}`;
+						})
+						.catch((err) => {
+							debug(logger, `Anubis healthz probe failed: ${err.message}`);
+							response.container.up = false;
+							response.container.error = "crowdsec.anubis-unreachable";
+						}),
+				);
+			}
+
+			// 3. recent honeypot catches from the log anubis writes on the shared
+			//    data volume. the backend never writes it, it only reads.
+			probes.push(
+				readRecentHoneypotIps().then((ips) => {
+					// newest-last from the log writer; the view wants newest-first
+					response.recent = ips.slice(-20).reverse();
+				}),
+			);
+
+			// the LAPI query is the only probe that must succeed; container state
+			// and recent IPs degrade to neutral values instead of failing the page
+			await Promise.all(probes);
+			res.status(200).send(response);
+		} catch (err) {
+			sendError(req, res, next, err);
+		}
+	});
 
 router
 	.route("/decisions")

@@ -11,7 +11,7 @@ import Alert from "react-bootstrap/Alert";
 import type { CrowdsecAlert, CrowdsecDecision } from "src/api/backend";
 import { Button, HasPermission } from "src/components";
 import { useLocaleState } from "src/context";
-import { useCrowdsecAlerts, useCrowdsecDecisions, useUnbanCrowdsecDecision } from "src/hooks";
+import { useAnubisStatus, useCrowdsecAlerts, useCrowdsecDecisions, useUnbanCrowdsecDecision } from "src/hooks";
 import { formatDateTime, intl, T } from "src/locale";
 import { showDeleteConfirmModal } from "src/modals";
 import { ADMIN, VIEW } from "src/modules/Permissions";
@@ -390,9 +390,196 @@ const Content = () => {
 	);
 };
 
+// the anubis panel: honeypot ban count, the newest honeypot bans with their
+// remaining lifetime, recent raw catches from the honeypot log, and the
+// container health. every probe degrades individually, the page never blanks.
+const AnubisSection = () => {
+	const { isFetching, isError, error, data, dataUpdatedAt, refetch } = useAnubisStatus();
+	const { locale } = useLocaleState();
+	const unban = useUnbanCrowdsecDecision();
+
+	const confirmUnban = (decision: CrowdsecDecision) => {
+		showDeleteConfirmModal({
+			title: <T id="crowdsec.unban-title" data={{ target: decisionTarget(decision) }} />,
+			children: <T id="crowdsec.unban-content" data={{ id: decision.id }} />,
+			subject: decisionTarget(decision),
+			details: (
+				<T
+					id="crowdsec.unban-details"
+					data={{ origin: decision.origin, scenario: decision.scenario, type: decision.type }}
+				/>
+			),
+			confirmLabel: <T id="crowdsec.unban" />,
+			onConfirm: async () => {
+				const result = await unban.mutateAsync(decision.id);
+				if (!result.auditLogged) showError(intl.formatMessage({ id: "crowdsec.audit-warning" }));
+			},
+		});
+	};
+
+	if (!data) {
+		if (isError) {
+			return (
+				<Alert variant="danger" className="mt-4">
+					<T id={error?.message || "error.unknown"} />
+				</Alert>
+			);
+		}
+		return (
+			<div className="card mt-4">
+				<div className="card-status-top bg-orange" />
+				<div className="card-header">
+					<h2 className="mt-1 mb-0">{intl.formatMessage({ id: "crowdsec.anubis.title" })}</h2>
+				</div>
+				<div className="card-body py-5 d-flex justify-content-center">
+					<AnimatedLogo />
+				</div>
+			</div>
+		);
+	}
+
+	return (
+		<div className="card mt-4">
+			<div className="card-status-top bg-orange" />
+			<div className="card-header">
+				<div className="row w-full">
+					<div className="col">
+						<h2 className="mt-1 mb-0 d-flex align-items-center gap-2">
+							<T id="crowdsec.anubis.title" />
+							{data.container.up === null ? null : data.container.up ? (
+								<span className="badge bg-green-lt">
+									<T id="crowdsec.anubis.container-up" />
+								</span>
+							) : (
+								<span className="badge bg-red-lt">
+									<T id="crowdsec.anubis.container-down" />
+								</span>
+							)}
+							{!data.configured && (
+								<span className="badge bg-orange">
+									<T id="crowdsec.anubis.unconfigured" />
+								</span>
+							)}
+						</h2>
+					</div>
+					<div className="col-md-auto col-sm-12">
+						<div className="ms-auto d-flex flex-wrap btn-list">
+							<span className="text-secondary small me-2 my-auto">
+								<T
+									id="crowdsec.last-updated"
+									data={{ date: formatDateTime(new Date(dataUpdatedAt).toISOString(), locale) }}
+								/>
+							</span>
+							<Button
+								actionType="secondary"
+								variant="outline"
+								isLoading={isFetching}
+								onClick={() => refetch()}
+							>
+								<IconRefresh size={16} className="me-1" />
+								<T id="crowdsec.refresh" />
+							</Button>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div className="card-body py-0">
+				{isError && (
+					<Alert variant="warning" className="mt-3 mb-0">
+						<T id="crowdsec.stale" /> <T id={error?.message || "error.unknown"} />
+					</Alert>
+				)}
+				{data.configured === false && (
+					<Alert variant="info" className="mt-3 mb-0">
+						<T id="crowdsec.anubis.unconfigured" />
+					</Alert>
+				)}
+				{data.container.up === false && (
+					<Alert variant="danger" className="mt-3 mb-0">
+						<T id="crowdsec.anubis.container-down" />
+						{data.container.error === "crowdsec.anubis-unreachable" && (
+							<>
+								&nbsp;— <T id="crowdsec.anubis-unreachable" />
+							</>
+						)}
+					</Alert>
+				)}
+				<div className="text-secondary small py-2">
+					<T id="crowdsec.anubis.active" data={{ count: data.honeypot.activeCount }} />
+				</div>
+				{data.honeypot.items.length === 0 ? (
+					<div className="py-4 text-center text-secondary">
+						<T id="crowdsec.anubis.empty" />
+					</div>
+				) : (
+					<div className="table-responsive">
+						{data.honeypot.truncated && (
+							<div className="text-secondary small pb-2">
+								<T id="crowdsec.capped" data={{ count: data.honeypot.items.length }} />
+							</div>
+						)}
+						<table className="table card-table table-vh table-striped">
+							<thead>
+								<tr>
+									<th>
+										<T id="crowdsec.target" />
+									</th>
+									<th>
+										<T id="crowdsec.expires" />
+									</th>
+									<th>&nbsp;</th>
+								</tr>
+							</thead>
+							<tbody>
+								{data.honeypot.items.map((decision: CrowdsecDecision) => (
+									<tr key={decision.id}>
+										<td>{decisionTarget(decision)}</td>
+										<td title={decision.duration}>
+											{decision.duration ? (
+												<T id="crowdsec.expires-in" data={{ duration: decision.duration }} />
+											) : (
+												<T id="crowdsec.unknown-duration" />
+											)}
+										</td>
+										<td className="text-end">
+											<Button
+												size="sm"
+												actionType="danger"
+												onClick={() => confirmUnban(decision)}
+											>
+												<IconTrash size={16} className="me-1" />
+												<T id="crowdsec.unban" />
+											</Button>
+										</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</div>
+				)}
+				{data.recent.length > 0 && (
+					<>
+						<div className="text-secondary small py-2">
+							<T id="crowdsec.anubis.recent" />
+						</div>
+						<div className="pb-3">
+							{data.recent.map((ip) => (
+								<span key={ip} className="badge bg-secondary-lt me-1 mb-1">
+									{ip}
+								</span>
+							))}
+						</div>
+					</>
+				)}
+			</div>
+		</div>
+	);
+};
+
 const Crowdsec = () => (
 	<HasPermission section={ADMIN} permission={VIEW} pageLoading loadingNoLogo>
 		<Content />
+		<AnubisSection />
 	</HasPermission>
 );
 

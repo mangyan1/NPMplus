@@ -19,6 +19,7 @@ export * from "./downloadCertificate";
 export * from "./expansions";
 export * from "./getAccessList";
 export * from "./getAccessLists";
+export * from "./getAnubisStatus";
 export * from "./getAuditLog";
 export * from "./getAuditLogs";
 export * from "./getCertificate";

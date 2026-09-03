@@ -1170,6 +1170,12 @@ $ENV_TZ
       - "/opt/anubis.yaml:/etc/botPolicies.yaml:ro"
       - "/opt/anubis-data:/data"
 EOF
+
+	# the admin UI's anubis section reads the honeypot log from inside the
+	# npmplus container; mount only the log file, read-only, never the store
+	HONEYPOT_LOG_MOUNT='      - "/opt/anubis-data/anubis/honeypot.addrs:/data/anubis/honeypot.addrs:ro"'
+else
+	HONEYPOT_LOG_MOUNT=""
 fi
 
 CADDY_BLOCK=""
@@ -1214,6 +1220,7 @@ $NPMPLUS_NETWORK_BLOCK
 $ADMIN_SECRET_MOUNT
     volumes:
       - "$DATA_DIR:/data"
+$HONEYPOT_LOG_MOUNT
     environment:
 $ENV_TZ
       - "PUID=1000"
