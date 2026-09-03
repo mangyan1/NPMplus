@@ -204,20 +204,23 @@ router
 					}),
 			);
 
-			// 2. container health via anubis' own /healthz (only when wired up).
-			//    The upstream env is the same one nginx uses for auth_request, so
-			//    this works in every install the integration works in.
+			// 2. container health (only when wired up). anubis' /healthz lives on
+			//    its separate metrics listener (:9090 by default) which this
+			//    stack does not publish, so probing the auth_request upstream
+			//    (the main :8923 listener) must treat ANY http response - even
+			//    a 401/403 policy rejection or a redirect - as "the container is
+			//    serving". only a network error/timeout means it is actually
+			//    down, so follow no redirects and never throw on them.
 			if (ANUBIS_UPSTREAM) {
 				probes.push(
-					fetchCrowdsec(`${ANUBIS_UPSTREAM}/healthz`, { method: "GET" }, ANUBIS_TIMEOUT_MS)
+					fetchCrowdsec(ANUBIS_UPSTREAM, { method: "GET", redirect: "manual" }, ANUBIS_TIMEOUT_MS)
 						.then(async (upstreamResponse) => {
-							// discard the body but keep it bounded: it is public text
+							// discard the body but keep it bounded: it is a challenge page
 							await readBoundedText(upstreamResponse, ANUBIS_MAX_RESPONSE_BYTES);
-							response.container.up = upstreamResponse.ok;
-							if (!upstreamResponse.ok) response.container.error = `http-${upstreamResponse.status}`;
+							response.container.up = true;
 						})
 						.catch((err) => {
-							debug(logger, `Anubis healthz probe failed: ${err.message}`);
+							debug(logger, `Anubis upstream probe failed: ${err.message}`);
 							response.container.up = false;
 							response.container.error = "crowdsec.anubis-unreachable";
 						}),
