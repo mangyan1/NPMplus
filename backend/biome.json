@@ -75,5 +75,27 @@
 				"organizeImports": "on"
 			}
 		}
-	}
+	},
+	"overrides": [
+		{
+			"includes": [".smoke/**/*.mjs"],
+			"linter": {
+				"rules": {
+					"security": {
+						"noSecrets": "off"
+					},
+					"correctness": {
+						"noUnusedFunctionParameters": "off"
+					},
+					"suspicious": {
+						"noReturnAssign": "off",
+						"useAwait": "off"
+					},
+					"performance": {
+						"useTopLevelRegex": "off"
+					}
+				}
+			}
+		}
+	]
 }

@@ -115,17 +115,25 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 		body: JSON.stringify({ id: 2 }),
 	});
 	const unbanBody = await unban.json();
-	check("POST delete -> 200 nbDeleted 1", unban.status === 200 && unbanBody.nbDeleted === "1", `got ${unban.status} ${JSON.stringify(unbanBody)}`);
+	check(
+		"POST delete -> 200 nbDeleted 1",
+		unban.status === 200 && unbanBody.nbDeleted === "1",
+		`got ${unban.status} ${JSON.stringify(unbanBody)}`,
+	);
 	const newRows = db.prepare("select * from audit_log order by id desc limit 1").get();
 	check(
 		"audit row written for the unban",
-		auditBefore >= 0 && newRows.action === "deleted" && newRows.object_type === "crowdsec-decision" && JSON.parse(newRows.meta).decisionId === 2,
+		auditBefore >= 0 &&
+			newRows.action === "deleted" &&
+			newRows.object_type === "crowdsec-decision" &&
+			JSON.parse(newRows.meta).decisionId === 2,
 		JSON.stringify(newRows),
 	);
 	const after = JSON.parse(await readFile(path.join(SMOKEDIR, "lapi-requests.json"), "utf8"));
 	check(
 		"machine login + bearer delete hit the lapi",
-		after.some((r) => r.method === "POST" && r.path === "/v1/watchers/login") && after.some((r) => r.method === "DELETE" && r.path.startsWith("/v1/decisions/")),
+		after.some((r) => r.method === "POST" && r.path === "/v1/watchers/login") &&
+			after.some((r) => r.method === "DELETE" && r.path.startsWith("/v1/decisions/")),
 		JSON.stringify(after.map((r) => `${r.method} ${r.path}`)),
 	);
 
@@ -153,8 +161,8 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 	check(
 		"alerts without machine key -> 503 crowdsec.not-wired-machine",
 		noMachine.status === 503 && (await noMachine.json()).error?.message === "crowdsec.not-wired-machine",
-			`got ${noMachine.status}`,
-		);
+		`got ${noMachine.status}`,
+	);
 	await writeFile(MACHINE_FILE, "smoke-machine-password-123456");
 
 	// 9. anubis status: honeypot bans filtered by scenario, container probed
@@ -163,25 +171,25 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 	const anubisBody = await anubis.json();
 	check(
 		"GET anubis -> 200 with the honeypot decision",
-			anubis.status === 200 &&
-				anubisBody.honeypot.activeCount === 1 &&
-				anubisBody.honeypot.items[0]?.value === "203.0.113.9" &&
-				anubisBody.honeypot.items[0]?.scenario === "anubis-honeypot",
+		anubis.status === 200 &&
+			anubisBody.honeypot.activeCount === 1 &&
+			anubisBody.honeypot.items[0]?.value === "203.0.113.9" &&
+			anubisBody.honeypot.items[0]?.scenario === "anubis-honeypot",
 		`got ${anubis.status} ${JSON.stringify(anubisBody).slice(0, 120)}`,
 	);
 	check(
 		"anubis lapi query filters by the honeypot scenario",
-			(await lapiLog()).some((r) => r.query?.includes("scenarios_containing=anubis-honeypot")),
+		(await lapiLog()).some((r) => r.query?.includes("scenarios_containing=anubis-honeypot")),
 		JSON.stringify((await lapiLog()).map((r) => r.query)),
 	);
 	check(
 		"anubis container counts a 401 policy response as up",
-			anubisBody.configured === true && anubisBody.container.up === true && !anubisBody.container.error,
+		anubisBody.configured === true && anubisBody.container.up === true && !anubisBody.container.error,
 		JSON.stringify(anubisBody.container),
 	);
 	check(
 		"anubis recent list reads the mounted honeypot log",
-			(anubisBody.recent ?? []).length === 3 && anubisBody.recent[0] === "203.0.113.99",
+		(anubisBody.recent ?? []).length === 3 && anubisBody.recent[0] === "203.0.113.99",
 		JSON.stringify(anubisBody.recent),
 	);
 
@@ -192,7 +200,9 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 	const anubisDownBody = await anubisDown.json();
 	check(
 		"a not-answering anubis reads as down",
-			anubisDown.status === 200 && anubisDownBody.container.up === false && anubisDownBody.container.error === "crowdsec.anubis-unreachable",
+		anubisDown.status === 200 &&
+			anubisDownBody.container.up === false &&
+			anubisDownBody.container.error === "crowdsec.anubis-unreachable",
 		JSON.stringify(anubisDownBody.container),
 	);
 	fakeAnubis.setAnswering(true);

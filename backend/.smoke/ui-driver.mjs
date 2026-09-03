@@ -2,7 +2,23 @@
 // layer served from fixtures via playwright route interception.
 // checks the five enhancements as a user sees them: search, relative expiry,
 // unban with confirm modal, alert context expansion, and the table itself.
-import { chromium } from "file:///C:/Users/Hashi/AppData/Roaming/npm/node_modules/playwright/index.mjs";
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import process from "node:process";
+
+// playwright is not a project dependency (it is heavy and platform specific):
+// resolve it from the environment or the global npm root so the driver runs
+// on any machine without a hardcoded user path. shell:true is required for
+// .cmd shims on Windows; the fixed argv here is safe.
+const globalRoot =
+	process.env.PLAYWRIGHT_ROOT ?? execFileSync("npm", ["root", "-g"], { shell: true }).toString().trim();
+const playwrightEntry = path.join(globalRoot, "playwright", "index.mjs");
+if (!existsSync(playwrightEntry)) {
+	console.error("playwright is not installed globally. Install it with: npm i -g playwright");
+	process.exit(1);
+}
+const { chromium } = await import(`file://${playwrightEntry.replace(/\\/g, "/")}`);
 
 const iso = (ms) => new Date(Date.now() + ms).toISOString();
 const in3d = iso(3 * 86400 * 1000);
@@ -11,14 +27,65 @@ const in45s = iso(45 * 1000);
 const past = iso(-3600 * 1000);
 
 const decisions = [
-	{ id: 4, uuid: "d4", scope: "Ip", value: "203.0.113.9", type: "ban", origin: "cscli", scenario: "anubis-honeypot", duration: "24h", until: in3d, simulated: false },
-	{ id: 3, uuid: "d3", scope: "Ip", value: "198.51.100.7", type: "ban", origin: "crowdsec", scenario: "crowdsecurity/http-probing", duration: "4h", until: in2h, simulated: false },
-	{ id: 2, uuid: "d2", scope: "Ip", value: "192.0.2.55", type: "ban", origin: "capi", scenario: "crowdsecurity/ssh-bf", duration: "1h", until: in45s, simulated: false },
-	{ id: 1, uuid: "d1", scope: "Ip", value: "192.0.2.10", type: "ban", origin: "cscli", scenario: "manual", duration: "1h", until: past, simulated: true },
+	{
+		id: 4,
+		uuid: "d4",
+		scope: "Ip",
+		value: "203.0.113.9",
+		type: "ban",
+		origin: "cscli",
+		scenario: "anubis-honeypot",
+		duration: "24h",
+		until: in3d,
+		simulated: false,
+	},
+	{
+		id: 3,
+		uuid: "d3",
+		scope: "Ip",
+		value: "198.51.100.7",
+		type: "ban",
+		origin: "crowdsec",
+		scenario: "crowdsecurity/http-probing",
+		duration: "4h",
+		until: in2h,
+		simulated: false,
+	},
+	{
+		id: 2,
+		uuid: "d2",
+		scope: "Ip",
+		value: "192.0.2.55",
+		type: "ban",
+		origin: "capi",
+		scenario: "crowdsecurity/ssh-bf",
+		duration: "1h",
+		until: in45s,
+		simulated: false,
+	},
+	{
+		id: 1,
+		uuid: "d1",
+		scope: "Ip",
+		value: "192.0.2.10",
+		type: "ban",
+		origin: "cscli",
+		scenario: "manual",
+		duration: "1h",
+		until: past,
+		simulated: true,
+	},
 ];
 
 const alerts = [
-	{ id: 99, message: "http-probing from 198.51.100.7", scenario: "crowdsecurity/http-probing", started_at: iso(-3600 * 1000), events_count: 6, events: [{}] },
+	{
+		id: 99,
+		message: "http-probing from 198.51.100.7",
+		scenario: "crowdsecurity/http-probing",
+		started_at: iso(-3600 * 1000),
+		events_count: 6,
+		events: [{}],
+	},
 ];
 
 const seen = { deleted: null, alertsFor: null };
@@ -46,24 +113,25 @@ const api = async (route) => {
 	const url = new URL(req.url());
 	// vite serves the app source under /src/api/... - only the real XHR /api goes through here
 	if (url.pathname.startsWith("/src/")) return route.continue();
-	const path = url.pathname.replace(/^\/api/, "");
-	const json = (data) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(data) });
+	const apiPath = url.pathname.replace(/^\/api/, "");
+	const respondWith = (data) =>
+		route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(data) });
 
-	if (path === "/" && req.method() === "GET") return json({ status: "OK", setup: true, password: false, oidc: false });
-	if (path === "/tokens" && req.method() === "POST") return json({ expires: iso(86400 * 1000) });
-	if (path === "/tokens" && req.method() === "GET") return json({ expires: iso(86400 * 1000) });
-	if (path === "/users/me") return json(user);
-	if (path === "/users") return json([user]);
-	if (path === "/crowdsec/decisions/delete" && req.method() === "POST") {
+	if (apiPath === "/" && req.method() === "GET")
+		return respondWith({ status: "OK", setup: true, password: false, oidc: false });
+	if (apiPath === "/tokens" && req.method() === "POST") return respondWith({ expires: iso(86400 * 1000) });
+	if (apiPath === "/tokens" && req.method() === "GET") return respondWith({ expires: iso(86400 * 1000) });
+	if (apiPath === "/users/me") return respondWith(user);
+	if (apiPath === "/users") return respondWith([user]);
+	if (apiPath === "/crowdsec/decisions/delete" && req.method() === "POST") {
 		seen.deleted = req.postDataJSON();
 		const i = decisions.findIndex((d) => d.id === seen.deleted?.id);
 		if (i >= 0) decisions.splice(i, 1);
-		return json({ nbDeleted: "1", auditLogged: true });
+		return respondWith({ nbDeleted: "1", auditLogged: true });
 	}
-	if (path === "/crowdsec/decisions")
-		return json({ items: decisions, limit: 200, truncated: false });
-	if (path === "/crowdsec/anubis")
-		return json({
+	if (apiPath === "/crowdsec/decisions") return respondWith({ items: decisions, limit: 200, truncated: false });
+	if (apiPath === "/crowdsec/anubis")
+		return respondWith({
 			configured: true,
 			honeypot: {
 				activeCount: 1,
@@ -73,17 +141,19 @@ const api = async (route) => {
 			container: { up: true, error: null },
 			recent: ["203.0.113.9", "192.0.2.55"],
 		});
-	if (path === "/crowdsec/alerts") {
+	if (apiPath === "/crowdsec/alerts") {
 		seen.alertsFor = { scope: url.searchParams.get("scope"), value: url.searchParams.get("value") };
-		return json(alerts.filter((a) => url.searchParams.get("value") === "198.51.100.7"));
+		return respondWith(alerts.filter((a) => url.searchParams.get("value") === "198.51.100.7"));
 	}
 	// unknown: permissive default, logged for iteration
-	console.log(`  [fixture default] ${req.method()} ${req.url()} (path=${path}) resourceType=${req.resourceType()}`);
-	return json([]);
+	console.log(
+		`  [fixture default] ${req.method()} ${req.url()} (path=${apiPath}) resourceType=${req.resourceType()}`,
+	);
+	return respondWith([]);
 };
 
 const browser = await chromium.launch({
-	executablePath: "C:/Users/Hashi/AppData/Local/ms-playwright/chromium-1217/chrome-win64/chrome.exe",
+	executablePath: process.env.PLAYWRIGHT_CHROMIUM || undefined,
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 page.on("console", (m) => m.type() === "error" && console.log(`  [console error] ${m.text().slice(0, 160)}`));
@@ -109,9 +179,21 @@ check("manual ban shows its scenario", rows[3]?.includes("manual"), rows[3]);
 const anubisCard = page.locator(".card").filter({ hasText: "Anubis is up" }).first();
 await anubisCard.waitFor({ timeout: 5000 });
 const anubisCardText = await anubisCard.innerText();
-check("anubis section renders with container-up badge", anubisCardText.includes("Anubis is up"), anubisCardText.slice(0, 200));
-check("anubis section shows the active ban count", anubisCardText.includes("1 active honeypot ban"), anubisCardText.slice(0, 200));
-check("anubis section lists recent honeypot IPs", anubisCardText.includes("203.0.113.9") && anubisCardText.includes("192.0.2.55"), anubisCardText.slice(0, 200));
+check(
+	"anubis section renders with container-up badge",
+	anubisCardText.includes("Anubis is up"),
+	anubisCardText.slice(0, 200),
+);
+check(
+	"anubis section shows the active ban count",
+	anubisCardText.includes("1 active honeypot ban"),
+	anubisCardText.slice(0, 200),
+);
+check(
+	"anubis section lists recent honeypot IPs",
+	anubisCardText.includes("203.0.113.9") && anubisCardText.includes("192.0.2.55"),
+	anubisCardText.slice(0, 200),
+);
 
 // relative expiry: rows show the duration the lapi reported
 check("first ban shows its 24h duration", /in 24h/.test(rows[0] ?? ""), rows[0]);
@@ -121,11 +203,19 @@ check("last ban shows its 1h duration", /in 1h/.test(rows[3] ?? ""), rows[3]);
 // search: typing filters the list live
 await page.locator(".input-group input").fill("203.0");
 rows = await decisionsTable.allInnerTexts();
-check("search narrows to the matching row", rows.length === 1 && rows[0]?.includes("203.0.113.9"), JSON.stringify(rows));
+check(
+	"search narrows to the matching row",
+	rows.length === 1 && rows[0]?.includes("203.0.113.9"),
+	JSON.stringify(rows),
+);
 await page.locator(".input-group input").fill("no-such-ip");
 await page.waitForTimeout(200);
 rows = await decisionsTable.allInnerTexts();
-check("search with no match shows the empty message", rows.length === 1 && rows[0]?.includes("No bans match"), JSON.stringify(rows));
+check(
+	"search with no match shows the empty message",
+	rows.length === 1 && rows[0]?.includes("No bans match"),
+	JSON.stringify(rows),
+);
 await page.locator(".input-group input").fill("");
 await decisionsTable.first().waitFor();
 
@@ -133,7 +223,11 @@ await decisionsTable.first().waitFor();
 await page.locator("#crowdsec-origin-filter").selectOption("local");
 await page.waitForTimeout(200);
 rows = await decisionsTable.allInnerTexts();
-check("origin filter local keeps the cscli manual ban", rows.length === 3 && !rows.some((r) => r.includes("capi")), JSON.stringify(rows));
+check(
+	"origin filter local keeps the cscli manual ban",
+	rows.length === 3 && !rows.some((r) => r.includes("capi")),
+	JSON.stringify(rows),
+);
 await page.locator("#crowdsec-origin-filter").selectOption("community");
 await page.waitForTimeout(200);
 rows = await decisionsTable.count();
@@ -148,8 +242,16 @@ await page.waitForSelector("tbody tr td[colspan='7']");
 const contextCell = page.locator("tbody tr td[colspan='7']");
 await contextCell.getByText("http-probing from 198.51.100.7").waitFor({ timeout: 5000 });
 const context = await contextCell.innerText();
-check("context row shows the alert scenario + message", context.includes("crowdsecurity/http-probing") && context.includes("http-probing from 198.51.100.7"), context);
-check("context fetched with scope+value", seen.alertsFor?.scope === "Ip" && seen.alertsFor?.value === "198.51.100.7", JSON.stringify(seen.alertsFor));
+check(
+	"context row shows the alert scenario + message",
+	context.includes("crowdsecurity/http-probing") && context.includes("http-probing from 198.51.100.7"),
+	context,
+);
+check(
+	"context fetched with scope+value",
+	seen.alertsFor?.scope === "Ip" && seen.alertsFor?.value === "198.51.100.7",
+	JSON.stringify(seen.alertsFor),
+);
 check("context shows the events count", context.includes("6 events"), context);
 await page.screenshot({ path: ".smoke/ui-context.png", fullPage: true });
 
@@ -168,7 +270,11 @@ check("unban POSTed the decision id to the api", seen.deleted?.id === 4, JSON.st
 rows = await decisionsTable.allInnerTexts();
 // the expanded context row is also a tbody tr; count only rows that have an Unban button
 const banRows = rows.filter((r) => r.includes("Unban"));
-check("unbanned row is gone after refresh", banRows.length === 3 && !banRows.some((r) => r.includes("203.0.113.9")), JSON.stringify(banRows));
+check(
+	"unbanned row is gone after refresh",
+	banRows.length === 3 && !banRows.some((r) => r.includes("203.0.113.9")),
+	JSON.stringify(banRows),
+);
 await page.screenshot({ path: ".smoke/ui-final.png", fullPage: true });
 
 console.log(failures === 0 ? "ALL UI SMOKE CHECKS PASSED" : `${failures} FAILURES`);
