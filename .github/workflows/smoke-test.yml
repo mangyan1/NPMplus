@@ -106,6 +106,12 @@ jobs:
           # repair both before entering the transactional update.
           sudo sed -i '/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=2/d' /usr/local/bin/npmplus-safe-update
           sudo chmod 0644 /opt/npmplus/setup-npmplus.sh
+          for _ in $(seq 1 30); do
+            health="$(sudo docker inspect --format '{{.State.Health.Status}}' npmplus)"
+            [[ "$health" == 'healthy' ]] && break
+            sleep 2
+          done
+          test "$health" = 'healthy'
           sudo chown -R 0:0 /opt/anubis-data
           sudo docker restart npmplus-anubis
           sudo bash setup-npmplus.sh --update
