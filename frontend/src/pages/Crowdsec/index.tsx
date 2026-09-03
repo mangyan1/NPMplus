@@ -18,6 +18,7 @@ import { ADMIN, VIEW } from "src/modules/Permissions";
 import { showError } from "src/notifications";
 import AnimatedLogo from "./AnimatedLogo";
 import {
+	type CrowdsecOriginFilter,
 	type CrowdsecSortDirection,
 	type CrowdsecSortKey,
 	decisionTarget,
@@ -117,12 +118,17 @@ const Content = () => {
 	const { isFetching, isError, error, data, dataUpdatedAt, refetch } = useCrowdsecDecisions();
 	const unban = useUnbanCrowdsecDecision();
 	const [search, setSearch] = useState("");
+	const [originFilter, setOriginFilter] = useState<CrowdsecOriginFilter>("all");
 	const [expanded, setExpanded] = useState<number | null>(null);
 	const [sortKey, setSortKey] = useState<CrowdsecSortKey>("id");
 	const [sortDirection, setSortDirection] = useState<CrowdsecSortDirection>("desc");
 
 	const decisions = data?.items ?? [];
-	const filtered = sortCrowdsecDecisions(filterCrowdsecDecisions(decisions, search), sortKey, sortDirection);
+	const filtered = sortCrowdsecDecisions(
+		filterCrowdsecDecisions(decisions, search, originFilter),
+		sortKey,
+		sortDirection,
+	);
 
 	if (isError && !data) {
 		return (
@@ -203,6 +209,31 @@ const Content = () => {
 										value={search}
 										onChange={(event) => setSearch(event.target.value)}
 									/>
+								</div>
+							)}
+							{decisions.length > 0 && (
+								<div className="input-group input-group-flat w-auto">
+									<label className="visually-hidden" htmlFor="crowdsec-origin-filter">
+										<T id="crowdsec.filter-origin" />
+									</label>
+									<select
+										id="crowdsec-origin-filter"
+										className="form-select form-select-sm"
+										value={originFilter}
+										onChange={(event) =>
+											setOriginFilter(event.target.value as CrowdsecOriginFilter)
+										}
+									>
+										<option value="all">
+											<T id="crowdsec.origin-all" />
+										</option>
+										<option value="local">
+											<T id="crowdsec.origin-local" />
+										</option>
+										<option value="community">
+											<T id="crowdsec.origin-community" />
+										</option>
+									</select>
 								</div>
 							)}
 							<span className="text-secondary small me-2 my-auto">

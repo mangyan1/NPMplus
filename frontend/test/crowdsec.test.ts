@@ -29,6 +29,23 @@ test("filter searches target and decision context case-insensitively", () => {
 	);
 });
 
+test("origin filter separates this instance's bans from community blocklist entries", () => {
+	const decisions = [
+		decision(1, "192.0.2.1"),
+		{ ...decision(2, "198.51.100.2"), origin: "CAPI" },
+		{ ...decision(3, "203.0.113.3"), origin: "cscli", scenario: "anubis-honeypot" },
+	];
+	assert.deepEqual(
+		filterCrowdsecDecisions(decisions, "", "local").map(({ id }) => id),
+		[1, 3],
+	);
+	assert.deepEqual(
+		filterCrowdsecDecisions(decisions, "", "community").map(({ id }) => id),
+		[2],
+	);
+	assert.equal(filterCrowdsecDecisions(decisions, "", "all").length, 3);
+});
+
 test("sorting keeps separate decisions for the same target", () => {
 	const decisions = [decision(10, "192.0.2.1"), decision(11, "192.0.2.1")];
 	assert.deepEqual(
