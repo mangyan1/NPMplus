@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.5"
+SCRIPT_VERSION="1.6"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -271,6 +271,7 @@ if [[ -s "$DATA_DIR/setup-npmplus.sh" ]]; then
 	chmod 700 "$DATA_DIR/setup-npmplus.sh"
 	cat >/usr/local/bin/npmplus-safe-update <<'EOF'
 #!/bin/bash
+# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=2
 # monthly npmplus update with a safety net: snapshots the running state,
 # runs the update, health-checks it, and reverts to the snapshot on failure
 set -euo pipefail
@@ -703,7 +704,13 @@ if [[ "${1:-}" == "--update" ]]; then
 	# Make manual updates use the same transactional snapshot/health/revert path
 	# as cron. The environment flag is set only by that wrapper to avoid recursion.
 	if [[ "${NPMPLUS_SAFE_UPDATE_ACTIVE:-false}" != "true" ]]; then
-		[[ -x /usr/local/bin/npmplus-safe-update ]] || install_host_tooling
+		# v1.4 and earlier wrappers called the installed setup copy directly and
+		# cannot hand off a freshly downloaded candidate. Replace them before
+		# delegation; this also repairs the old copy's missing execute bit.
+		if [[ ! -x /usr/local/bin/npmplus-safe-update ]] || \
+			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=2' /usr/local/bin/npmplus-safe-update; then
+			install_host_tooling
+		fi
 		candidate=$(readlink -f "$0")
 		chmod 700 "$candidate"
 		NPMPLUS_SETUP_CANDIDATE="$candidate" exec /usr/local/bin/npmplus-safe-update
