@@ -31,19 +31,25 @@ For the easiest first login, provide an administrator email and password when th
 
 ## Open the dashboard
 
-The dashboard uses HTTPS on port 81. New installations keep this port private on the server.
+The dashboard uses HTTPS on port 81. New installations publish this port only on the server's loopback interface (`127.0.0.1:81`), so it is not reachable directly from the internet.
 
-On your own computer, open a terminal and run:
+On the server itself, the dashboard is at:
+
+<https://localhost:81>
+
+From your own computer, open a terminal and run:
 
 ```bash
 ssh -L 8181:127.0.0.1:81 YOUR_USER@YOUR_SERVER_IP
 ```
 
-Replace `YOUR_USER` and `YOUR_SERVER_IP`, leave that terminal open, and visit:
+`127.0.0.1` is where port 81 listens on the server (do not use `localhost` here: the published port is IPv4-only, so a name that resolves to IPv6 fails). `8181` is the local port on your computer. Leave that terminal open and visit:
 
 <https://localhost:8181>
 
 Your browser may show a certificate warning because the local dashboard certificate is self-signed.
+
+If you answered `y` when the installer asked to open the admin port to the internet, skip the tunnel and visit `https://YOUR_SERVER_IP:81` directly.
 
 If you did not provide an administrator email and password during installation, get the one-time setup token from the server:
 
