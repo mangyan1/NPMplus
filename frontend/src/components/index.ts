@@ -1,5 +1,6 @@
 export * from "./Button";
 export * from "./EmptyData";
+export { default as ErrorBoundary } from "./ErrorBoundary";
 export * from "./ErrorNotFound";
 export * from "./Flag";
 export * from "./Form";

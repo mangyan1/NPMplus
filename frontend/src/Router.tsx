@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes } from "react-router";
 import {
+	ErrorBoundary,
 	ErrorNotFound,
 	LoadingPage,
 	Page,
@@ -40,14 +41,20 @@ function Router() {
 	}
 
 	if (!health.data?.setup) {
-		return <Setup />;
+		return (
+			<ErrorBoundary>
+				<Setup />
+			</ErrorBoundary>
+		);
 	}
 
 	if (!authenticated) {
 		return (
-			<Suspense fallback={<LoadingPage />}>
-				<Login />
-			</Suspense>
+			<ErrorBoundary>
+				<Suspense fallback={<LoadingPage />}>
+					<Login />
+				</Suspense>
+			</ErrorBoundary>
 		);
 	}
 
@@ -59,22 +66,24 @@ function Router() {
 					<SiteMenu />
 				</div>
 				<SiteContainer>
-					<Suspense fallback={<LoadingPage noLogo />}>
-						<Routes>
-							<Route path="*" element={<ErrorNotFound />} />
-							<Route path="/certificates" element={<Certificates />} />
-							<Route path="/access" element={<Access />} />
-							<Route path="/audit-log" element={<AuditLog />} />
-							<Route path="/crowdsec" element={<Crowdsec />} />
-							<Route path="/settings" element={<Settings />} />
-							<Route path="/users" element={<Users />} />
-							<Route path="/nginx/proxy" element={<ProxyHosts />} />
-							<Route path="/nginx/redirection" element={<RedirectionHosts />} />
-							<Route path="/nginx/404" element={<DeadHosts />} />
-							<Route path="/nginx/stream" element={<Streams />} />
-							<Route path="/" element={<Dashboard />} />
-						</Routes>
-					</Suspense>
+					<ErrorBoundary>
+						<Suspense fallback={<LoadingPage noLogo />}>
+							<Routes>
+								<Route path="*" element={<ErrorNotFound />} />
+								<Route path="/certificates" element={<Certificates />} />
+								<Route path="/access" element={<Access />} />
+								<Route path="/audit-log" element={<AuditLog />} />
+								<Route path="/crowdsec" element={<Crowdsec />} />
+								<Route path="/settings" element={<Settings />} />
+								<Route path="/users" element={<Users />} />
+								<Route path="/nginx/proxy" element={<ProxyHosts />} />
+								<Route path="/nginx/redirection" element={<RedirectionHosts />} />
+								<Route path="/nginx/404" element={<DeadHosts />} />
+								<Route path="/nginx/stream" element={<Streams />} />
+								<Route path="/" element={<Dashboard />} />
+							</Routes>
+						</Suspense>
+					</ErrorBoundary>
 				</SiteContainer>
 				<SiteFooter />
 			</Page>
