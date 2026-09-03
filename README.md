@@ -77,7 +77,8 @@ Later updates: repeat the `wget` line, review the downloaded change, and run `su
 
 Admin UI fixes:
 
-- the admin UI's index.html is served with no-cache, so after an update the browser always picks up the new chunk names instead of half-loading stale chunks
+- the admin UI's index.html is served with `no-store`, and an already-open tab reloads once if an update replaces a lazy-loaded chunk, so deployments cannot leave the UI half-loaded on stale assets
+- administrator access is determined from the admin role before optional per-user permissions are evaluated, so a missing legacy permissions expansion cannot hide every dashboard card and menu entry
 
 ## Compatibility (to Upstream)
 - Supported architectures: x86_64-v2/amd64v2 (check with `/lib/ld-linux-x86-64.so.2 --help`, plain x86-64 is not supported only v2 and up) and aarch64/arm64 (other archs (including 64-bit ones) and any 32-bit arch (like armhf/armv7 (dropped), armel/armv6) are not supported, because of the duration to compile).

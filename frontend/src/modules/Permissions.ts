@@ -31,8 +31,8 @@ const hasPermission = (
 	userPerms: UserPermissions | undefined,
 	roles: string[] | undefined,
 ): boolean => {
-	if (!userPerms) return false;
 	if (isAdmin(roles)) return true;
+	if (!userPerms) return false;
 	const acceptable = [MANAGE, perm];
 	// @ts-expect-error 7053
 	const v = typeof userPerms[section] !== "undefined" ? userPerms[section] : HIDDEN;
