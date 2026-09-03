@@ -1,4 +1,13 @@
-import { IconArrowsCross, IconBolt, IconBoltOff, IconDisc, IconLock, IconShield, IconUser } from "@tabler/icons-react";
+import {
+	IconArrowsCross,
+	IconBolt,
+	IconBoltOff,
+	IconDisc,
+	IconGavel,
+	IconLock,
+	IconShield,
+	IconUser,
+} from "@tabler/icons-react";
 import cn from "clsx";
 import type { ReactNode } from "react";
 import type { AuditLog } from "src/api/backend";
@@ -18,6 +27,8 @@ const getEventValue = (event: AuditLog) => {
 			return event.meta?.incomingPort || "N/A";
 		case "certificate":
 			return event.meta?.domainNames?.join(", ") || event.meta?.niceName || "N/A";
+		case "crowdsec-decision":
+			return `Decision #${event.objectId}`;
 		default:
 			return intl.formatMessage({ id: "auditlog.unknown-type" }, { type: event.objectType });
 	}
@@ -58,6 +69,9 @@ const getIcon = (row: AuditLog) => {
 			break;
 		case "certificate":
 			ico = <IconShield size={16} className={c} />;
+			break;
+		case "crowdsec-decision":
+			ico = <IconGavel size={16} className={c} />;
 			break;
 		default:
 			break;

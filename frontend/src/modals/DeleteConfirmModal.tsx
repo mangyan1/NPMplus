@@ -12,6 +12,7 @@ interface ShowProps {
 	children: ReactNode;
 	subject?: ReactNode;
 	details?: ReactNode;
+	confirmLabel?: ReactNode;
 	onConfirm: () => Promise<void> | void;
 	invalidations?: any[];
 }
@@ -23,7 +24,7 @@ const showDeleteConfirmModal = (props: ShowProps) => {
 };
 
 const DeleteConfirmModal = EasyModal.create(
-	({ title, tTitle, children, subject, details, onConfirm, invalidations, visible, remove }: Props) => {
+	({ title, tTitle, children, subject, details, confirmLabel, onConfirm, invalidations, visible, remove }: Props) => {
 		const queryClient = useQueryClient();
 		const [error, setError] = useState<ReactNode | null>(null);
 		const [isSubmitting, setIsSubmitting] = useState(false);
@@ -91,7 +92,7 @@ const DeleteConfirmModal = EasyModal.create(
 						disabled={isSubmitting}
 						onClick={onSubmit}
 					>
-						<T id="action.delete" />
+						{confirmLabel ?? <T id="action.delete" />}
 					</Button>
 				</Modal.Footer>
 			</Modal>

@@ -6,7 +6,7 @@
 	"license": "AGPL-3.0 (and MIT)",
 	"type": "module",
 	"scripts": {
-		"test": "tsc -b"
+		"test": "tsc -b && node --test test/*.test.ts"
 	},
 	"dependencies": {
 		"@ebay/nice-modal-react": "1.2.13",

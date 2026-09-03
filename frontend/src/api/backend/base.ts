@@ -6,6 +6,9 @@ import { deleteToken } from "./deleteToken";
 
 const queryClient = new QueryClient();
 const contentTypeHeader = "Content-Type";
+type AbortSource = AbortController | AbortSignal;
+
+const getAbortSignal = (source?: AbortSource) => (source && "signal" in source ? source.signal : source);
 
 interface BuildUrlArgs {
 	url: string;
@@ -68,16 +71,16 @@ interface GetArgs {
 	params?: queryString.StringifiableRecord;
 }
 
-async function baseGet({ url, params }: GetArgs, abortController?: AbortController) {
+async function baseGet({ url, params }: GetArgs, abortSource?: AbortSource) {
 	const apiUrl = buildUrl({ url, params });
 	const method = "GET";
-	const signal = abortController?.signal;
+	const signal = getAbortSignal(abortSource);
 	const response = await fetch(apiUrl, { method, signal });
 	return response;
 }
 
-export async function get(args: GetArgs, abortController?: AbortController) {
-	return processResponse(await baseGet(args, abortController), args.reload);
+export async function get(args: GetArgs, abortSource?: AbortSource) {
+	return processResponse(await baseGet(args, abortSource), args.reload);
 }
 
 export async function download({ url, params }: GetArgs, filename = "download.file") {
@@ -98,7 +101,7 @@ interface PostArgs {
 	headers?: Record<string, string>;
 }
 
-export async function post({ url, params, data, headers: extraHeaders }: PostArgs, abortController?: AbortController) {
+export async function post({ url, params, data, headers: extraHeaders }: PostArgs, abortSource?: AbortSource) {
 	const apiUrl = buildUrl({ url, params });
 	const method = "POST";
 
@@ -118,7 +121,7 @@ export async function post({ url, params, data, headers: extraHeaders }: PostArg
 		body = buildBody(data);
 	}
 
-	const signal = abortController?.signal;
+	const signal = getAbortSignal(abortSource);
 	const response = await fetch(apiUrl, { method, headers, body, signal });
 	return processResponse(response);
 }
@@ -128,13 +131,13 @@ interface PutArgs {
 	params?: queryString.StringifiableRecord;
 	data?: Record<string, any>;
 }
-export async function put({ url, params, data }: PutArgs, abortController?: AbortController) {
+export async function put({ url, params, data }: PutArgs, abortSource?: AbortSource) {
 	const apiUrl = buildUrl({ url, params });
 	const method = "PUT";
 	const headers = {
 		[contentTypeHeader]: "application/json",
 	};
-	const signal = abortController?.signal;
+	const signal = getAbortSignal(abortSource);
 	const body = buildBody(data);
 	const response = await fetch(apiUrl, { method, headers, body, signal });
 	return processResponse(response);
@@ -144,10 +147,10 @@ interface DeleteArgs {
 	url: string;
 	params?: queryString.StringifiableRecord;
 }
-export async function del({ url, params }: DeleteArgs, abortController?: AbortController) {
+export async function del({ url, params }: DeleteArgs, abortSource?: AbortSource) {
 	const apiUrl = buildUrl({ url, params });
 	const method = "DELETE";
-	const signal = abortController?.signal;
+	const signal = getAbortSignal(abortSource);
 	const response = await fetch(apiUrl, { method, signal });
 	return processResponse(response);
 }

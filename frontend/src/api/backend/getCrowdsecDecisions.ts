@@ -2,35 +2,43 @@ import * as api from "./base";
 
 export interface CrowdsecDecision {
 	id: number;
-	uuid?: string;
-	scope?: string;
-	value?: string;
-	type?: string;
-	origin?: string;
-	scenario?: string;
-	duration?: string;
-	until?: string;
-	simulated?: boolean;
+	uuid: string;
+	scope: string;
+	value: string;
+	type: string;
+	origin: string;
+	scenario: string;
+	duration: string;
+}
+
+export interface CrowdsecDecisionPage {
+	items: CrowdsecDecision[];
+	limit: number;
+	truncated: boolean;
 }
 
 export interface CrowdsecAlert {
-	id?: number;
-	message?: string;
-	scenario?: string;
-	startedAt?: string;
-	stoppedAt?: string;
-	eventsCount?: number;
-	events?: Record<string, unknown>[];
+	id: number;
+	message: string;
+	scenario: string;
+	startAt: string;
+	stopAt: string;
+	eventsCount: number;
 }
 
-export async function getCrowdsecDecisions(): Promise<CrowdsecDecision[]> {
-	return await api.get({ url: "/crowdsec/decisions" });
+export interface CrowdsecUnbanResult {
+	nbDeleted: string;
+	auditLogged: boolean;
 }
 
-export async function getCrowdsecAlerts(scope: string, value: string): Promise<CrowdsecAlert[]> {
-	return await api.get({ url: "/crowdsec/alerts", params: { scope, value } });
+export async function getCrowdsecDecisions(signal?: AbortSignal): Promise<CrowdsecDecisionPage> {
+	return await api.get({ url: "/crowdsec/decisions" }, signal);
 }
 
-export async function unbanCrowdsecDecision(scope: string, value: string): Promise<{ nbDeleted: string }> {
-	return await api.post({ url: "/crowdsec/decisions/delete", data: { scope, value } });
+export async function getCrowdsecAlerts(scope: string, value: string, signal?: AbortSignal): Promise<CrowdsecAlert[]> {
+	return await api.get({ url: "/crowdsec/alerts", params: { scope, value } }, signal);
+}
+
+export async function unbanCrowdsecDecision(id: number): Promise<CrowdsecUnbanResult> {
+	return await api.post({ url: "/crowdsec/decisions/delete", data: { id } });
 }

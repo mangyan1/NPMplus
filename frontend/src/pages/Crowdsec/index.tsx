@@ -1,64 +1,57 @@
-import { IconChevronDown, IconChevronRight, IconRefresh, IconSearch, IconTrash } from "@tabler/icons-react";
-import { Fragment, useState } from "react";
+import {
+	IconChevronDown,
+	IconChevronRight,
+	IconChevronUp,
+	IconRefresh,
+	IconSearch,
+	IconTrash,
+} from "@tabler/icons-react";
+import { Fragment, type ReactNode, useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import type { CrowdsecAlert, CrowdsecDecision } from "src/api/backend";
 import { Button, HasPermission } from "src/components";
 import { useLocaleState } from "src/context";
 import { useCrowdsecAlerts, useCrowdsecDecisions, useUnbanCrowdsecDecision } from "src/hooks";
-import { formatDateTime, T } from "src/locale";
+import { formatDateTime, intl, T } from "src/locale";
 import { showDeleteConfirmModal } from "src/modals";
 import { ADMIN, VIEW } from "src/modules/Permissions";
+import { showError } from "src/notifications";
 import AnimatedLogo from "./AnimatedLogo";
+import {
+	type CrowdsecSortDirection,
+	type CrowdsecSortKey,
+	decisionTarget,
+	filterCrowdsecDecisions,
+	sortCrowdsecDecisions,
+} from "./utils";
 
-// newest decision first, so the top of the table is always the latest ban
-const byNewest = (a: CrowdsecDecision, b: CrowdsecDecision) => (b?.id ?? 0) - (a?.id ?? 0);
-
-const decisionTarget = (decision: CrowdsecDecision) =>
-	decision.scope === "Ip" || !decision.scope ? decision.value : `${decision.scope}: ${decision.value ?? ""}`;
-
-// the scope+value pair is what unban and the alert context address
-const decisionKey = (decision: CrowdsecDecision) => `${decision.scope || "Ip"}:${decision.value ?? ""}`;
-
-// "3d 4h" / "2h 05m" / "45s" time left on the ban, null when not computable
-const expiresIn = (until?: string) => {
-	const ms = new Date(until ?? 0).getTime() - Date.now();
-	if (!Number.isFinite(ms) || ms <= 0) {
-		return null;
-	}
-	const s = Math.floor(ms / 1000);
-	const days = Math.floor(s / 86400);
-	const hours = Math.floor((s % 86400) / 3600);
-	const minutes = Math.floor((s % 3600) / 60);
-	if (days > 0) return `${days}d ${hours}h`;
-	if (hours > 0) return `${hours}h ${minutes}m`;
-	if (minutes > 0) return `${minutes}m`;
-	return `${s}s`;
-};
-
-// the alert(s) that produced a ban, shown when a row is expanded
 const AlertContext = ({ decision }: { decision: CrowdsecDecision }) => {
 	const { locale } = useLocaleState();
-	const { isFetching, isError, error, data } = useCrowdsecAlerts(decision.scope || "Ip", decision.value, true);
+	const { isFetching, isError, error, data } = useCrowdsecAlerts(decision.id, decision.scope, decision.value, true);
 
-	if (isFetching) {
-		return <div className="text-secondary small py-2">…</div>;
-	}
-	if (isError) {
+	if (isFetching && !data) return <div className="text-secondary small py-2">...</div>;
+	if (isError && !data) {
 		return (
 			<div className="text-secondary small py-2">
 				<T id={error?.message || "error.unknown"} />
 			</div>
 		);
 	}
-	if (!data || data.length === 0) {
+	if (!data?.length) {
 		return (
 			<div className="text-secondary small py-2">
 				<T id="crowdsec.no-alerts" />
 			</div>
 		);
 	}
+
 	return (
 		<div className="py-2">
+			{isError && (
+				<div className="text-warning small mb-2">
+					<T id="crowdsec.stale" />
+				</div>
+			)}
 			{data.map((alert: CrowdsecAlert) => (
 				<div key={alert.id} className="mb-2">
 					<div>
@@ -66,7 +59,7 @@ const AlertContext = ({ decision }: { decision: CrowdsecDecision }) => {
 						{alert.message}
 					</div>
 					<div className="text-secondary small">
-						{alert.startedAt ? formatDateTime(alert.startedAt, locale) : null}
+						{alert.startAt ? formatDateTime(alert.startAt, locale) : null}
 						{alert.eventsCount ? (
 							<>
 								&nbsp;· <T id="crowdsec.events-count" data={{ count: alert.eventsCount }} />
@@ -79,23 +72,59 @@ const AlertContext = ({ decision }: { decision: CrowdsecDecision }) => {
 	);
 };
 
+interface SortHeaderProps {
+	label: ReactNode;
+	column: CrowdsecSortKey;
+	sortKey: CrowdsecSortKey;
+	direction: CrowdsecSortDirection;
+	onSort: (column: CrowdsecSortKey) => void;
+}
+
+const SortHeader = ({ label, column, sortKey, direction, onSort }: SortHeaderProps) => {
+	const active = sortKey === column;
+	const columnMessageId = {
+		id: "crowdsec.title",
+		origin: "crowdsec.origin",
+		scenario: "crowdsec.reason",
+		target: "crowdsec.target",
+		type: "crowdsec.action",
+	}[column];
+	return (
+		<th aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}>
+			<button
+				type="button"
+				className="btn btn-link p-0 text-reset text-decoration-none"
+				onClick={() => onSort(column)}
+				aria-label={intl.formatMessage(
+					{ id: "crowdsec.sort-by" },
+					{ column: intl.formatMessage({ id: columnMessageId }) },
+				)}
+			>
+				{label}
+				{active &&
+					(direction === "asc" ? (
+						<IconChevronUp size={14} className="ms-1" />
+					) : (
+						<IconChevronDown size={14} className="ms-1" />
+					))}
+			</button>
+		</th>
+	);
+};
+
 const Content = () => {
-	const { isFetching, isError, error, data, refetch } = useCrowdsecDecisions();
+	const { locale } = useLocaleState();
+	const { isFetching, isError, error, data, dataUpdatedAt, refetch } = useCrowdsecDecisions();
 	const unban = useUnbanCrowdsecDecision();
 	const [search, setSearch] = useState("");
-	const [expanded, setExpanded] = useState<string | null>(null);
+	const [expanded, setExpanded] = useState<number | null>(null);
+	const [sortKey, setSortKey] = useState<CrowdsecSortKey>("id");
+	const [sortDirection, setSortDirection] = useState<CrowdsecSortDirection>("desc");
 
-	const decisions = [...(data ?? [])].sort(byNewest);
-	const needle = search.trim().toLowerCase();
-	const filtered = needle
-		? decisions.filter((decision) =>
-				[decision.value, decision.scenario, decision.origin, decision.type]
-					.filter(Boolean)
-					.some((field) => (field as string).toLowerCase().includes(needle)),
-			)
-		: decisions;
+	const decisions = data?.items ?? [];
+	const filtered = sortCrowdsecDecisions(filterCrowdsecDecisions(decisions, search), sortKey, sortDirection);
 
-	if (isError) {
+	if (isError && !data) {
 		return (
 			<Alert variant="danger">
 				<T id={error?.message || "error.unknown"} />
@@ -111,15 +140,30 @@ const Content = () => {
 		);
 	}
 
+	const onSort = (column: CrowdsecSortKey) => {
+		if (column === sortKey) {
+			setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+		} else {
+			setSortKey(column);
+			setSortDirection("asc");
+		}
+	};
+
 	const confirmUnban = (decision: CrowdsecDecision) => {
-		const scope = decision.scope || "Ip";
-		const value = decision.value ?? "";
 		showDeleteConfirmModal({
 			title: <T id="crowdsec.unban-title" data={{ target: decisionTarget(decision) }} />,
-			children: <T id="crowdsec.unban-content" />,
+			children: <T id="crowdsec.unban-content" data={{ id: decision.id }} />,
 			subject: decisionTarget(decision),
+			details: (
+				<T
+					id="crowdsec.unban-details"
+					data={{ origin: decision.origin, scenario: decision.scenario, type: decision.type }}
+				/>
+			),
+			confirmLabel: <T id="crowdsec.unban" />,
 			onConfirm: async () => {
-				await unban.mutateAsync({ scope, value });
+				const result = await unban.mutateAsync(decision.id);
+				if (!result.auditLogged) showError(intl.formatMessage({ id: "crowdsec.audit-warning" }));
 			},
 		});
 	};
@@ -144,14 +188,20 @@ const Content = () => {
 						<div className="ms-auto d-flex flex-wrap btn-list">
 							{decisions.length > 0 && (
 								<div className="input-group input-group-flat w-auto">
-									<span className="input-group-text input-group-text-sm">
+									<label className="visually-hidden" htmlFor="crowdsec-search">
+										<T id="crowdsec.search" />
+									</label>
+									<span className="input-group-text input-group-text-sm" aria-hidden="true">
 										<IconSearch size={16} />
 									</span>
 									<input
-										type="text"
+										id="crowdsec-search"
+										type="search"
 										className="form-control form-control-sm"
 										autoComplete="off"
-										onChange={(e) => setSearch(e.target.value)}
+										placeholder={intl.formatMessage({ id: "crowdsec.search" })}
+										value={search}
+										onChange={(event) => setSearch(event.target.value)}
 									/>
 								</div>
 							)}
@@ -172,34 +222,52 @@ const Content = () => {
 				</div>
 			</div>
 			<div className="card-body py-0">
+				{isError && (
+					<Alert variant="warning" className="mt-3 mb-0">
+						<T id="crowdsec.stale" /> <T id={error?.message || "error.unknown"} />
+					</Alert>
+				)}
+				<div className="text-secondary small py-2">
+					<T
+						id="crowdsec.last-updated"
+						data={{ date: formatDateTime(new Date(dataUpdatedAt).toISOString(), locale) }}
+					/>
+				</div>
 				{decisions.length === 0 ? (
 					<div className="py-5 text-center text-secondary">
 						<T id="crowdsec.empty" />
 					</div>
 				) : (
 					<div className="table-responsive">
-						{/* the backend caps one poll at 200 decisions; the list length is the cap signal */}
-						{decisions.length >= 200 && (
-							<div className="text-secondary small py-2">
-								<T id="crowdsec.capped" data={{ count: decisions.length }} />
+						{data.truncated && (
+							<div className="text-secondary small pb-2">
+								<T id="crowdsec.capped" data={{ count: data.limit }} />
 							</div>
 						)}
 						<table className="table card-table table-vh table-striped">
 							<thead>
 								<tr>
-									<th>&nbsp;</th>
-									<th>
-										<T id="crowdsec.target" />
-									</th>
-									<th>
-										<T id="crowdsec.reason" />
-									</th>
-									<th>
-										<T id="crowdsec.origin" />
-									</th>
-									<th>
-										<T id="crowdsec.action" />
-									</th>
+									<th aria-label={intl.formatMessage({ id: "crowdsec.details" })}>&nbsp;</th>
+									<SortHeader
+										label={<T id="crowdsec.target" />}
+										column="target"
+										{...{ sortKey, direction: sortDirection, onSort }}
+									/>
+									<SortHeader
+										label={<T id="crowdsec.reason" />}
+										column="scenario"
+										{...{ sortKey, direction: sortDirection, onSort }}
+									/>
+									<SortHeader
+										label={<T id="crowdsec.origin" />}
+										column="origin"
+										{...{ sortKey, direction: sortDirection, onSort }}
+									/>
+									<SortHeader
+										label={<T id="crowdsec.action" />}
+										column="type"
+										{...{ sortKey, direction: sortDirection, onSort }}
+									/>
 									<th>
 										<T id="crowdsec.expires" />
 									</th>
@@ -207,18 +275,30 @@ const Content = () => {
 								</tr>
 							</thead>
 							<tbody>
+								{filtered.length === 0 && (
+									<tr>
+										<td colSpan={7} className="py-4 text-center text-secondary">
+											<T id="crowdsec.no-matches" />
+										</td>
+									</tr>
+								)}
 								{filtered.map((decision) => {
-									const key = decisionKey(decision);
-									const remaining = expiresIn(decision.until);
-									const isOpen = expanded === key;
+									const isOpen = expanded === decision.id;
+									const detailsId = `crowdsec-decision-${decision.id}`;
 									return (
-										<Fragment key={key}>
+										<Fragment key={decision.id}>
 											<tr>
 												<td className="w-1">
 													<button
 														type="button"
 														className="btn btn-sm btn-ghost-secondary"
-														onClick={() => setExpanded(isOpen ? null : key)}
+														onClick={() => setExpanded(isOpen ? null : decision.id)}
+														aria-expanded={isOpen}
+														aria-controls={detailsId}
+														aria-label={intl.formatMessage(
+															{ id: isOpen ? "crowdsec.collapse" : "crowdsec.expand" },
+															{ target: decisionTarget(decision) },
+														)}
 													>
 														{isOpen ? (
 															<IconChevronDown size={16} />
@@ -238,24 +318,15 @@ const Content = () => {
 													)}
 												</td>
 												<td>{decision.origin}</td>
-												<td>
-													{decision.type}
-													{decision.simulated ? (
-														<>
-															{" "}
-															<span className="badge bg-yellow">
-																<T id="crowdsec.simulated" />
-															</span>
-														</>
-													) : null}
-												</td>
-												<td title={decision.until ?? decision.duration}>
-													{decision.until && remaining === null ? (
-														<T id="crowdsec.expired" />
-													) : remaining !== null ? (
-														<T id="crowdsec.expires-in" data={{ duration: remaining }} />
+												<td>{decision.type}</td>
+												<td title={decision.duration}>
+													{decision.duration ? (
+														<T
+															id="crowdsec.expires-in"
+															data={{ duration: decision.duration }}
+														/>
 													) : (
-														(decision.until ?? decision.duration)
+														<T id="crowdsec.unknown-duration" />
 													)}
 												</td>
 												<td className="text-end">
@@ -270,7 +341,7 @@ const Content = () => {
 												</td>
 											</tr>
 											{isOpen && (
-												<tr>
+												<tr id={detailsId}>
 													<td colSpan={7} className="bg-light">
 														<AlertContext decision={decision} />
 													</td>
