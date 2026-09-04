@@ -164,6 +164,12 @@ const server = http.createServer((req, res) => {
 			return send(200, decisions);
 		}
 		if (url.pathname === "/v1/watchers/login" && req.method === "POST") {
+			// crowdsec's lapi validates the client user agent against the machine
+			// registration (a bare "node" agent is rejected); enforce the same rule
+			// here so the backend can never regress to an anonymous login
+			if (!/^npmplus-ui-backend\//.test(req.headers["user-agent"] || "")) {
+				return send(401, { code: 401, message: "incorrect Username or Password" });
+			}
 			const creds = JSON.parse(body);
 			if (creds.machine_id !== MACHINE_ID || creds.password !== MACHINE_PASSWORD)
 				return send(401, { message: "bad machine" });

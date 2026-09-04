@@ -13,6 +13,7 @@ import {
 } from "../lib/crowdsec-contract.js";
 import jwtdecode from "../lib/express/jwt-decode.js";
 import { debug, express as logger } from "../logger.js";
+import PACKAGE from "../package.json" with { type: "json" };
 
 const router = express.Router({ caseSensitive: true, strict: true, mergeParams: true });
 
@@ -28,6 +29,10 @@ const INSIGHTS_ALERT_LIMIT = 100;
 const INSIGHTS_TOP_N = 5;
 const MANUAL_BAN_SCENARIO = "manual/web-ui";
 const MACHINE_TOKEN_TTL_MS = 30 * 1000;
+// crowdsec's lapi validates the client user agent against the registered
+// machine (a bare "node" agent is rejected as "bad user agent"), so every
+// request this backend makes identifies itself like the other bouncers do
+const LAPI_USER_AGENT = `npmplus-ui-backend/${PACKAGE.version}`;
 const SCOPE_PATTERN = /^[a-zA-Z]{1,32}$/;
 const configuredTimeout = Number.parseInt(process.env.CROWDSEC_LAPI_TIMEOUT_MS || "5000", 10);
 const LAPI_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 5000;
@@ -122,7 +127,7 @@ const lapiLogin = async () => {
 
 	const response = await fetchCrowdsec(`${LAPI_URL}/v1/watchers/login`, {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
+		headers: { "Content-Type": "application/json", "User-Agent": LAPI_USER_AGENT },
 		body: JSON.stringify({ machine_id: LAPI_MACHINE_ID, password }),
 	});
 	if (!response.ok) {
@@ -146,7 +151,7 @@ const lapiMachineFetch = async (path, method = "GET", mayRetry = true, body = nu
 	const token = await lapiLogin();
 	const options = {
 		method,
-		headers: { Authorization: `Bearer ${token}` },
+		headers: { Authorization: `Bearer ${token}`, "User-Agent": LAPI_USER_AGENT },
 	};
 	if (body !== null) {
 		options.headers["Content-Type"] = "application/json";
