@@ -1,4 +1,9 @@
 const optionalString = (value) => (typeof value === "string" ? value : "");
+const optionalFiniteNumber = (value) => {
+	if (value === null || value === "" || typeof value === "undefined") return null;
+	const number = typeof value === "number" ? value : Number(value);
+	return Number.isFinite(number) ? number : null;
+};
 
 // manual ban input: an ip or a cidr range, the same targets crowdsec accepts
 const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
@@ -7,6 +12,11 @@ const CIDR_RE = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$|^(\[?[0-9a-fA-F:]+\]?\/\d{1,3}
 const DURATION_RE = /^[1-9][0-9]*(ns|us|µs|ms|s|m|h|d)$/;
 const BAN_TYPES = new Set(["ban", "captcha"]);
 const REASONS_RE = /^[\w .,:;#@-]{1,64}$/;
+const PROMETHEUS_LINE_SPLIT_RE = /\r?\n/;
+const PROMETHEUS_SAMPLE_RE = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?\s+([^\s]+)(?:\s+\d+)?$/;
+const ALERT_FIELD_TOKEN_RE = /^(scenario|country|ip|target|asn|machine):(.*)$/;
+const WHITESPACE_RE = /\s+/;
+const QUOTE_RE = /^["']|["']$/g;
 
 const parseCrowdsecDecisionId = (value) => {
 	const id = typeof value === "number" ? value : Number(value);
@@ -89,6 +99,9 @@ const normalizeCrowdsecDecisions = (payload) => {
 			origin: optionalString(decision.origin),
 			scenario: optionalString(decision.scenario),
 			duration: optionalString(decision.duration),
+			created_at: optionalString(decision.created_at),
+			until: optionalString(decision.until),
+			simulated: decision.simulated === true,
 		};
 	});
 };
@@ -118,26 +131,142 @@ const normalizeCrowdsecAlerts = (payload) => {
 			message: optionalString(alert.message),
 			start_at: optionalString(alert.start_at),
 			stop_at: optionalString(alert.stop_at),
+			created_at: optionalString(alert.created_at),
+			machine_id: optionalString(alert.machine_id),
+			simulated: alert.simulated === true,
 			events_count: Number.isSafeInteger(eventsCount) && eventsCount >= 0 ? eventsCount : 0,
 			// attacker identity as recorded by the local agent: geo/ASN only
 			source: {
+				ip: optionalString(alert.source?.ip),
+				scope: optionalString(alert.source?.scope),
+				value: optionalString(alert.source?.value),
 				country: optionalString(alert.source?.cn),
 				as_number: optionalString(alert.source?.as_number),
 				as_name: optionalString(alert.source?.as_name),
 				range: optionalString(alert.source?.range),
 				rdns: optionalString(alert.source?.rdns),
+				latitude: optionalFiniteNumber(alert.source?.latitude),
+				longitude: optionalFiniteNumber(alert.source?.longitude),
 			},
 			events,
 		};
 	});
 };
 
+const crowdsecAlertTarget = (alert) => {
+	for (const event of alert.events ?? []) {
+		for (const item of event.meta ?? []) {
+			if (["target_host", "target_fqdn", "target_uri"].includes(item.key) && item.value) return item.value;
+		}
+	}
+	return "";
+};
+
+const filterCrowdsecAlerts = (alerts, { search = "", scenario = "", country = "", target = "" } = {}) => {
+	const tokens = optionalString(search).trim().toLocaleLowerCase().split(WHITESPACE_RE).filter(Boolean);
+	const fieldFilters = [];
+	const words = [];
+	for (const token of tokens) {
+		const match = ALERT_FIELD_TOKEN_RE.exec(token);
+		const needle = match?.[2]?.replace(QUOTE_RE, "");
+		if (match && needle) fieldFilters.push({ field: match[1], needle });
+		else words.push(token);
+	}
+	const scenarioNeedle = optionalString(scenario).trim().toLocaleLowerCase();
+	const countryNeedle = optionalString(country).trim().toLocaleLowerCase();
+	const targetNeedle = optionalString(target).trim().toLocaleLowerCase();
+
+	return alerts.filter((alert) => {
+		const alertTarget = crowdsecAlertTarget(alert);
+		if (scenarioNeedle && alert.scenario.toLocaleLowerCase() !== scenarioNeedle) return false;
+		if (countryNeedle && alert.source.country.toLocaleLowerCase() !== countryNeedle) return false;
+		if (targetNeedle && !alertTarget.toLocaleLowerCase().includes(targetNeedle)) return false;
+		const searchable = [
+			String(alert.id),
+			alert.scenario,
+			alert.message,
+			alert.source.ip,
+			alert.source.value,
+			alert.source.country,
+			alert.source.as_name,
+			alert.source.rdns,
+			alert.machine_id,
+			alertTarget,
+		];
+		for (const { field, needle } of fieldFilters) {
+			const value = {
+				scenario: alert.scenario,
+				country: alert.source.country,
+				ip: alert.source.ip || alert.source.value,
+				target: alertTarget,
+				asn: alert.source.as_name || alert.source.as_number,
+				machine: alert.machine_id,
+			}[field];
+			if (!optionalString(value).toLocaleLowerCase().includes(needle)) return false;
+		}
+		return words.every((word) =>
+			searchable.some((value) => optionalString(value).toLocaleLowerCase().includes(word)),
+		);
+	});
+};
+
+const parsePrometheusLabels = (raw = "") => {
+	const labels = {};
+	for (const match of raw.matchAll(/([a-zA-Z_][a-zA-Z0-9_]*)="((?:\\.|[^"\\])*)"/g)) {
+		labels[match[1]] = match[2].replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+	}
+	return labels;
+};
+
+// Parse only the Prometheus text exposition primitives used by CrowdSec.
+// Comments, malformed rows and non-finite values are ignored.
+const parsePrometheusText = (text) => {
+	const samples = [];
+	for (const line of String(text).split(PROMETHEUS_LINE_SPLIT_RE)) {
+		if (!line || line.startsWith("#")) continue;
+		const match = PROMETHEUS_SAMPLE_RE.exec(line);
+		if (!match) continue;
+		const value = Number(match[3]);
+		if (!Number.isFinite(value)) continue;
+		samples.push({ name: match[1], labels: parsePrometheusLabels(match[2]), value });
+	}
+	return samples;
+};
+
+const summarizeCrowdsecMetrics = (samples) => {
+	const sum = (name) =>
+		samples.filter((sample) => sample.name === name).reduce((total, sample) => total + sample.value, 0);
+	const ratio = (numerator, denominator) => (denominator > 0 ? numerator / denominator : null);
+	const parserHits = sum("cs_parser_hits_total");
+	const parserOk = sum("cs_parser_hits_ok_total");
+	const lapiCount = sum("cs_lapi_request_duration_seconds_count");
+	const parsingCount = sum("cs_parsing_time_seconds_count");
+
+	return {
+		active_decisions: sum("cs_active_decisions"),
+		alerts: sum("cs_alerts"),
+		appsec_requests: sum("cs_appsec_reqs_total"),
+		appsec_blocked: sum("cs_appsec_block_total"),
+		bouncer_requests: sum("cs_lapi_bouncer_requests_total"),
+		machine_requests: sum("cs_lapi_machine_requests_total"),
+		parser_hits: parserHits,
+		parser_success_rate: ratio(parserOk, parserHits),
+		whitelist_hits: sum("cs_node_wl_hits_ok_total") || sum("cs_node_wl_hits_total"),
+		average_lapi_ms: ratio(sum("cs_lapi_request_duration_seconds_sum") * 1000, lapiCount),
+		average_parsing_ms: ratio(sum("cs_parsing_time_seconds_sum") * 1000, parsingCount),
+	};
+};
+
 const hasCrowdsecAdminAccess = (permission) => Boolean(permission);
 
 export {
+	crowdsecAlertTarget,
+	filterCrowdsecAlerts,
 	hasCrowdsecAdminAccess,
 	normalizeCrowdsecAlerts,
 	normalizeCrowdsecDecisions,
 	parseCrowdsecDecisionId,
+	parsePrometheusText,
+	summarizeCrowdsecMetrics,
 	validateManualBan,
 };

@@ -39,6 +39,7 @@ const useUnbanCrowdsecDecision = () => {
 		mutationFn: (id: number) => unbanCrowdsecDecision(id),
 		onSuccess: async () => {
 			await queryClient.invalidateQueries({ queryKey: ["crowdsec-decisions"] });
+			await queryClient.invalidateQueries({ queryKey: ["crowdsec-insights"] });
 			await queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
 		},
 	});

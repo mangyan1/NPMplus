@@ -5,10 +5,14 @@ import express from "express";
 import internalAuditLog from "../internal/audit-log.js";
 import { fetchWithTimeout, readBoundedJson, readBoundedText } from "../lib/bounded-fetch.js";
 import {
+	crowdsecAlertTarget,
+	filterCrowdsecAlerts,
 	hasCrowdsecAdminAccess,
 	normalizeCrowdsecAlerts,
 	normalizeCrowdsecDecisions,
 	parseCrowdsecDecisionId,
+	parsePrometheusText,
+	summarizeCrowdsecMetrics,
 	validateManualBan,
 } from "../lib/crowdsec-contract.js";
 import jwtdecode from "../lib/express/jwt-decode.js";
@@ -22,6 +26,7 @@ const LAPI_URL = process.env.CROWDSEC_LAPI_URL || "http://127.0.0.1:8080";
 const LAPI_MACHINE_ID = process.env.CROWDSEC_LAPI_MACHINE_ID || "npmplus-ui";
 const LAPI_MACHINE_KEY_FILE = process.env.CROWDSEC_LAPI_MACHINE_KEY_FILE || "/data/crowdsec/lapi-ui-machine.key";
 const LAPI_DECISION_LIMIT = 200;
+const LAPI_PAGE_MAX_ITEMS = 500;
 const LAPI_ALERT_LIMIT = 5;
 const LAPI_HONEYPOT_LIMIT = 25;
 const INSIGHTS_WINDOW_HOURS = 24;
@@ -31,9 +36,17 @@ const INSIGHTS_ALERT_LIMIT = 100;
 // the primary sample gets an oversized-read allowance, and an exceptionally
 // heavy window degrades to a smaller sample instead of failing the card
 const INSIGHTS_FALLBACK_ALERT_LIMIT = 25;
-const INSIGHTS_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const INSIGHTS_FALLBACK_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const INSIGHTS_TOP_N = 5;
+const INSIGHTS_WINDOW_OPTIONS = new Set([1, 6, 24, 168]);
+const HISTORY_PAGE_SIZE_DEFAULT = 25;
+const HISTORY_PAGE_SIZE_MAX = 100;
+const HISTORY_MAX_ITEMS = 500;
+const HISTORY_WINDOW_HOURS_DEFAULT = 24;
+const HISTORY_WINDOW_HOURS_MAX = 24 * 30;
+const HISTORY_MAX_RESPONSE_BYTES = 12 * 1024 * 1024;
+const METRICS_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const METRICS_TIMEOUT_MS = 3000;
 const MANUAL_BAN_SCENARIO = "manual/web-ui";
 const MACHINE_TOKEN_TTL_MS = 30 * 1000;
 // crowdsec's lapi validates the client user agent against the registered
@@ -44,6 +57,26 @@ const SCOPE_PATTERN = /^[a-zA-Z]{1,32}$/;
 const configuredTimeout = Number.parseInt(process.env.CROWDSEC_LAPI_TIMEOUT_MS || "5000", 10);
 const LAPI_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 5000;
 const LAPI_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const metricsUrlFromLapi = () => {
+	try {
+		const url = new URL(LAPI_URL);
+		url.port = process.env.CROWDSEC_METRICS_PORT || "6060";
+		url.pathname = "/metrics";
+		url.search = "";
+		return url.toString();
+	} catch {
+		return "";
+	}
+};
+const configuredMetricsUrl = process.env.CROWDSEC_METRICS_URL || metricsUrlFromLapi();
+const CROWDSEC_METRICS_URL = (() => {
+	try {
+		const url = new URL(configuredMetricsUrl);
+		return ["http:", "https:"].includes(url.protocol) ? url : null;
+	} catch {
+		return null;
+	}
+})();
 const ANUBIS_UPSTREAM = process.env.AUTH_REQUEST_ANUBIS_UPSTREAM || "";
 const ANUBIS_TIMEOUT_MS = 3000;
 const ANUBIS_MAX_RESPONSE_BYTES = 64 * 1024;
@@ -193,6 +226,68 @@ const sendError = (req, res, next, err) => {
 	next(err);
 };
 
+const queryString = (value, maxLength = 256) =>
+	typeof value === "string" && value.length <= maxLength ? value.trim() : "";
+
+const queryInteger = (value, fallback, minimum, maximum) => {
+	const parsed = typeof value === "string" ? Number.parseInt(value, 10) : Number.NaN;
+	return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : fallback;
+};
+
+const topCounts = (counts, limit = INSIGHTS_TOP_N) =>
+	Object.entries(counts)
+		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+		.slice(0, limit)
+		.map(([name, count]) => ({ name, count }));
+
+const readAlertsSample = async (windowHours, limit) => {
+	const params = new URLSearchParams({
+		since: `${windowHours}h`,
+		limit: String(limit),
+		with_decisions: "false",
+	});
+	try {
+		return await lapiMachineFetch(`/v1/alerts?${params}`, "GET", true, {
+			readJson: (response) => readCrowdsecJson(response, HISTORY_MAX_RESPONSE_BYTES),
+		});
+	} catch (err) {
+		if (err?.message !== "crowdsec.invalid-response" || limit <= INSIGHTS_FALLBACK_ALERT_LIMIT) throw err;
+		params.set("limit", String(INSIGHTS_FALLBACK_ALERT_LIMIT));
+		return lapiMachineFetch(`/v1/alerts?${params}`, "GET", true, {
+			readJson: (response) => readCrowdsecJson(response, INSIGHTS_FALLBACK_MAX_RESPONSE_BYTES),
+		});
+	}
+};
+
+const alertTime = (alert) => alert.created_at || alert.start_at || alert.stop_at;
+
+const activityBuckets = (alerts, windowHours) => {
+	const bucketHours = windowHours <= 24 ? 1 : 24;
+	const bucketCount = Math.ceil(windowHours / bucketHours);
+	const end = new Date();
+	end.setMinutes(0, 0, 0);
+	if (bucketHours === 24) end.setHours(0);
+	const startMs = end.getTime() - (bucketCount - 1) * bucketHours * 60 * 60 * 1000;
+	const buckets = Array.from({ length: bucketCount }, (_, index) => ({
+		start: new Date(startMs + index * bucketHours * 60 * 60 * 1000).toISOString(),
+		count: 0,
+	}));
+	for (const alert of alerts) {
+		const timestamp = Date.parse(alertTime(alert));
+		if (!Number.isFinite(timestamp)) continue;
+		const index = Math.floor((timestamp - startMs) / (bucketHours * 60 * 60 * 1000));
+		if (index >= 0 && index < buckets.length) buckets[index].count += 1;
+	}
+	return buckets;
+};
+
+const attackSpike = (buckets) => {
+	if (buckets.length < 2) return false;
+	const latest = buckets.at(-1).count;
+	const baseline = buckets.slice(0, -1).reduce((sum, bucket) => sum + bucket.count, 0) / (buckets.length - 1);
+	return latest >= 5 && latest >= Math.max(2, baseline * 2);
+};
+
 router
 	.route("/anubis")
 	.options((_, res) => res.sendStatus(204))
@@ -283,8 +378,19 @@ router
 				return;
 			}
 
-			// Ask for one extra row so the frontend receives an accurate cap signal.
-			const payload = await lapiFetch(`/v1/decisions?limit=${LAPI_DECISION_LIMIT + 1}`);
+			const paginated = typeof req.query.page === "string" || typeof req.query.page_size === "string";
+			const page = queryInteger(req.query.page, 1, 1, 1000);
+			const pageSize = queryInteger(req.query.page_size, 25, 1, 100);
+			const search = queryString(req.query.search).toLocaleLowerCase();
+			const origin = queryString(req.query.origin, 32).toLocaleLowerCase();
+			const requestedEnd = page * pageSize;
+			if (paginated && requestedEnd > LAPI_PAGE_MAX_ITEMS) {
+				res.status(400).send({ error: { message: "crowdsec.page-too-deep" } });
+				return;
+			}
+			let fetchLimit = LAPI_DECISION_LIMIT + 1;
+			if (paginated) fetchLimit = search || origin ? LAPI_PAGE_MAX_ITEMS + 1 : requestedEnd + 1;
+			const payload = await lapiFetch(`/v1/decisions?limit=${fetchLimit}`);
 			let decisions;
 			try {
 				decisions = normalizeCrowdsecDecisions(payload);
@@ -292,10 +398,35 @@ router
 				debug(logger, `CrowdSec decisions contract mismatch: ${err}`);
 				throw publicError("crowdsec.invalid-response", 502);
 			}
+			if (!paginated) {
+				res.status(200).send({
+					items: decisions.slice(0, LAPI_DECISION_LIMIT),
+					limit: LAPI_DECISION_LIMIT,
+					truncated: decisions.length > LAPI_DECISION_LIMIT,
+				});
+				return;
+			}
+
+			const filtered = decisions.filter((decision) => {
+				if (origin === "local" && !["crowdsec", "cscli"].includes(decision.origin.toLocaleLowerCase()))
+					return false;
+				if (origin === "community" && ["crowdsec", "cscli"].includes(decision.origin.toLocaleLowerCase()))
+					return false;
+				if (!search) return true;
+				return [decision.value, decision.scope, decision.scenario, decision.origin, decision.type].some(
+					(value) => value.toLocaleLowerCase().includes(search),
+				);
+			});
+			const start = (page - 1) * pageSize;
+			const hasNext = filtered.length > requestedEnd;
 			res.status(200).send({
-				items: decisions.slice(0, LAPI_DECISION_LIMIT),
-				limit: LAPI_DECISION_LIMIT,
-				truncated: decisions.length > LAPI_DECISION_LIMIT,
+				items: filtered.slice(start, requestedEnd),
+				limit: LAPI_PAGE_MAX_ITEMS,
+				truncated: decisions.length >= fetchLimit,
+				page,
+				page_size: pageSize,
+				has_next: hasNext,
+				matched: Math.min(filtered.length, requestedEnd),
 			});
 		} catch (err) {
 			sendError(req, res, next, err);
@@ -408,6 +539,69 @@ router
 		}
 	});
 
+// Paginated alert history. CrowdSec's LAPI exposes a bounded newest-first
+// list rather than an offset cursor, so each page requests only the prefix it
+// needs and reports when the configured safety cap prevents deeper browsing.
+router
+	.route("/history/alerts")
+	.options((_, res) => res.sendStatus(204))
+	.all(jwtdecode())
+	.get(async (req, res, next) => {
+		try {
+			if (!(await requireAdmin(res))) {
+				res.status(403).send({ error: { message: "access.denied" } });
+				return;
+			}
+
+			const page = queryInteger(req.query.page, 1, 1, 1000);
+			const pageSize = queryInteger(req.query.page_size, HISTORY_PAGE_SIZE_DEFAULT, 1, HISTORY_PAGE_SIZE_MAX);
+			const windowHours = queryInteger(
+				req.query.window_hours,
+				HISTORY_WINDOW_HOURS_DEFAULT,
+				1,
+				HISTORY_WINDOW_HOURS_MAX,
+			);
+			const requestedEnd = page * pageSize;
+			if (requestedEnd > HISTORY_MAX_ITEMS) {
+				res.status(400).send({ error: { message: "crowdsec.page-too-deep" } });
+				return;
+			}
+			const filters = {
+				search: queryString(req.query.search),
+				scenario: queryString(req.query.scenario),
+				country: queryString(req.query.country, 8),
+				target: queryString(req.query.target),
+			};
+			const hasFilters = Object.values(filters).some(Boolean);
+			const fetchLimit = hasFilters ? HISTORY_MAX_ITEMS + 1 : requestedEnd + 1;
+			const payload = await readAlertsSample(windowHours, fetchLimit);
+			let alerts;
+			try {
+				alerts = normalizeCrowdsecAlerts(payload).sort(
+					(a, b) => Date.parse(alertTime(b)) - Date.parse(alertTime(a)) || b.id - a.id,
+				);
+			} catch (err) {
+				debug(logger, `CrowdSec history contract mismatch: ${err}`);
+				throw publicError("crowdsec.invalid-response", 502);
+			}
+			const filtered = filterCrowdsecAlerts(alerts, filters);
+			const start = (page - 1) * pageSize;
+			res.status(200).send({
+				items: filtered.slice(start, requestedEnd),
+				page,
+				page_size: pageSize,
+				has_next: filtered.length > requestedEnd,
+				matched: Math.min(filtered.length, requestedEnd),
+				window_hours: windowHours,
+				truncated:
+					alerts.length >= fetchLimit ||
+					(fetchLimit > INSIGHTS_FALLBACK_ALERT_LIMIT && alerts.length === INSIGHTS_FALLBACK_ALERT_LIMIT),
+			});
+		} catch (err) {
+			sendError(req, res, next, err);
+		}
+	});
+
 // manual ban: the LAPI accepts an alert wrapper whose decision carries
 // origin "cscli", so the ban appears like a cscli decisions add - the same
 // pattern the crowdsec cli and other dashboards use
@@ -500,8 +694,8 @@ router
 		}
 	});
 
-// insights: a live 24h aggregation over recent alerts - top countries,
-// ASNs and scenarios plus the alert count. computed per request, no cache
+// Live analytics over a caller-selected, bounded window. This remains a
+// read-only view over LAPI: no second database and no duplicate source of truth.
 router
 	.route("/insights")
 	.options((_, res) => res.sendStatus(204))
@@ -513,58 +707,102 @@ router
 				return;
 			}
 
-			const insightsQuery = (limit) =>
-				new URLSearchParams({
-					since: `${INSIGHTS_WINDOW_HOURS}h`,
-					limit: String(limit),
-					// the aggregation never reads decisions; skipping them keeps
-					// community-blocklist stub alerts from bloating the sample
-					with_decisions: "false",
-				});
-			let payload;
-			try {
-				payload = await lapiMachineFetch(`/v1/alerts?${insightsQuery(INSIGHTS_ALERT_LIMIT)}`, "GET", true, {
-					readJson: (response) => readCrowdsecJson(response, INSIGHTS_MAX_RESPONSE_BYTES),
-				});
-			} catch (err) {
-				if (err?.message !== "crowdsec.invalid-response") throw err;
-				payload = await lapiMachineFetch(
-					`/v1/alerts?${insightsQuery(INSIGHTS_FALLBACK_ALERT_LIMIT)}`,
-					"GET",
-					true,
-					{
-						readJson: (response) => readCrowdsecJson(response, INSIGHTS_FALLBACK_MAX_RESPONSE_BYTES),
-					},
-				);
-			}
+			const requestedWindow = queryInteger(req.query.window_hours, INSIGHTS_WINDOW_HOURS, 1, 168);
+			const windowHours = INSIGHTS_WINDOW_OPTIONS.has(requestedWindow) ? requestedWindow : INSIGHTS_WINDOW_HOURS;
+			const [payload, decisionPayload] = await Promise.all([
+				readAlertsSample(windowHours, INSIGHTS_ALERT_LIMIT),
+				lapiFetch(`/v1/decisions?limit=${LAPI_DECISION_LIMIT + 1}`).catch((err) => {
+					debug(logger, `CrowdSec active decision count unavailable: ${err.message}`);
+					return null;
+				}),
+			]);
 			const alerts = normalizeCrowdsecAlerts(payload);
-
-			const top = (counts) =>
-				Object.entries(counts)
-					.sort((a, b) => b[1] - a[1])
-					.slice(0, INSIGHTS_TOP_N)
-					.map(([name, count]) => ({ name, count }));
-
 			const countries = {};
 			const asns = {};
 			const scenarios = {};
+			const targets = {};
+			const locationCounts = new Map();
 			for (const alert of alerts) {
 				if (alert.scenario) scenarios[alert.scenario] = (scenarios[alert.scenario] ?? 0) + 1;
 				const country = alert.source?.country;
 				if (country) countries[country] = (countries[country] ?? 0) + 1;
 				const asn = alert.source?.as_name || (alert.source?.as_number ? `AS${alert.source.as_number}` : "");
 				if (asn) asns[asn] = (asns[asn] ?? 0) + 1;
+				const target = crowdsecAlertTarget(alert);
+				if (target) targets[target] = (targets[target] ?? 0) + 1;
+				if (alert.source?.latitude !== null && alert.source?.longitude !== null) {
+					const key = `${alert.source.latitude},${alert.source.longitude},${country}`;
+					const location = locationCounts.get(key) ?? {
+						latitude: alert.source.latitude,
+						longitude: alert.source.longitude,
+						country: country || "",
+						count: 0,
+					};
+					location.count += 1;
+					locationCounts.set(key, location);
+				}
 			}
+			const activity = activityBuckets(alerts, windowHours);
+			const decisions = decisionPayload === null ? null : normalizeCrowdsecDecisions(decisionPayload);
+			const activeDecisions = decisions === null ? null : Math.min(decisions.length, LAPI_DECISION_LIMIT);
+			const signals = [];
+			if (attackSpike(activity))
+				signals.push({ id: `spike-${activity.at(-1).start}`, severity: "warning", type: "attack-spike" });
+			if (activeDecisions > 0)
+				signals.push({
+					id: `bans-${activeDecisions}`,
+					severity: "info",
+					type: "active-bans",
+					count: activeDecisions,
+				});
 
 			res.status(200).send({
-				window_hours: INSIGHTS_WINDOW_HOURS,
+				window_hours: windowHours,
 				alert_count: alerts.length,
-				top_scenarios: top(scenarios),
-				top_countries: top(countries),
-				top_asns: top(asns),
+				active_decisions: activeDecisions,
+				sampled: alerts.length >= INSIGHTS_ALERT_LIMIT,
+				activity,
+				locations: [...locationCounts.values()].sort((a, b) => b.count - a.count).slice(0, 100),
+				signals,
+				top_scenarios: topCounts(scenarios),
+				top_countries: topCounts(countries),
+				top_asns: topCounts(asns),
+				top_targets: topCounts(targets),
 			});
 		} catch (err) {
 			sendError(req, res, next, err);
+		}
+	});
+
+router
+	.route("/metrics")
+	.options((_, res) => res.sendStatus(204))
+	.all(jwtdecode())
+	.get(async (_req, res, next) => {
+		try {
+			if (!(await requireAdmin(res))) {
+				res.status(403).send({ error: { message: "access.denied" } });
+				return;
+			}
+			if (!CROWDSEC_METRICS_URL) {
+				res.status(200).send({ available: false, error: "crowdsec.metrics-unconfigured" });
+				return;
+			}
+			try {
+				const response = await fetchWithTimeout(
+					CROWDSEC_METRICS_URL,
+					{ headers: { "User-Agent": LAPI_USER_AGENT }, redirect: "error" },
+					METRICS_TIMEOUT_MS,
+				);
+				if (!response.ok) throw new Error(`HTTP ${response.status}`);
+				const text = await readBoundedText(response, METRICS_MAX_RESPONSE_BYTES);
+				res.status(200).send({ available: true, ...summarizeCrowdsecMetrics(parsePrometheusText(text)) });
+			} catch (err) {
+				debug(logger, `CrowdSec metrics unavailable: ${err}`);
+				res.status(200).send({ available: false, error: "crowdsec.metrics-unavailable" });
+			}
+		} catch (err) {
+			next(err);
 		}
 	});
 

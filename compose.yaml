@@ -123,6 +123,7 @@ services:
 #      - "OIDC_DISABLE_PASSWORD=true" # disables plain email/password login, default false
 #      - "OIDC_SKIP_MFA=true" # skips the second factor after a successful OIDC login, default false
 #      - "CROWDSEC_LAPI_URL=http://crowdsec:8080" # required when enabling the example CrowdSec service below
+#      - "CROWDSEC_METRICS_URL=http://crowdsec:6060/metrics" # optional private Prometheus feed for the CrowdSec dashboard
 #      - "AUTH_REQUEST_ANUBIS_UPSTREAM=http://anubis:8923" # scheme + ip/hostname/domain (+ port) to internal anubis, without path, this is unrelated to OIDC
 #      - "AUTH_REQUEST_TINYAUTH_UPSTREAM=http://127.0.0.1:3000" # scheme + ip/hostname/domain (+ port) to internal tinyauth, without path, this is unrelated to OIDC
 #      - "AUTH_REQUEST_OAUTH2PROXY_UPSTREAM=http://127.0.0.1:4180" # scheme + ip/hostname/domain (+ port) to internal oauth2proxy, without path, this is unrelated to OIDC
@@ -137,11 +138,13 @@ services:
 #    image: docker.io/crowdsecurity/crowdsec:latest
 #    pull_policy: always
 #    ports:
+#      - "127.0.0.1:6060:6060"
 #      - "127.0.0.1:7422:7422"
 #      - "127.0.0.1:8080:8080"
 #    environment:
 #      - "TZ=your-timezone" # needs to be changed
 #      - "USE_WAL=true"
+#      - "METRICS_PORT=6060"
 #      - "COLLECTIONS=ZoeyVid/npmplus"
 #    volumes:
 #      - "/opt/crowdsec/conf:/etc/crowdsec"

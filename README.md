@@ -112,7 +112,7 @@ When requesting help, share the command output but remove public IP addresses, d
 
 - Proxy hosts, redirects, streams, access lists, certificates, and a modern admin dashboard.
 - HTTP/3, modern TLS, mTLS, OIDC, `auth_request`, load balancing, and multiple access lists.
-- CrowdSec ban dashboard with search, alert context, exact-decision unban, and audit logging.
+- Integrated CrowdSec security dashboard with attack activity, geolocation, count-aware filters, paginated alert history, engine metrics, optional browser alerts while the page is open, manual bans, exact-decision unban, and audit logging.
 - Security headers, strict browser policy, protected session cookies, rate limits, and safer defaults.
 - Support for Let's Encrypt and other ACME certificate authorities.
 - Optional GoAccess statistics and API documentation in the dashboard.

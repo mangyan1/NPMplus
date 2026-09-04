@@ -85,7 +85,8 @@ const alerts = [
 		id: 99,
 		message: "http-probing from 198.51.100.7",
 		scenario: "crowdsecurity/http-probing",
-		started_at: new Date(Date.now() - 3600 * 1000).toISOString(),
+		created_at: new Date(Date.now() - 3600 * 1000).toISOString(),
+		start_at: new Date(Date.now() - 3600 * 1000).toISOString(),
 		events_count: 2,
 		source: {
 			ip: "198.51.100.7",
@@ -94,6 +95,8 @@ const alerts = [
 			as_name: "Example ASN",
 			range: "198.51.100.0/24",
 			rdns: "host.example.com",
+			latitude: 51.16,
+			longitude: 10.45,
 		},
 		events: [
 			{
@@ -114,7 +117,8 @@ const alerts = [
 		id: 100,
 		message: "ssh brute force from 203.0.113.20",
 		scenario: "crowdsecurity/ssh-bf",
-		started_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+		created_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+		start_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
 		events_count: 1,
 		source: {
 			ip: "203.0.113.20",
@@ -123,6 +127,8 @@ const alerts = [
 			as_name: "Second ASN",
 			range: "203.0.113.0/24",
 			rdns: "host2.example.com",
+			latitude: 46.23,
+			longitude: 2.21,
 		},
 		events: [],
 	},
@@ -131,7 +137,8 @@ const alerts = [
 		id: 101,
 		message: "stale alert from three days ago",
 		scenario: "crowdsecurity/http-bad-user-agent",
-		started_at: new Date(Date.now() - 3 * 86400 * 1000).toISOString(),
+		created_at: new Date(Date.now() - 3 * 86400 * 1000).toISOString(),
+		start_at: new Date(Date.now() - 3 * 86400 * 1000).toISOString(),
 		events_count: 1,
 		source: {
 			ip: "192.0.2.99",
@@ -210,7 +217,7 @@ const server = http.createServer((req, res) => {
 				if (!match) return send(400, { message: `bad since: ${since}` });
 				const unitSeconds = { s: 1, m: 60, h: 3600, d: 86400 }[match[2]];
 				const cutoff = Date.now() - Number(match[1]) * unitSeconds * 1000;
-				matches = matches.filter((a) => new Date(a.started_at).getTime() >= cutoff);
+				matches = matches.filter((a) => new Date(a.start_at).getTime() >= cutoff);
 			}
 			// the insights aggregation never reads decisions: it must ask the
 			// lapi to skip them, exactly like the alert-context route does

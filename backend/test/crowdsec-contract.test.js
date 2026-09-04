@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+	crowdsecAlertTarget,
+	filterCrowdsecAlerts,
 	hasCrowdsecAdminAccess,
 	normalizeCrowdsecAlerts,
 	normalizeCrowdsecDecisions,
 	parseCrowdsecDecisionId,
+	parsePrometheusText,
+	summarizeCrowdsecMetrics,
 	validateManualBan,
 } from "../lib/crowdsec-contract.js";
 
@@ -22,7 +26,8 @@ test("CrowdSec decisions are reduced to the stable public contract", () => {
 			origin: "crowdsec",
 			scenario: "http-probing",
 			duration: "3h59m",
-			until: "should-not-leak",
+			created_at: "2026-09-03T00:00:00Z",
+			until: "2026-09-03T04:00:00Z",
 			simulated: true,
 		},
 	]);
@@ -37,6 +42,9 @@ test("CrowdSec decisions are reduced to the stable public contract", () => {
 			origin: "crowdsec",
 			scenario: "http-probing",
 			duration: "3h59m",
+			created_at: "2026-09-03T00:00:00Z",
+			until: "2026-09-03T04:00:00Z",
+			simulated: true,
 		},
 	]);
 });
@@ -49,6 +57,9 @@ test("CrowdSec alerts keep attacker details while stripping sensitive payloads",
 			message: "blocked",
 			start_at: "2026-09-03T00:00:00Z",
 			stop_at: "2026-09-03T00:01:00Z",
+			created_at: "2026-09-03T00:01:01Z",
+			machine_id: "npmplus",
+			simulated: false,
 			events_count: 2,
 			events: [
 				{
@@ -72,11 +83,15 @@ test("CrowdSec alerts keep attacker details while stripping sensitive payloads",
 			meta: [{ key: "sensitive", value: "not-for-the-browser" }],
 			source: {
 				ip: "203.0.113.50",
+				scope: "Ip",
+				value: "203.0.113.50",
 				cn: "DE",
 				as_number: "64496",
 				as_name: "Example ASN",
 				range: "203.0.113.0/24",
 				rdns: "host.example.com",
+				latitude: 51.16,
+				longitude: 10.45,
 			},
 		},
 	]);
@@ -88,13 +103,21 @@ test("CrowdSec alerts keep attacker details while stripping sensitive payloads",
 			message: "blocked",
 			start_at: "2026-09-03T00:00:00Z",
 			stop_at: "2026-09-03T00:01:00Z",
+			created_at: "2026-09-03T00:01:01Z",
+			machine_id: "npmplus",
+			simulated: false,
 			events_count: 2,
 			source: {
+				ip: "203.0.113.50",
+				scope: "Ip",
+				value: "203.0.113.50",
 				country: "DE",
 				as_number: "64496",
 				as_name: "Example ASN",
 				range: "203.0.113.0/24",
 				rdns: "host.example.com",
+				latitude: 51.16,
+				longitude: 10.45,
 			},
 			events: [
 				{
@@ -113,6 +136,69 @@ test("CrowdSec alerts keep attacker details while stripping sensitive payloads",
 			],
 		},
 	]);
+});
+
+test("CrowdSec alert history can be searched and filtered without exposing raw events", () => {
+	const alerts = normalizeCrowdsecAlerts([
+		{
+			id: 1,
+			scenario: "crowdsecurity/http-probing",
+			message: "scan",
+			source: { ip: "203.0.113.8", cn: "CA" },
+			events: [{ meta: [{ key: "target_host", value: "admin.example.test" }] }],
+		},
+		{ id: 2, scenario: "crowdsecurity/ssh-bf", source: { ip: "198.51.100.9", cn: "US" } },
+	]);
+	assert.equal(crowdsecAlertTarget(alerts[0]), "admin.example.test");
+	assert.deepEqual(
+		filterCrowdsecAlerts(alerts, { country: "ca" }).map(({ id }) => id),
+		[1],
+	);
+	assert.deepEqual(
+		filterCrowdsecAlerts(alerts, { scenario: "crowdsecurity/ssh-bf" }).map(({ id }) => id),
+		[2],
+	);
+	assert.deepEqual(
+		filterCrowdsecAlerts(alerts, { search: "admin.example" }).map(({ id }) => id),
+		[1],
+	);
+	assert.deepEqual(
+		filterCrowdsecAlerts(alerts, { search: "country:ca target:admin.example" }).map(({ id }) => id),
+		[1],
+	);
+	assert.deepEqual(
+		filterCrowdsecAlerts(alerts, { search: "scenario:ssh ip:198.51" }).map(({ id }) => id),
+		[2],
+	);
+});
+
+test("Prometheus metrics are parsed and summarized", () => {
+	const samples = parsePrometheusText(`
+# HELP cs_parser_hits_total parser hits
+cs_parser_hits_total{source="nginx"} 10
+cs_parser_hits_ok_total{source="nginx"} 8
+cs_appsec_reqs_total 12
+cs_appsec_block_total 3
+cs_lapi_request_duration_seconds_sum 1.5
+cs_lapi_request_duration_seconds_count 3
+cs_active_decisions 7
+not valid
+`);
+	assert.equal(samples.length, 7);
+	assert.deepEqual(samples[0].labels, { source: "nginx" });
+	assert.deepEqual(summarizeCrowdsecMetrics(samples), {
+		active_decisions: 7,
+		alerts: 0,
+		appsec_requests: 12,
+		appsec_blocked: 3,
+		bouncer_requests: 0,
+		machine_requests: 0,
+		parser_hits: 10,
+		parser_success_rate: 0.8,
+		whitelist_hits: 0,
+		average_lapi_ms: 500,
+		average_parsing_ms: null,
+	});
 });
 
 test("CrowdSec payload validation rejects malformed upstream responses", () => {

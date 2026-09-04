@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.17"
+SCRIPT_VERSION="1.18"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -228,6 +228,35 @@ set_compose_service_image() { # set_compose_service_image <service> <image-ref>
 	' "$COMPOSE_FILE" >"$tmp"; then
 		rm -f "$tmp"
 		echo "could not update image for Compose service $service" >&2
+		return 1
+	fi
+	chmod --reference="$COMPOSE_FILE" "$tmp"
+	mv "$tmp" "$COMPOSE_FILE"
+}
+
+ensure_crowdsec_metrics_port() {
+	local service="crowdsec" port_mapping="127.0.0.1:6060:6060" tmp
+	if awk -v service="$service" '
+		$0 == "  " service ":" { in_service=1 }
+		in_service && $0 ~ /^  [^ ]/ && $0 != "  " service ":" { in_service=0 }
+		in_service && index($0, "6060:6060") { found=1 }
+		END { exit !found }
+	' "$COMPOSE_FILE"; then
+		return 0
+	fi
+	tmp=$(mktemp "${COMPOSE_FILE}.XXXXXX")
+	if ! awk -v service="$service" -v port_mapping="$port_mapping" '
+		$0 == "  " service ":" { in_service=1 }
+		in_service && $0 ~ /^  [^ ]/ && $0 != "  " service ":" { in_service=0 }
+		{ print }
+		in_service && $0 == "    ports:" {
+			print "      - \"" port_mapping "\""
+			added=1
+		}
+		END { if (!added) exit 1 }
+	' "$COMPOSE_FILE" >"$tmp"; then
+		rm -f "$tmp"
+		echo "could not add private metrics port to Compose service $service" >&2
 		return 1
 	fi
 	chmod --reference="$COMPOSE_FILE" "$tmp"
@@ -897,6 +926,7 @@ if [[ "${1:-}" == "--update" ]]; then
 	if grep -q "container_name: crowdsec" "$COMPOSE_FILE"; then
 		CROWDSEC_IMAGE=$(pin_image "$CROWDSEC_IMAGE_CHANNEL")
 		set_compose_service_image crowdsec "$CROWDSEC_IMAGE"
+		ensure_crowdsec_metrics_port
 	fi
 	if grep -q "container_name: npmplus-caddy" "$COMPOSE_FILE"; then
 		CADDY_IMAGE=$(pin_image "$CADDY_IMAGE_CHANNEL")
@@ -1120,7 +1150,8 @@ if [[ "$USE_ANUBIS" == "y" ]]; then
 fi
 ENV_CROWDSEC=""
 if [[ "$USE_CROWDSEC" == "y" ]]; then
-	ENV_CROWDSEC="      - \"CROWDSEC_LAPI_URL=http://$CROWDSEC_SERVICE_HOST:8080\""
+	ENV_CROWDSEC="      - \"CROWDSEC_LAPI_URL=http://$CROWDSEC_SERVICE_HOST:8080\"
+      - \"CROWDSEC_METRICS_URL=http://$CROWDSEC_SERVICE_HOST:6060/metrics\""
 fi
 
 CROWDSEC_BLOCK=""
@@ -1133,11 +1164,13 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
     image: $CROWDSEC_IMAGE
     pull_policy: missing
     ports:
+      - "127.0.0.1:6060:6060"
       - "127.0.0.1:7422:7422"
       - "127.0.0.1:8080:8080"
     environment:
 $ENV_TZ
       - "USE_WAL=true"
+      - "METRICS_PORT=6060"
       - "COLLECTIONS=ZoeyVid/npmplus"
     volumes:
       - "$CROWDSEC_DIR/conf:/etc/crowdsec"

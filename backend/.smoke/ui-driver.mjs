@@ -9,10 +9,10 @@ import process from "node:process";
 
 // playwright is not a project dependency (it is heavy and platform specific):
 // resolve it from the environment or the global npm root so the driver runs
-// on any machine without a hardcoded user path. shell:true is required for
-// .cmd shims on Windows; the fixed argv here is safe.
-const globalRoot =
-	process.env.PLAYWRIGHT_ROOT ?? execFileSync("npm", ["root", "-g"], { shell: true }).toString().trim();
+// on any machine without a hardcoded user path.
+const npmCommand = process.platform === "win32" ? "cmd.exe" : "npm";
+const npmArgs = process.platform === "win32" ? ["/d", "/s", "/c", "npm root -g"] : ["root", "-g"];
+const globalRoot = process.env.PLAYWRIGHT_ROOT ?? execFileSync(npmCommand, npmArgs).toString().trim();
 const playwrightEntry = path.join(globalRoot, "playwright", "index.mjs");
 if (!existsSync(playwrightEntry)) {
 	console.error("playwright is not installed globally. Install it with: npm i -g playwright");
@@ -82,14 +82,23 @@ const alerts = [
 		id: 99,
 		message: "http-probing from 198.51.100.7",
 		scenario: "crowdsecurity/http-probing",
-		started_at: iso(-3600 * 1000),
+		createdAt: iso(-3600 * 1000),
+		startAt: iso(-3600 * 1000),
+		stopAt: iso(-3500 * 1000),
+		machineId: "npmplus",
+		simulated: false,
 		events_count: 6,
 		source: {
+			ip: "198.51.100.7",
+			scope: "Ip",
+			value: "198.51.100.7",
 			country: "DE",
 			as_number: "64496",
 			as_name: "Example ASN",
 			range: "198.51.100.0/24",
 			rdns: "host.example.com",
+			latitude: 51.16,
+			longitude: 10.45,
 		},
 		events: [
 			{
@@ -175,6 +184,16 @@ const api = async (route) => {
 		return respondWith({
 			windowHours: 24,
 			alertCount: 7,
+			activeDecisions: decisions.length,
+			sampled: false,
+			activity: Array.from({ length: 24 }, (_, index) => ({
+				start: iso((index - 23) * 3600 * 1000),
+				count: index === 23 ? 7 : index % 5,
+			})),
+			locations: [{ latitude: 51.16, longitude: 10.45, country: "DE", count: 5 }],
+			signals: [
+				{ id: `bans-${decisions.length}`, severity: "info", type: "active-bans", count: decisions.length },
+			],
 			topScenarios: [
 				{ name: "crowdsecurity/http-probing", count: 4 },
 				{ name: "crowdsecurity/ssh-bf", count: 3 },
@@ -184,8 +203,46 @@ const api = async (route) => {
 				{ name: "FR", count: 2 },
 			],
 			topAsns: [{ name: "Example ASN", count: 7 }],
+			topTargets: [{ name: "/.env", count: 4 }],
 		});
 	}
+	if (apiPath === "/crowdsec/history/alerts") {
+		const search = (url.searchParams.get("search") || "").toLowerCase();
+		const scenario = url.searchParams.get("scenario") || "";
+		const country = url.searchParams.get("country") || "";
+		const target = url.searchParams.get("target") || "";
+		const items = alerts.filter(
+			(alert) =>
+				(!search || JSON.stringify(alert).toLowerCase().includes(search)) &&
+				(!scenario || alert.scenario === scenario) &&
+				(!country || alert.source.country === country) &&
+				(!target || alert.events.some((event) => event.meta.some((meta) => meta.value.includes(target)))),
+		);
+		return respondWith({
+			items,
+			page: Number(url.searchParams.get("page") || "1"),
+			pageSize: 25,
+			hasNext: false,
+			matched: items.length,
+			windowHours: 24,
+			truncated: false,
+		});
+	}
+	if (apiPath === "/crowdsec/metrics")
+		return respondWith({
+			available: true,
+			activeDecisions: decisions.length,
+			alerts: 7,
+			appsecRequests: 12,
+			appsecBlocked: 3,
+			bouncerRequests: 20,
+			machineRequests: 8,
+			parserHits: 10,
+			parserSuccessRate: 0.9,
+			whitelistHits: 1,
+			averageLapiMs: 500,
+			averageParsingMs: 2,
+		});
 	if (apiPath === "/crowdsec/anubis")
 		return respondWith({
 			configured: true,
@@ -273,14 +330,14 @@ check("second ban shows its 4h duration", /in 4h/.test(rows[1] ?? ""), rows[1]);
 check("last ban shows its 1h duration", /in 1h/.test(rows[3] ?? ""), rows[3]);
 
 // search: typing filters the list live
-await page.locator(".input-group input").fill("203.0");
+await page.locator("#crowdsec-search").fill("203.0");
 rows = await decisionsTable.allInnerTexts();
 check(
 	"search narrows to the matching row",
 	rows.length === 1 && rows[0]?.includes("203.0.113.9"),
 	JSON.stringify(rows),
 );
-await page.locator(".input-group input").fill("no-such-ip");
+await page.locator("#crowdsec-search").fill("no-such-ip");
 await page.waitForTimeout(200);
 rows = await decisionsTable.allInnerTexts();
 check(
@@ -288,7 +345,7 @@ check(
 	rows.length === 1 && rows[0]?.includes("No bans match"),
 	JSON.stringify(rows),
 );
-await page.locator(".input-group input").fill("");
+await page.locator("#crowdsec-search").fill("");
 await decisionsTable.first().waitFor();
 
 // the origin filter narrows the list the same way
@@ -308,27 +365,57 @@ await page.locator("#crowdsec-origin-filter").selectOption("all");
 await page.waitForTimeout(200);
 await decisionsTable.first().waitFor();
 
-// insights card: 24h summary strip at the top of the page
-const insightsCard = page.locator(".card").filter({ hasText: "Last 24 hours" }).first();
-await insightsCard.waitFor({ timeout: 5000 });
-const insightsText = await insightsCard.innerText();
+// integrated overview: analytics, location plot, count-aware filters and metrics
+const dashboardCard = page.locator(".card").filter({ hasText: "Security overview" }).first();
+await dashboardCard.waitFor({ timeout: 5000 });
+const dashboardText = await dashboardCard.innerText();
 check(
-	"insights card renders the alert count",
-	insightsText.includes("7 alerts") && insightsText.includes("Last 24 hours"),
-	insightsText.slice(0, 200),
+	"security overview renders alert and active-ban counts",
+	/alerts in window/i.test(dashboardText) && dashboardText.includes("7") && /active bans/i.test(dashboardText),
+	dashboardText.slice(0, 240),
 );
 check(
-	"insights card lists top scenarios, countries and asns",
-	insightsText.includes("crowdsecurity/http-probing") &&
-		insightsText.includes("DE") &&
-		insightsText.includes("Example ASN"),
-	insightsText.slice(0, 300),
+	"overview lists count-aware scenario, country, ASN and target filters",
+	dashboardText.includes("crowdsecurity/http-probing") &&
+		dashboardText.includes("DE") &&
+		dashboardText.includes("Example ASN") &&
+		dashboardText.includes("/.env"),
+	dashboardText.slice(0, 400),
 );
 check(
-	"insights badges carry their counts",
-	insightsText.includes("×4") && insightsText.includes("×5") && insightsText.includes("×7"),
-	insightsText.slice(0, 300),
+	"activity chart and attack location plot render",
+	(await dashboardCard.locator('svg[aria-label="Attack activity"]').count()) === 1 &&
+		(await dashboardCard.locator('svg[aria-label="Attack locations"]').count()) === 1,
+	"missing analytics SVG",
 );
+
+const historyCard = page.locator(".card").filter({ hasText: "Alert history" }).first();
+await historyCard.waitFor({ timeout: 5000 });
+let historyText = await historyCard.innerText();
+check(
+	"paginated alert history renders safe alert details",
+	historyText.includes("198.51.100.7") &&
+		historyText.includes("crowdsecurity/http-probing") &&
+		historyText.includes("Page 1"),
+	historyText.slice(0, 300),
+);
+const metricsCard = page.locator(".card").filter({ hasText: "Engine metrics since restart" }).first();
+const metricsText = await metricsCard.innerText();
+check(
+	"Prometheus summaries render",
+	/appsec requests/i.test(metricsText) && metricsText.includes("12") && metricsText.includes("500.0 ms"),
+	metricsText.slice(0, 240),
+);
+
+await dashboardCard.getByRole("button", { name: /DE 5/ }).click();
+await page.waitForTimeout(300);
+historyText = await historyCard.innerText();
+check(
+	"count-aware country filter drills into alert history",
+	historyText.includes("DE ×") && historyText.includes("198.51.100.7"),
+	historyText.slice(0, 260),
+);
+await historyCard.getByRole("button", { name: /DE ×/ }).click();
 
 // insights failure: a dead machine key on FIRST load must surface a visible
 // warning card, not make the strip silently disappear (a failed refresh with
@@ -346,12 +433,17 @@ check(
 	insightsErrorText.slice(0, 200),
 );
 insightsFail = 2;
-await insightsError.getByRole("button", { name: /Refresh/ }).click();
-await page.locator(".card").filter({ hasText: "Last 24 hours" }).first().waitFor({ timeout: 10000 });
+await page
+	.locator(".card")
+	.filter({ hasText: "Security overview" })
+	.first()
+	.getByRole("button", { name: /Refresh/ })
+	.click();
+await dashboardCard.getByText(/Alerts in window/i).waitFor({ timeout: 10000 });
 check(
 	"insights recovers after the key heals",
-	(await insightsCard.innerText()).includes("7 alerts"),
-	(await insightsCard.innerText()).slice(0, 200),
+	/alerts in window/i.test(await dashboardCard.innerText()),
+	(await dashboardCard.innerText()).slice(0, 200),
 );
 
 // structured search: field tokens narrow the named field

@@ -11,18 +11,13 @@ import Alert from "react-bootstrap/Alert";
 import type { CrowdsecAlert, CrowdsecDecision } from "src/api/backend";
 import { Button, HasPermission } from "src/components";
 import { useLocaleState } from "src/context";
-import {
-	useAnubisStatus,
-	useCrowdsecAlerts,
-	useCrowdsecDecisions,
-	useCrowdsecInsights,
-	useUnbanCrowdsecDecision,
-} from "src/hooks";
+import { useAnubisStatus, useCrowdsecAlerts, useCrowdsecDecisions, useUnbanCrowdsecDecision } from "src/hooks";
 import { formatDateTime, intl, T } from "src/locale";
 import { showDeleteConfirmModal, showManualBanModal } from "src/modals";
 import { ADMIN, VIEW } from "src/modules/Permissions";
 import { showError } from "src/notifications";
 import AnimatedLogo from "./AnimatedLogo";
+import CrowdsecDashboard from "./Dashboard";
 import {
 	type CrowdsecOriginFilter,
 	type CrowdsecSortDirection,
@@ -152,118 +147,6 @@ const SortHeader = ({ label, column, sortKey, direction, onSort }: SortHeaderPro
 	);
 };
 
-// the insights strip: a live 24h aggregation of recent alerts - top
-// scenarios, countries and ASNs plus the alert count, so the page opens with
-// the "what is happening" summary the console dashboards lead with
-const InsightsCard = () => {
-	const { isFetching, isError, error, data, dataUpdatedAt, refetch } = useCrowdsecInsights();
-	const { locale } = useLocaleState();
-
-	// never vanish silently: a dead key or unreachable lapi shows a warning
-	// card instead of leaving the admin wondering where the summary went
-	if (isError && !data) {
-		return (
-			<Alert variant="danger" className="mt-4">
-				<T id="crowdsec.insights.error" />
-				{error?.message ? (
-					<>
-						: <T id={error.message} />
-					</>
-				) : null}
-				<div className="mt-2">
-					<Button actionType="secondary" variant="outline" onClick={() => refetch()}>
-						<IconRefresh size={16} className="me-1" />
-						<T id="crowdsec.refresh" />
-					</Button>
-				</div>
-			</Alert>
-		);
-	}
-	if (!data) {
-		return (
-			<div className="card mt-4">
-				<div className="card-status-top bg-azure" />
-				<div className="card-body py-4 d-flex justify-content-center">
-					<AnimatedLogo />
-				</div>
-			</div>
-		);
-	}
-
-	const topList = (items: { name: string; count: number }[], emptyId: string) =>
-		items.length === 0 ? (
-			<span className="text-secondary small">
-				<T id={emptyId} />
-			</span>
-		) : (
-			items.map((item) => (
-				<span key={item.name} className="badge bg-secondary-lt me-1 mb-1">
-					{item.name} <span className="text-secondary">×{item.count}</span>
-				</span>
-			))
-		);
-
-	return (
-		<div className="card mt-4">
-			<div className="card-status-top bg-azure" />
-			<div className="card-header">
-				<div className="row w-full">
-					<div className="col">
-						<h2 className="mt-1 mb-0 d-flex align-items-center gap-2">
-							<T id="crowdsec.insights.title" />
-							<span className="badge bg-azure-lt">
-								<T id="crowdsec.insights.alerts" data={{ count: data.alertCount }} />
-							</span>
-						</h2>
-						<div className="text-secondary small mt-1">
-							<T
-								id="crowdsec.insights.window"
-								data={{ date: formatDateTime(new Date(dataUpdatedAt).toISOString(), locale) }}
-							/>
-						</div>
-					</div>
-					<div className="col-md-auto col-sm-12">
-						<div className="ms-auto d-flex flex-wrap btn-list">
-							<span className="text-secondary small me-2 my-auto">{isFetching ? "…" : ""}</span>
-							<Button actionType="secondary" variant="outline" onClick={() => refetch()}>
-								<IconRefresh size={16} className="me-1" />
-								<T id="crowdsec.refresh" />
-							</Button>
-						</div>
-					</div>
-				</div>
-			</div>
-			<div className="card-body py-2">
-				{isError && (
-					<div className="text-warning small mb-2">
-						<T id="crowdsec.stale" /> <T id={error?.message || "error.unknown"} />
-					</div>
-				)}
-				<div className="row">
-					<div className="col-md-4 py-1">
-						<div className="text-secondary small">
-							<T id="crowdsec.insights.scenarios" />
-						</div>
-						{topList(data.topScenarios, "crowdsec.insights.empty")}
-					</div>
-					<div className="col-md-4 py-1">
-						<div className="text-secondary small">
-							<T id="crowdsec.insights.countries" />
-						</div>
-						{topList(data.topCountries, "crowdsec.insights.empty")}
-					</div>
-					<div className="col-md-4 py-1">
-						<div className="text-secondary small">
-							<T id="crowdsec.insights.asns" />
-						</div>
-						{topList(data.topAsns, "crowdsec.insights.empty")}
-					</div>
-				</div>
-			</div>
-		</div>
-	);
-};
-
 const Content = () => {
 	const { locale } = useLocaleState();
 	const { isFetching, isError, error, data, dataUpdatedAt, refetch } = useCrowdsecDecisions();
@@ -375,14 +258,12 @@ const Content = () => {
 											setOriginFilter(event.target.value as CrowdsecOriginFilter)
 										}
 									>
-										<option value="all">
-											<T id="crowdsec.origin-all" />
-										</option>
+										<option value="all">{intl.formatMessage({ id: "crowdsec.origin-all" })}</option>
 										<option value="local">
-											<T id="crowdsec.origin-local" />
+											{intl.formatMessage({ id: "crowdsec.origin-local" })}
 										</option>
 										<option value="community">
-											<T id="crowdsec.origin-community" />
+											{intl.formatMessage({ id: "crowdsec.origin-community" })}
 										</option>
 									</select>
 								</div>
@@ -732,7 +613,7 @@ const AnubisSection = () => {
 
 const Crowdsec = () => (
 	<HasPermission section={ADMIN} permission={VIEW} pageLoading loadingNoLogo>
-		<InsightsCard />
+		<CrowdsecDashboard />
 		<Content />
 		<AnubisSection />
 	</HasPermission>

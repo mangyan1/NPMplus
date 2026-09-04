@@ -9,6 +9,9 @@ export interface CrowdsecDecision {
 	origin: string;
 	scenario: string;
 	duration: string;
+	createdAt: string;
+	until: string;
+	simulated: boolean;
 }
 
 export interface CrowdsecDecisionPage {
@@ -33,13 +36,21 @@ export interface CrowdsecAlert {
 	scenario: string;
 	startAt: string;
 	stopAt: string;
+	createdAt: string;
+	machineId: string;
+	simulated: boolean;
 	eventsCount: number;
 	source: {
+		ip: string;
+		scope: string;
+		value: string;
 		country: string;
 		asNumber: string;
 		asName: string;
 		range: string;
 		rdns: string;
+		latitude: number | null;
+		longitude: number | null;
 	};
 	events: CrowdsecEvent[];
 }
@@ -69,17 +80,70 @@ export interface CrowdsecInsightsItem {
 export interface CrowdsecInsights {
 	windowHours: number;
 	alertCount: number;
+	activeDecisions: number | null;
+	sampled: boolean;
+	activity: { start: string; count: number }[];
+	locations: { latitude: number; longitude: number; country: string; count: number }[];
+	signals: { id: string; severity: "info" | "warning"; type: "active-bans" | "attack-spike"; count?: number }[];
 	topScenarios: CrowdsecInsightsItem[];
 	topCountries: CrowdsecInsightsItem[];
 	topAsns: CrowdsecInsightsItem[];
+	topTargets: CrowdsecInsightsItem[];
+}
+
+export interface CrowdsecHistoryParams {
+	page: number;
+	pageSize: number;
+	windowHours: number;
+	search?: string;
+	scenario?: string;
+	country?: string;
+	target?: string;
+}
+
+export interface CrowdsecAlertPage {
+	items: CrowdsecAlert[];
+	page: number;
+	pageSize: number;
+	hasNext: boolean;
+	matched: number;
+	windowHours: number;
+	truncated: boolean;
+}
+
+export interface CrowdsecMetrics {
+	available: boolean;
+	error?: string;
+	activeDecisions?: number;
+	alerts?: number;
+	appsecRequests?: number;
+	appsecBlocked?: number;
+	bouncerRequests?: number;
+	machineRequests?: number;
+	parserHits?: number;
+	parserSuccessRate?: number | null;
+	whitelistHits?: number;
+	averageLapiMs?: number | null;
+	averageParsingMs?: number | null;
 }
 
 export async function createCrowdsecBan(data: CrowdsecBanInput): Promise<CrowdsecBanResult> {
 	return await api.post({ url: "/crowdsec/decisions", data });
 }
 
-export async function getCrowdsecInsights(signal?: AbortSignal): Promise<CrowdsecInsights> {
-	return await api.get({ url: "/crowdsec/insights" }, signal);
+export async function getCrowdsecInsights(windowHours = 24, signal?: AbortSignal): Promise<CrowdsecInsights> {
+	return await api.get({ url: "/crowdsec/insights", params: { windowHours } }, signal);
+}
+
+export async function getCrowdsecAlertHistory(
+	params: CrowdsecHistoryParams,
+	signal?: AbortSignal,
+): Promise<CrowdsecAlertPage> {
+	return await api.get({ url: "/crowdsec/history/alerts", params: { ...params } }, signal);
+}
+
+export async function getCrowdsecMetrics(signal?: AbortSignal): Promise<CrowdsecMetrics> {
+	return await api.get({ url: "/crowdsec/metrics" }, signal);
 }
 
 export async function getCrowdsecDecisions(signal?: AbortSignal): Promise<CrowdsecDecisionPage> {

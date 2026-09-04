@@ -9,6 +9,7 @@ import EasyModal, { type InnerModalProps } from "src/modules/easyModal";
 
 interface ShowProps {
 	onCreated?: () => void;
+	initialTarget?: string;
 }
 
 interface Props extends InnerModalProps, ShowProps {}
@@ -19,9 +20,9 @@ const showManualBanModal = (props: ShowProps) => {
 	EasyModal.show(ManualBanModal, props);
 };
 
-const ManualBanModal = EasyModal.create(({ visible, remove, onCreated }: Props) => {
+const ManualBanModal = EasyModal.create(({ visible, remove, onCreated, initialTarget = "" }: Props) => {
 	const createBan = useCreateCrowdsecBan();
-	const [value, setValue] = useState("");
+	const [value, setValue] = useState(initialTarget);
 	const [duration, setDuration] = useState("4h");
 	const [type, setType] = useState("ban");
 	const [reason, setReason] = useState("");

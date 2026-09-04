@@ -14,6 +14,9 @@ const decision = (id: number, value: string, scenario = "http-probing"): Crowdse
 	origin: "crowdsec",
 	scenario,
 	duration: "4h",
+	createdAt: "",
+	until: "",
+	simulated: false,
 });
 
 test("decision target includes non-IP scopes", () => {

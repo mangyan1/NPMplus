@@ -12,6 +12,7 @@ const MACHINE_FILE = path.join(SMOKEDIR, "lapi-ui-machine.key");
 const COOKIE_SECRET = "smoke-cookie-secret";
 
 process.env.CROWDSEC_LAPI_URL = "http://127.0.0.1:18080";
+process.env.CROWDSEC_METRICS_URL = "http://127.0.0.1:18082/metrics";
 process.env.CROWDSEC_LAPI_KEY_FILE = KEY_FILE;
 process.env.CROWDSEC_LAPI_MACHINE_KEY_FILE = MACHINE_FILE;
 process.env.AUTH_REQUEST_ANUBIS_UPSTREAM = "http://127.0.0.1:18081";
@@ -24,6 +25,7 @@ await writeFile(MACHINE_FILE, "smoke-machine-password-123456");
 
 const fakeLapi = await import("./fake-lapi.mjs");
 await (await import("./fake-anubis.mjs")).start();
+await (await import("./fake-metrics.mjs")).start();
 
 const express = (await import("express")).default;
 const cookieParser = (await import("cookie-parser")).default;
@@ -262,8 +264,47 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 		(await lapiLog()).some((r) => r.path === "/v1/alerts" && r.query?.includes("with_decisions=false")),
 		"no with_decisions=false probe logged",
 	);
+	check(
+		"insights include activity, location and target aggregates",
+		insightsBody.activity?.length === 24 &&
+			insightsBody.locations?.some((item) => item.country === "DE") &&
+			insightNames(insightsBody.top_targets).includes("/.env"),
+		JSON.stringify({
+			activity: insightsBody.activity?.length,
+			locations: insightsBody.locations,
+			targets: insightsBody.top_targets,
+		}),
+	);
 
-	// 9b2. an attacked box overflows the primary sample (the lapi attaches
+	// 9b1. paginated history applies structured filters on the bounded LAPI sample
+	const history = await fetch(
+		`${base}/history/alerts?page=1&page_size=25&window_hours=24&search=country%3ADE+target%3A.env`,
+		{ headers: admin },
+	);
+	const historyBody = await history.json();
+	check(
+		"GET alert history -> filtered paginated response",
+		history.status === 200 &&
+			historyBody.page === 1 &&
+			historyBody.items?.length === 1 &&
+			historyBody.items[0]?.source?.ip === "198.51.100.7",
+		`got ${history.status} ${JSON.stringify(historyBody).slice(0, 180)}`,
+	);
+
+	// 9b2. the metrics route parses the fixed private Prometheus endpoint
+	const metrics = await fetch(`${base}/metrics`, { headers: admin });
+	const metricsBody = await metrics.json();
+	check(
+		"GET metrics -> summarized private Prometheus data",
+		metrics.status === 200 &&
+			metricsBody.available === true &&
+			metricsBody.appsec_blocked === 3 &&
+			metricsBody.parser_success_rate === 0.9 &&
+			metricsBody.average_lapi_ms === 500,
+		`got ${metrics.status} ${JSON.stringify(metricsBody)}`,
+	);
+
+	// 9b3. an attacked box overflows the primary sample (the lapi attaches
 	// every event+meta to each alert); the card must degrade to the smaller
 	// fallback sample instead of failing
 	fakeLapi.setOversizedInsights(true);
@@ -356,6 +397,7 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 
 	db.close();
 	await (await import("./fake-anubis.mjs")).stop();
+	await (await import("./fake-metrics.mjs")).stop();
 	console.log(failures === 0 ? "ALL BACKEND SMOKE CHECKS PASSED" : `${failures} FAILURES`);
 	server.close();
 	process.exit(failures === 0 ? 0 : 1);
