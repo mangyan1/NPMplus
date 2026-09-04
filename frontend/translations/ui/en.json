@@ -126,6 +126,7 @@
 	"crowdsec.anubis.unconfigured": "Anubis is not configured for this stack (no AUTH_REQUEST_ANUBIS_UPSTREAM)",
 	"crowdsec.attack-map": "Attack locations",
 	"crowdsec.attack-map.motion-note": "Meteor pulses highlight observed origins in sequence; they do not represent network routes.",
+	"crowdsec.attack-map.observed": "Observed origins",
 	"crowdsec.attack-map.summary": "{count, plural, one {# attack} other {# attacks}} plotted across {countries, plural, one {# country} other {# countries}}.",
 	"crowdsec.audit-warning": "The ban was removed, but final audit status could not be saved. The original request remains in the audit log.",
 	"crowdsec.bad-key": "CrowdSec rejected the bouncer key — it was deleted or the key file is stale. Re-register it with: docker exec crowdsec cscli bouncers add npmplus-ui -o raw | sudo tee /opt/npmplus/crowdsec/lapi-ui.key >/dev/null",

@@ -7,14 +7,30 @@
 }
 
 .tabScroller {
-	overflow-x: auto;
-	overflow-y: hidden;
-	scrollbar-width: thin;
+	overflow: visible;
 }
 
 .tabs {
-	flex-wrap: nowrap;
-	min-width: max-content;
+	display: grid;
+	grid-template-columns: repeat(4, max-content);
+	gap: 0.25rem;
+	min-width: 0;
+	margin: 0 !important;
+	border-bottom: 0;
+}
+
+.tabs > * {
+	min-width: 0;
+}
+
+.tabs :global(.nav-link) {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 2.75rem;
+	padding: 0.5rem 0.75rem;
+	white-space: normal;
+	text-align: center;
 }
 
 .metricCard {
@@ -55,28 +71,70 @@ button.metricCard:focus-visible {
 	display: block;
 	width: 100%;
 	height: auto;
-	border: 1px solid var(--tblr-border-color);
+	color: #82959d;
+}
+
+.mapFrame {
+	position: relative;
+	overflow: hidden;
+	border: 1px solid color-mix(in srgb, var(--tblr-azure) 35%, var(--tblr-border-color));
 	border-radius: var(--tblr-border-radius);
-	background: color-mix(in srgb, var(--tblr-azure) 7%, var(--tblr-bg-surface));
+	background: #07131c;
+	box-shadow: inset 0 0 2rem rgb(36 179 164 / 8%);
+}
+
+.mapBadge {
+	position: absolute;
+	top: 0.625rem;
+	right: 0.625rem;
+	z-index: 1;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	padding: 0.25rem 0.5rem;
+	border: 1px solid rgb(97 222 202 / 30%);
+	border-radius: 999px;
+	color: #9de7dc;
+	background: rgb(5 20 28 / 78%);
+	font-size: 0.6875rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.mapBadgeDot {
+	width: 0.375rem;
+	height: 0.375rem;
+	border-radius: 50%;
+	background: #55e0c6;
+	box-shadow: 0 0 0.5rem #55e0c6;
 }
 
 .worldGrid {
-	stroke: currentColor;
+	stroke: #6ddcca;
 	stroke-width: 1;
-	opacity: 0.08;
+	opacity: 0.1;
 }
 
 .worldLand {
-	fill: currentColor;
-	stroke: var(--tblr-bg-surface);
+	fill: #53646a;
+	stroke: #0b1d28;
 	stroke-width: 1.5;
-	opacity: 0.28;
+	opacity: 0.82;
+}
+
+.mapScan {
+	stroke: #5ce3cd;
+	stroke-width: 1.5;
+	opacity: 0;
+	filter: drop-shadow(0 0 0.35rem #5ce3cd);
+	animation: map-scan 8s linear infinite;
 }
 
 .locationDot {
-	fill: var(--tblr-red);
-	stroke: var(--tblr-bg-surface);
+	fill: #ff5d6c;
+	stroke: #ffd4d8;
 	stroke-width: 2;
+	filter: drop-shadow(0 0 0.3rem #ff5d6c);
 }
 
 .meteor {
@@ -86,18 +144,19 @@ button.metricCard:focus-visible {
 }
 
 .meteorTrail {
-	stroke: var(--tblr-orange);
+	stroke: #ff9862;
 	stroke-linecap: round;
 	stroke-width: 3;
+	filter: drop-shadow(0 0 0.25rem #ff9862);
 }
 
 .meteorHead {
-	fill: var(--tblr-yellow);
+	fill: #ffe1a3;
 }
 
 .locationPulse {
 	fill: none;
-	stroke: var(--tblr-red);
+	stroke: #ff7180;
 	stroke-width: 2;
 	transform-box: fill-box;
 	transform-origin: center;
@@ -114,6 +173,20 @@ button.metricCard:focus-visible {
 
 .locationLegendItem {
 	min-width: 0;
+}
+
+.locationBarTrack {
+	height: 0.1875rem;
+	overflow: hidden;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--tblr-secondary) 15%, transparent);
+}
+
+.locationBar {
+	display: block;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--tblr-red);
 }
 
 .quickFilter {
@@ -157,6 +230,21 @@ button.metricCard:focus-visible {
 	}
 }
 
+@keyframes map-scan {
+	0% {
+		transform: translateY(0);
+		opacity: 0;
+	}
+	8%,
+	92% {
+		opacity: 0.28;
+	}
+	100% {
+		transform: translateY(320px);
+		opacity: 0;
+	}
+}
+
 @media (max-width: 575.98px) {
 	.toolbar {
 		position: sticky;
@@ -171,15 +259,45 @@ button.metricCard:focus-visible {
 		display: none;
 	}
 
+	.tabs {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.375rem;
+		padding-bottom: 0.625rem;
+	}
+
+	.tabs :global(.nav-link) {
+		width: 100%;
+		min-height: 2.875rem;
+		border: 1px solid var(--tblr-border-color);
+		border-radius: var(--tblr-border-radius);
+	}
+
 	.locationLegend {
 		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 359.98px) {
+	.controls {
+		display: grid !important;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: stretch;
+	}
+
+	.controls :global(.form-select) {
+		width: 100% !important;
+	}
+
+	.controls :global(.btn) {
+		min-height: 2.5rem;
 	}
 }
 
 @media (prefers-reduced-motion: reduce) {
 	.metricCard,
 	.meteor,
-	.locationPulse {
+	.locationPulse,
+	.mapScan {
 		animation: none;
 		transition: none;
 		transform: none;
@@ -187,5 +305,9 @@ button.metricCard:focus-visible {
 
 	.meteor {
 		display: none;
+	}
+
+	.mapScan {
+		opacity: 0.12;
 	}
 }

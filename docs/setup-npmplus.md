@@ -2,6 +2,8 @@
 
 `setup-npmplus.sh` installs and operates this fork on a Debian or Ubuntu host. Run it as root, normally through `sudo`. It manages files under `/opt/npmplus`, optional CrowdSec and Anubis state, and only the host helpers described below.
 
+The installer intentionally does not deploy PHP-FPM. This fork treats NPMplus as a reverse proxy and security boundary; every proxied application remains responsible for its own runtime, application files, updates, and health checks. Keep the `PHP83`, `PHP84`, and `PHP85` options disabled unless you deliberately leave this recommended deployment model and accept the advanced compatibility tradeoffs documented in `ADVANCED.md`.
+
 ## Fresh installation
 
 Download the script from this fork, review it, and run it:
@@ -90,7 +92,7 @@ Backup archives created before upgrading to v1.16 can still contain an older Com
 
 Open **CrowdSec** in the NPMplus navigation to see the combined CrowdSec and Anubis security dashboard. Its four tabs separate the daily operator view from deeper details:
 
-- **Overview** shows attack activity, local bans, community protection, and honeypot bans as clickable summary cards. Its geographic map animates the latest observed attack origins; the pulses are a visual sequence, not inferred network routes.
+- **Overview** shows attack activity, local bans, community protection, and honeypot bans as clickable summary cards. Its geographic map animates up to 12 aggregated attack origins with one inline SVG and CSS-only effects; it does not load map tiles, use WebGL, perform browser-side IP lookup, or render the full CAPI address list. The pulses are a visual sequence, not inferred network routes.
 - **Attack activity** shows alerts observed by this instance, with search, filters, sanitized event details, and one-click manual-ban prefilling.
 - **Active bans** lists only local detections, manual bans, and imported local decisions. It loads 25 rows at a time and provides audited unban actions.
 - **System** contains AppSec, parser, bouncer, machine, and LAPI performance metrics.
@@ -99,7 +101,7 @@ CrowdSec CAPI and blocklist decisions remain downloaded and enforced by the conf
 
 The header reports CrowdSec availability, Anubis reachability, and honeypot-log readiness separately. Honeypot readiness means the Anubis trap log is readable; it does not claim that an attacker has already been caught. The honeypot KPI reports active bans created from those catches, and its detail modal shows recent captured addresses. If CrowdSec decision counts are temporarily unavailable, the Anubis and honeypot checks still report independently.
 
-The activity chart includes readable time labels and a screen-reader summary. Dashboard tabs support the standard arrow, Home, and End keys, long identifiers wrap safely, reduced-motion preferences disable map animation, and loading, empty, stale, partial-failure, and blocked-notification states are shown explicitly. The toolbar remains visible while its content scrolls, and the normal NPMplus page header and footer remain part of the page.
+The activity chart includes readable time labels and a screen-reader summary. Dashboard tabs support the standard arrow, Home, and End keys; they use one row on wider screens and a scrollbar-free two-by-two grid on phones. Long identifiers wrap safely, reduced-motion preferences disable map animation, and loading, empty, stale, partial-failure, and blocked-notification states are shown explicitly. The toolbar remains visible while its content scrolls, and the normal NPMplus page header and footer remain part of the page.
 
 ## Secrets and certificate plugins
 

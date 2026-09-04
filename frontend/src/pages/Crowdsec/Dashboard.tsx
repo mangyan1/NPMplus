@@ -124,79 +124,102 @@ const AttackMap = ({ items }: { items: { latitude: number; longitude: number; co
 		y: Math.min(306, Math.max(14, 160 - (item.latitude / 90) * 148)),
 	});
 	const countryCount = new Set(plotted.map((item) => item.country).filter(Boolean)).size;
+	const largestLocationCount = Math.max(1, ...plotted.map((item) => item.count));
 	const summary = intl.formatMessage(
 		{ id: "crowdsec.attack-map.summary" },
 		{ count: plotted.reduce((sum, item) => sum + item.count, 0), countries: countryCount },
 	);
 	return (
 		<figure className="mb-0">
-			<svg className={`${styles.worldMap} text-secondary`} viewBox="0 0 720 320" role="img" aria-label={summary}>
-				<title>{summary}</title>
-				<desc>{intl.formatMessage({ id: "crowdsec.attack-map.motion-note" })}</desc>
-				{[-60, -30, 0, 30, 60].map((latitude) => (
-					<line
-						key={latitude}
-						x1="0"
-						y1={160 - (latitude / 90) * 148}
-						x2="720"
-						y2={160 - (latitude / 90) * 148}
-						className={styles.worldGrid}
-					/>
-				))}
-				{[-120, -60, 0, 60, 120].map((longitude) => (
-					<line
-						key={longitude}
-						x1={360 + longitude * 2}
-						y1="0"
-						x2={360 + longitude * 2}
-						y2="320"
-						className={styles.worldGrid}
-					/>
-				))}
-				<g className={styles.worldLand}>
-					<path d="M40 76 72 48 128 35 178 47 205 73 188 96 158 103 140 126 108 121 90 103 58 98Z" />
-					<path d="M173 127 205 139 218 174 206 215 187 262 169 244 160 202 146 166Z" />
-					<path d="M309 62 333 49 358 56 368 76 350 91 320 87Z" />
-					<path d="M334 102 376 95 408 116 420 156 398 211 372 251 344 222 328 174 310 139Z" />
-					<path d="M373 72 430 48 512 43 584 61 650 91 675 121 637 139 594 126 558 145 512 132 474 113 430 120 397 101Z" />
-					<path d="M548 211 588 197 630 211 650 240 628 261 582 257 552 237Z" />
-					<path d="M674 173 688 168 696 181 684 192Z" />
-				</g>
-				{plotted.map((item, index) => {
-					const { x, y } = position(item);
-					const label = `${item.country || intl.formatMessage({ id: "unknown" })}: ${intl.formatNumber(item.count)}`;
-					const animationStyle = {
-						"--meteor-delay": `${index * 1.1}s`,
-						"--meteor-duration": duration,
-					} as CSSProperties;
-					return (
-						<g
-							key={`${item.latitude}-${item.longitude}-${item.country}`}
-							transform={`translate(${x} ${y})`}
-						>
-							<title>{label}</title>
-							<g className={styles.meteor} style={animationStyle}>
-								<line x1="-22" y1="-14" x2="-3" y2="-2" className={styles.meteorTrail} />
-								<circle cx="0" cy="0" r="3.5" className={styles.meteorHead} />
+			<div className={styles.mapFrame}>
+				<div className={styles.mapBadge}>
+					<span className={styles.mapBadgeDot} />
+					<T id="crowdsec.attack-map.observed" />
+				</div>
+				<svg className={styles.worldMap} viewBox="0 0 720 320" role="img" aria-label={summary}>
+					<title>{summary}</title>
+					<desc>{intl.formatMessage({ id: "crowdsec.attack-map.motion-note" })}</desc>
+					{[-60, -30, 0, 30, 60].map((latitude) => (
+						<line
+							key={latitude}
+							x1="0"
+							y1={160 - (latitude / 90) * 148}
+							x2="720"
+							y2={160 - (latitude / 90) * 148}
+							className={styles.worldGrid}
+						/>
+					))}
+					{[-120, -60, 0, 60, 120].map((longitude) => (
+						<line
+							key={longitude}
+							x1={360 + longitude * 2}
+							y1="0"
+							x2={360 + longitude * 2}
+							y2="320"
+							className={styles.worldGrid}
+						/>
+					))}
+					<line x1="0" y1="0" x2="720" y2="0" className={styles.mapScan} />
+					<g className={styles.worldLand}>
+						<path d="M40 76 72 48 128 35 178 47 205 73 188 96 158 103 140 126 108 121 90 103 58 98Z" />
+						<path d="M173 127 205 139 218 174 206 215 187 262 169 244 160 202 146 166Z" />
+						<path d="M309 62 333 49 358 56 368 76 350 91 320 87Z" />
+						<path d="M334 102 376 95 408 116 420 156 398 211 372 251 344 222 328 174 310 139Z" />
+						<path d="M373 72 430 48 512 43 584 61 650 91 675 121 637 139 594 126 558 145 512 132 474 113 430 120 397 101Z" />
+						<path d="M548 211 588 197 630 211 650 240 628 261 582 257 552 237Z" />
+						<path d="M674 173 688 168 696 181 684 192Z" />
+					</g>
+					{plotted.map((item, index) => {
+						const { x, y } = position(item);
+						const label = `${item.country || intl.formatMessage({ id: "unknown" })}: ${intl.formatNumber(item.count)}`;
+						const animationStyle = {
+							"--meteor-delay": `${index * 1.1}s`,
+							"--meteor-duration": duration,
+						} as CSSProperties;
+						return (
+							<g
+								key={`${item.latitude}-${item.longitude}-${item.country}`}
+								transform={`translate(${x} ${y})`}
+							>
+								<title>{label}</title>
+								<g className={styles.meteor} style={animationStyle}>
+									<line x1="-22" y1="-14" x2="-3" y2="-2" className={styles.meteorTrail} />
+									<circle cx="0" cy="0" r="3.5" className={styles.meteorHead} />
+								</g>
+								<circle r={Math.min(11, 3.5 + Math.sqrt(item.count))} className={styles.locationDot} />
+								<circle r="5" className={styles.locationPulse} style={animationStyle} />
 							</g>
-							<circle r={Math.min(11, 3.5 + Math.sqrt(item.count))} className={styles.locationDot} />
-							<circle r="5" className={styles.locationPulse} style={animationStyle} />
-						</g>
-					);
-				})}
-			</svg>
+						);
+					})}
+				</svg>
+			</div>
 			<figcaption className="mt-2">
 				<div className={styles.locationLegend}>
 					{plotted.slice(0, 3).map((item) => (
 						<div
-							className={`${styles.locationLegendItem} small d-flex justify-content-between gap-2`}
+							className={`${styles.locationLegendItem} small`}
 							key={`${item.country}-${item.latitude}-${item.longitude}`}
 						>
-							<span className="text-truncate">{item.country || <T id="unknown" />}</span>
-							<span className="badge bg-red-lt">{intl.formatNumber(item.count)}</span>
+							<div className="d-flex justify-content-between gap-2 mb-1">
+								<span className="text-truncate">{item.country || <T id="unknown" />}</span>
+								<span className="badge bg-red-lt">{intl.formatNumber(item.count)}</span>
+							</div>
+							<div className={styles.locationBarTrack}>
+								<span
+									className={styles.locationBar}
+									style={{ width: `${Math.max(6, (item.count / largestLocationCount) * 100)}%` }}
+								/>
+							</div>
 						</div>
 					))}
 				</div>
+				<ol className="visually-hidden">
+					{plotted.map((item) => (
+						<li key={`${item.country}-${item.latitude}-${item.longitude}`}>
+							{item.country || <T id="unknown" />}: {intl.formatNumber(item.count)}
+						</li>
+					))}
+				</ol>
 				<div className="text-secondary small mt-2">
 					<T id="crowdsec.attack-map.motion-note" />
 				</div>

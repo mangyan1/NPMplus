@@ -299,6 +299,17 @@ check(
 	(await page.locator('svg[aria-label*="plotted across"] path').count()) >= 6,
 );
 check("attack map renders animated origin markers", (await page.locator('[class*="meteor"]').count()) >= 3);
+check(
+	"attack map identifies the data as observed origins",
+	(await page.getByText("Observed origins", { exact: true }).count()) === 1,
+);
+await page.emulateMedia({ reducedMotion: "reduce" });
+check(
+	"attack-map motion respects reduced-motion preferences",
+	(await page.locator('[class*="mapScan"]').evaluate((element) => getComputedStyle(element).animationName)) ===
+		"none",
+);
+await page.emulateMedia({ reducedMotion: "no-preference" });
 
 await page.getByRole("button", { name: /Community blocklist entries/i }).click();
 const communityModal = page.getByRole("dialog");
@@ -374,7 +385,37 @@ check(
 	"security dashboard fits a narrow viewport",
 	await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
 );
+const narrowTabLayout = await page.getByRole("tab").evaluateAll((tabs) => {
+	const boxes = tabs.map((tab) => tab.getBoundingClientRect());
+	return {
+		rows: new Set(boxes.map((box) => Math.round(box.top))).size,
+		allVisible: boxes.every((box) => box.left >= 0 && box.right <= window.innerWidth && box.height >= 44),
+	};
+});
+check(
+	"all four tabs form two unclipped rows on mobile",
+	narrowTabLayout.rows === 2 && narrowTabLayout.allVisible,
+	JSON.stringify(narrowTabLayout),
+);
 await page.screenshot({ path: ".smoke/ui-security-dashboard-mobile.png", fullPage: true });
+await page.setViewportSize({ width: 320, height: 720 });
+check(
+	"security dashboard and tabs fit a 320px viewport",
+	await page.evaluate(() => {
+		const tabs = [...document.querySelectorAll('[role="tab"]')].map((tab) => tab.getBoundingClientRect());
+		return (
+			document.documentElement.scrollWidth <= document.documentElement.clientWidth &&
+			tabs.every((box) => box.left >= 0 && box.right <= window.innerWidth && box.height >= 44)
+		);
+	}),
+);
+check(
+	"the manual-ban control does not clip at 320px",
+	await page
+		.getByRole("button", { name: "Add IP ban" })
+		.evaluate((button) => button.scrollWidth <= button.clientWidth),
+);
+await page.screenshot({ path: ".smoke/ui-security-dashboard-320.png", fullPage: true });
 console.log(failures === 0 ? "ALL UI SMOKE CHECKS PASSED" : `${failures} FAILURES`);
 await browser.close();
 process.exit(failures === 0 ? 0 : 1);

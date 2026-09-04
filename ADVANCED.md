@@ -155,8 +155,11 @@ labels:
 11. It is recommended to block at the earliest possible point, so if possible set up a firewall bouncer: https://docs.crowdsec.net/u/bouncers/firewall, make sure to also include the docker iptables in the firewall bouncer config
 12. Note that when using crowdsec requests will always be buffered, so setting `proxy_(request_)buffering` to off will not work
 
-## Use of external php-fpm (recommended)
-This section is configuration guidance only. `setup-npmplus.sh` does not currently create, configure, update, or monitor a dedicated PHP-FPM container. Automation may be considered later after its isolation, performance, networking, compatibility, rollback, and maintenance tradeoffs are reviewed.
+## Use external PHP-FPM when serving PHP directly
+
+Project decision (2026-09-04): this fork remains focused on reverse proxying and security. `setup-npmplus.sh` will not create, configure, update, or monitor PHP-FPM. When NPMplus only reverse-proxies an application, that application's own deployment must manage its PHP runtime; leave the NPMplus `PHP83`, `PHP84`, and `PHP85` options disabled, do not publish FastCGI port 9000, and do not mount application data into NPMplus.
+
+The example below is retained as advanced compatibility guidance for operators who deliberately use NPMplus to serve PHP files directly. In that situation, a separately isolated PHP-FPM container is preferred over the inbuilt option. Its private FastCGI listener must not be exposed to the host or internet.
 
 To set it per location: press the gear button, set the scheme to `path`, put in the path and paste the following in the new text field at the bottom, you need to adjust the last line:
 ```
@@ -167,7 +170,7 @@ location ~* [^/]\.php(?:$|/) {
 }
 ```
 
-## Use of inbuilt php-fpm (not recommended)
+## Use of inbuilt PHP-FPM (not recommended)
 1. First enable php inside your compose file (you can add more php extension using envs in the compose file)
 2. Set the forwarding port to the php version you want to use and is supported by NPMplus (like 83/84/85)
 

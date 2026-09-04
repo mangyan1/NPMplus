@@ -112,7 +112,7 @@ When requesting help, share the command output but remove public IP addresses, d
 
 - Proxy hosts, redirects, streams, access lists, certificates, and a modern admin dashboard.
 - HTTP/3, modern TLS, mTLS, OIDC, `auth_request`, load balancing, and multiple access lists.
-- Integrated CrowdSec and Anubis security dashboard with a compact overview, clickable KPI details, an animated geographic attack map, accessible activity charts, explicit CrowdSec/Anubis/honeypot status, paginated local alert and ban views, engine metrics, optional browser alerts while the page is open, manual bans, exact-decision unban, and audit logging. CrowdSec community blocklists remain fully enforced but are summarized as metrics instead of flooding the page with remote IP entries.
+- Integrated CrowdSec and Anubis security dashboard with a compact overview, clickable KPI details, a lightweight animated geographic attack map, accessible activity charts, explicit CrowdSec/Anubis/honeypot status, paginated local alert and ban views, engine metrics, optional browser alerts while the page is open, manual bans, exact-decision unban, and audit logging. The map renders at most 12 aggregated origins with inline SVG and CSS—no WebGL, map-tile downloads, or browser-side IP lookup. CrowdSec community blocklists remain fully enforced but are summarized as metrics instead of flooding the page with remote IP entries.
 - Security headers, strict browser policy, protected session cookies, rate limits, and safer defaults.
 - Support for Let's Encrypt and other ACME certificate authorities.
 - Optional GoAccess statistics and API documentation in the dashboard.
@@ -126,6 +126,8 @@ Do not run the new-install command over an existing manual deployment. Read the 
 ## Advanced configuration
 
 Most users do not need manual Compose editing or custom Nginx configuration.
+
+This fork is intentionally focused on reverse proxying and security. It does not automate PHP-FPM deployment: application stacks should own their PHP runtime, files, updates, and health checks. The legacy inbuilt and external PHP-FPM instructions remain advanced compatibility guidance only.
 
 - [Host setup, updates, backups, recovery, and diagnostics](docs/setup-npmplus.md)
 - [Advanced and manual configuration reference](ADVANCED.md)
