@@ -331,11 +331,7 @@ check(
 );
 insightsFail = 2;
 await insightsError.getByRole("button", { name: /Refresh/ }).click();
-await page
-	.locator(".card")
-	.filter({ hasText: "Last 24 hours" })
-	.first()
-	.waitFor({ timeout: 10000 });
+await page.locator(".card").filter({ hasText: "Last 24 hours" }).first().waitFor({ timeout: 10000 });
 check(
 	"insights recovers after the key heals",
 	(await insightsCard.innerText()).includes("7 alerts"),
