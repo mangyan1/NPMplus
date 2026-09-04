@@ -22,7 +22,7 @@ process.env.ANUBIS_HONEYPOT_LOG_FILE = `${SMOKEDIR}/honeypot.addrs`;
 await writeFile(KEY_FILE, "smoke-bouncer-key-1234567890abcdef");
 await writeFile(MACHINE_FILE, "smoke-machine-password-123456");
 
-await import("./fake-lapi.mjs");
+const fakeLapi = await import("./fake-lapi.mjs");
 await (await import("./fake-anubis.mjs")).start();
 
 const express = (await import("express")).default;
@@ -257,6 +257,26 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 		(await lapiLog()).some((r) => r.path === "/v1/alerts" && r.query?.includes("since=24h")),
 		"no since=24h probe logged",
 	);
+	check(
+		"insights lapi query skips decisions",
+		(await lapiLog()).some((r) => r.path === "/v1/alerts" && r.query?.includes("with_decisions=false")),
+		"no with_decisions=false probe logged",
+	);
+
+	// 9b2. an attacked box overflows the primary sample (the lapi attaches
+	// every event+meta to each alert); the card must degrade to the smaller
+	// fallback sample instead of failing
+	fakeLapi.setOversizedInsights(true);
+	const insightsHeavy = await fetch(`${base}/insights`, { headers: admin });
+	const insightsHeavyBody = await insightsHeavy.json();
+	check(
+		"insights survives an oversized primary sample via the fallback",
+		insightsHeavy.status === 200 &&
+			insightsHeavyBody.alert_count === 2 &&
+			insightNames(insightsHeavyBody.top_scenarios).includes("crowdsecurity/http-probing"),
+		`got ${insightsHeavy.status} ${JSON.stringify(insightsHeavyBody).slice(0, 150)}`,
+	);
+	fakeLapi.setOversizedInsights(false);
 
 	// 9c. manual ban: validation rejects hostile input before touching the lapi
 	const logBeforeBan = (await lapiLog()).length;

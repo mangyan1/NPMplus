@@ -26,6 +26,13 @@ const LAPI_ALERT_LIMIT = 5;
 const LAPI_HONEYPOT_LIMIT = 25;
 const INSIGHTS_WINDOW_HOURS = 24;
 const INSIGHTS_ALERT_LIMIT = 100;
+// the lapi always attaches every event+meta to each alert (there is no lean
+// fields option), so an insights sample runs to megabytes on an attacked box:
+// the primary sample gets an oversized-read allowance, and an exceptionally
+// heavy window degrades to a smaller sample instead of failing the card
+const INSIGHTS_FALLBACK_ALERT_LIMIT = 25;
+const INSIGHTS_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+const INSIGHTS_FALLBACK_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const INSIGHTS_TOP_N = 5;
 const MANUAL_BAN_SCENARIO = "manual/web-ui";
 const MACHINE_TOKEN_TTL_MS = 30 * 1000;
@@ -147,7 +154,12 @@ const lapiLogin = async () => {
 	return body.token;
 };
 
-const lapiMachineFetch = async (path, method = "GET", mayRetry = true, body = null) => {
+const lapiMachineFetch = async (
+	path,
+	method = "GET",
+	mayRetry = true,
+	{ body = null, readJson = readCrowdsecJson } = {},
+) => {
 	const token = await lapiLogin();
 	const options = {
 		method,
@@ -160,11 +172,11 @@ const lapiMachineFetch = async (path, method = "GET", mayRetry = true, body = nu
 	const response = await fetchCrowdsec(`${LAPI_URL}${path}`, options);
 	if (response.status === 401 || response.status === 403) {
 		machineTokenCache = null;
-		if (mayRetry) return lapiMachineFetch(path, method, false, body);
+		if (mayRetry) return lapiMachineFetch(path, method, false, { body, readJson });
 		throw publicError("crowdsec.bad-machine-key", 502);
 	}
 	if (!response.ok) throw publicError("crowdsec.lapi-error", 502);
-	return readCrowdsecJson(response);
+	return readJson(response);
 };
 
 const requireAdmin = async (res) => {
@@ -457,7 +469,7 @@ router
 
 			let result;
 			try {
-				result = await lapiMachineFetch("/v1/alerts", "POST", true, payload);
+				result = await lapiMachineFetch("/v1/alerts", "POST", true, { body: payload });
 			} catch (err) {
 				try {
 					await auditEntry.$query().patch({
@@ -501,11 +513,30 @@ router
 				return;
 			}
 
-			const query = new URLSearchParams({
-				since: `${INSIGHTS_WINDOW_HOURS}h`,
-				limit: String(INSIGHTS_ALERT_LIMIT),
-			});
-			const payload = await lapiMachineFetch(`/v1/alerts?${query}`);
+			const insightsQuery = (limit) =>
+				new URLSearchParams({
+					since: `${INSIGHTS_WINDOW_HOURS}h`,
+					limit: String(limit),
+					// the aggregation never reads decisions; skipping them keeps
+					// community-blocklist stub alerts from bloating the sample
+					with_decisions: "false",
+				});
+			let payload;
+			try {
+				payload = await lapiMachineFetch(`/v1/alerts?${insightsQuery(INSIGHTS_ALERT_LIMIT)}`, "GET", true, {
+					readJson: (response) => readCrowdsecJson(response, INSIGHTS_MAX_RESPONSE_BYTES),
+				});
+			} catch (err) {
+				if (err?.message !== "crowdsec.invalid-response") throw err;
+				payload = await lapiMachineFetch(
+					`/v1/alerts?${insightsQuery(INSIGHTS_FALLBACK_ALERT_LIMIT)}`,
+					"GET",
+					true,
+					{
+						readJson: (response) => readCrowdsecJson(response, INSIGHTS_FALLBACK_MAX_RESPONSE_BYTES),
+					},
+				);
+			}
 			const alerts = normalizeCrowdsecAlerts(payload);
 
 			const top = (counts) =>

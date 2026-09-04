@@ -15,6 +15,15 @@ const log = (entry) => {
 	writeFileSync(new URL("./lapi-requests.json", import.meta.url), JSON.stringify(requests, null, 2));
 };
 
+// when set, the first (limit=100) insights sample answers with a body larger
+// than the backend's oversized-read allowance, so the fallback sample must
+// take over - mirrors an attacked box where the lapi always attaches every
+// event+meta to each alert
+let oversizedInsights = false;
+const setOversizedInsights = (value) => {
+	oversizedInsights = value;
+};
+
 const in2h = new Date(Date.now() + 2 * 3600 * 1000).toISOString();
 const in30s = new Date(Date.now() + 30 * 1000).toISOString();
 const past = new Date(Date.now() - 3600 * 1000).toISOString();
@@ -203,6 +212,19 @@ const server = http.createServer((req, res) => {
 				const cutoff = Date.now() - Number(match[1]) * unitSeconds * 1000;
 				matches = matches.filter((a) => new Date(a.started_at).getTime() >= cutoff);
 			}
+			// the insights aggregation never reads decisions: it must ask the
+			// lapi to skip them, exactly like the alert-context route does
+			if (url.searchParams.get("with_decisions") !== "false") {
+				return send(400, { message: "insights sample must set with_decisions=false" });
+			}
+			const limit = Number(url.searchParams.get("limit") || "0");
+			if (oversizedInsights && limit >= 50) {
+				const padded = matches.map((a, i) => ({
+					...a,
+					message: `${a.message} ${"x".repeat(1024 * 1024)}${i}`,
+				}));
+				return send(200, padded);
+			}
 			return send(200, matches);
 		}
 		if (url.pathname === "/v1/alerts" && req.method === "POST") {
@@ -252,3 +274,5 @@ const server = http.createServer((req, res) => {
 
 await new Promise((resolve) => server.listen(18080, "127.0.0.1", resolve));
 console.log("fake LAPI on 18080");
+
+export { setOversizedInsights };
