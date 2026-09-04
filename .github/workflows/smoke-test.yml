@@ -50,10 +50,39 @@ jobs:
             # runner's control connection before the remaining checks run.
             # Include Caddy so the update regression proves that two tags from
             # ghcr.io/mangyan1/npmplus retain their distinct service images.
-            printf '%s\n' '' '' '' '' '' '' '' '' y '' n '' | sudo bash setup-npmplus.sh
+            answers=(
+              '' # timezone
+              '' # initial admin email
+              '' # initial admin password
+              '' # crowdsec
+              '' # appsec
+              '' # firewall bouncer
+              '' # anubis
+              '' # challenge all
+              y  # caddy
+              '' # cloudflare
+              n  # host networking
+              n  # ufw
+              '' # unattended upgrades
+            )
           else
-            printf '%s\n' UTC admin@example.com "$TEST_ADMIN_PASSWORD" y y n y n y n n y | sudo bash setup-npmplus.sh
+            answers=(
+              UTC
+              admin@example.com
+              "$TEST_ADMIN_PASSWORD"
+              y # crowdsec
+              y # appsec
+              n # firewall bouncer
+              y # anubis
+              n # challenge all
+              y # caddy
+              n # cloudflare
+              n # host networking
+              n # ufw
+              y # unattended upgrades
+            )
           fi
+          printf '%s\n' "${answers[@]}" | sudo bash setup-npmplus.sh
       - name: verify the stack
         # sudo: generated deployment configuration remains root-owned
         run: |
