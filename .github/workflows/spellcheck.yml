@@ -19,5 +19,7 @@ jobs:
         with:
           check_filenames: true
           check_hidden: true
-          skip: pnpm-lock.yaml,./frontend/translations
+          # crowdsec-logo-animated.svg embeds the original logo as base64 -
+          # random binary runs trip the dictionary, nothing to spellcheck
+          skip: pnpm-lock.yaml,./frontend/translations,./frontend/public/images/crowdsec-logo-animated.svg
           ignore_words_list: afterAll,alog,clen
