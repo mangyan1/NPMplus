@@ -141,6 +141,7 @@
 	"crowdsec.insights.asns": "Top ASNs",
 	"crowdsec.insights.countries": "Top countries",
 	"crowdsec.insights.empty": "No recent activity",
+	"crowdsec.insights.error": "The 24h insights could not load",
 	"crowdsec.insights.scenarios": "Top scenarios",
 	"crowdsec.insights.title": "Last 24 hours",
 	"crowdsec.insights.window": "Live view, updated {date}",

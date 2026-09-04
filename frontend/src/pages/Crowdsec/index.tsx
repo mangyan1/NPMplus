@@ -159,7 +159,26 @@ const InsightsCard = () => {
 	const { isFetching, isError, error, data, dataUpdatedAt, refetch } = useCrowdsecInsights();
 	const { locale } = useLocaleState();
 
-	if (isError && !data) return null;
+	// never vanish silently: a dead key or unreachable lapi shows a warning
+	// card instead of leaving the admin wondering where the summary went
+	if (isError && !data) {
+		return (
+			<Alert variant="danger" className="mt-4">
+				<T id="crowdsec.insights.error" />
+				{error?.message ? (
+					<>
+						: <T id={error.message} />
+					</>
+				) : null}
+				<div className="mt-2">
+					<Button actionType="secondary" variant="outline" onClick={() => refetch()}>
+						<IconRefresh size={16} className="me-1" />
+						<T id="crowdsec.refresh" />
+					</Button>
+				</div>
+			</Alert>
+		);
+	}
 	if (!data) {
 		return (
 			<div className="card mt-4">

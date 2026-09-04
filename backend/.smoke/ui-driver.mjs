@@ -106,6 +106,8 @@ const alerts = [
 ];
 
 const seen = { deleted: null, alertsFor: null, ban: null };
+// toggled by the insights-failure check: 1 = lapi rejects, 2 = healthy again
+let insightsFail = 0;
 let failures = 0;
 const check = (name, ok, detail = "") => {
 	if (!ok) failures++;
@@ -163,7 +165,13 @@ const api = async (route) => {
 		return respondWith({ created: true, auditLogged: true, result: { nbAlerts: 1, nbDecisions: "1" } });
 	}
 	if (apiPath === "/crowdsec/decisions") return respondWith({ items: decisions, limit: 200, truncated: false });
-	if (apiPath === "/crowdsec/insights")
+	if (apiPath === "/crowdsec/insights") {
+		if (insightsFail === 1)
+			return route.fulfill({
+				status: 502,
+				contentType: "application/json",
+				body: JSON.stringify({ error: { message: "crowdsec.bad-machine-key" } }),
+			});
 		return respondWith({
 			windowHours: 24,
 			alertCount: 7,
@@ -177,6 +185,7 @@ const api = async (route) => {
 			],
 			topAsns: [{ name: "Example ASN", count: 7 }],
 		});
+	}
 	if (apiPath === "/crowdsec/anubis")
 		return respondWith({
 			configured: true,
@@ -303,6 +312,34 @@ check(
 	"insights badges carry their counts",
 	insightsText.includes("×4") && insightsText.includes("×5") && insightsText.includes("×7"),
 	insightsText.slice(0, 300),
+);
+
+// insights failure: a dead machine key on FIRST load must surface a visible
+// warning card, not make the strip silently disappear (a failed refresh with
+// data present shows the stale banner instead - that path is covered by the
+// stale-warning check above)
+insightsFail = 1;
+await page.reload({ waitUntil: "networkidle" });
+const insightsError = page.locator(".alert-danger").filter({ hasText: "The 24h insights could not load" });
+await insightsError.waitFor({ timeout: 10000 });
+const insightsErrorText = await insightsError.innerText();
+check(
+	"insights failure shows the heal hint instead of vanishing",
+	insightsErrorText.includes("The 24h insights could not load") &&
+		insightsErrorText.includes("npmplus-crowdsec-heal"),
+	insightsErrorText.slice(0, 200),
+);
+insightsFail = 2;
+await insightsError.getByRole("button", { name: /Refresh/ }).click();
+await page
+	.locator(".card")
+	.filter({ hasText: "Last 24 hours" })
+	.first()
+	.waitFor({ timeout: 10000 });
+check(
+	"insights recovers after the key heals",
+	(await insightsCard.innerText()).includes("7 alerts"),
+	(await insightsCard.innerText()).slice(0, 200),
 );
 
 // structured search: field tokens narrow the named field
