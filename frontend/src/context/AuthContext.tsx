@@ -89,6 +89,9 @@ function AuthProvider({ children, tokenRefreshInterval = 5 * 60 * 1000 }: Props)
 				window.cookieStore.delete("__Host-npmplus_oidc_totp_required");
 				return;
 			}
+			// false means the 401 path in processResponse just throws instead of
+			// clearing + reloading; a dead session must show the login form
+			// rather than burning the /tokens rate limit in a reload loop.
 			refresh(false).catch(() => {});
 		}
 	}, [authenticated, totpChallenge]);
@@ -96,6 +99,11 @@ function AuthProvider({ children, tokenRefreshInterval = 5 * 60 * 1000 }: Props)
 	useIntervalWhen(
 		() => {
 			if (authenticated) {
+				// A rejected cookie logs out through processResponse (401 ->
+				// clear localStorage + one reload, then the login form shows).
+				// Network errors (backend restarting during an update) must NOT
+				// log out: the cookie is still valid, so skip this cycle and let
+				// the next interval retry once the container is back.
 				refresh().catch(() => {});
 			}
 		},

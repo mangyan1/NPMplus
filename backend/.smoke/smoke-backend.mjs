@@ -1,6 +1,7 @@
 // smoke harness: real crowdsec router + real sqlite + fake LAPI (in-process).
 // auth is stubbed only via res.locals.access when the x-smoke-admin header is
-// present, so the unauthenticated path still exercises the real 403 gate.
+// present, so the unauthenticated and bad-cookie paths both stay real.
+import { createHmac } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const SMOKEDIR = path.dirname(fileURLToPath(import.meta.url));
 const KEY_FILE = path.join(SMOKEDIR, "lapi-ui.key");
 const MACHINE_FILE = path.join(SMOKEDIR, "lapi-ui-machine.key");
+const COOKIE_SECRET = "smoke-cookie-secret";
 
 process.env.CROWDSEC_LAPI_URL = "http://127.0.0.1:18080";
 process.env.CROWDSEC_LAPI_KEY_FILE = KEY_FILE;
@@ -24,11 +26,13 @@ await import("./fake-lapi.mjs");
 await (await import("./fake-anubis.mjs")).start();
 
 const express = (await import("express")).default;
+const cookieParser = (await import("cookie-parser")).default;
 const crowdsecRouter = (await import("../routes/crowdsec.js")).default;
 const Database = (await import("better-sqlite3")).default;
 
 const app = express();
 app.use(express.json());
+app.use(cookieParser(COOKIE_SECRET));
 app.use(
 	"/api/crowdsec",
 	(req, res, next) => {
@@ -66,11 +70,29 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 		}
 	};
 
-	// 1. unauthenticated GET -> 403, never touches the lapi
+	// 1. unauthenticated GET (no cookie) -> 403 from the route's admin gate,
+	//    never touches the lapi
 	const logCount0 = (await lapiLog()).length;
 	const anon = await fetch(`${base}/decisions`);
 	check("anon GET decisions -> 403", anon.status === 403, `got ${anon.status}`);
 	check("anon GET did not reach the lapi", (await lapiLog()).length === logCount0);
+
+	// 1b. a present-but-invalid session cookie -> 401 from jwtdecode (auth
+	//     failure), which is what lets the frontend drop a ghost session
+	//     back to the login form instead of rendering empty pages. the value
+	//     is signed exactly like cookie-signature does (HMAC-SHA256, base64,
+	//     trailing '=' stripped) so cookie-parser accepts it as signed and
+	//     jwt.verify then rejects the payload as not-a-jwt.
+	const signCookieValue = (value) =>
+		`s:${value}.${createHmac("sha256", COOKIE_SECRET).update(value).digest("base64").replace(/=+$/, "")}`;
+	const ghost = await fetch(`${base}/decisions`, {
+		headers: { cookie: `__Host-Http-token=${signCookieValue("not.a.jwt")}` },
+	});
+	check(
+		"GET with a bad session cookie -> 401",
+		ghost.status === 401,
+		`got ${ghost.status}`,
+	);
 
 	// 2. admin GET decisions -> the paged fixture, cap in the query, bouncer key sent
 	const list = await fetch(`${base}/decisions`, { headers: admin });
