@@ -1,0 +1,7 @@
+# AI tooling files - local only, never committed
+AGENTS.md
+CLAUDE.md
+.claude/
+.cursor/
+.cursorrules
+.github/copilot-instructions.md
