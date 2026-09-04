@@ -228,6 +228,22 @@ await decisionsTable.first().waitFor({ timeout: 15000 });
 let rows = await decisionsTable.allInnerTexts();
 check("table renders the 4 bans", rows.length === 4, `${rows.length} rows: ${JSON.stringify(rows).slice(0, 200)}`);
 check("newest ban (203.0.113.9) is first", rows[0]?.includes("203.0.113.9"), rows[0]);
+
+// the animated hexagon logo: the card header must carry it and the asset
+// must resolve (the orbit itself is smil inside the svg)
+const headerLogo = await page
+	.locator(".card")
+	.filter({ hasText: "CrowdSec Bans" })
+	.first()
+	.locator('img[src*="crowdsec-logo-animated"]')
+	.count();
+check("crowdsec header shows the animated hexagon logo", headerLogo === 1, `${headerLogo} logo imgs`);
+const logoProbe = await page.evaluate(async () => {
+	const r = await fetch("/images/crowdsec-logo-animated.svg");
+	const t = await r.text();
+	return r.status === 200 && t.includes("animateTransform");
+});
+check("the animated logo asset resolves with its orbit intact", logoProbe, "asset probe failed");
 check("honeypot badge shows", rows[0]?.includes("anubis honeypot"), rows[0]);
 check("manual ban shows its scenario", rows[3]?.includes("manual"), rows[3]);
 
