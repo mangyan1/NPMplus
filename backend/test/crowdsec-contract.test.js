@@ -181,13 +181,24 @@ cs_appsec_reqs_total 12
 cs_appsec_block_total 3
 cs_lapi_request_duration_seconds_sum 1.5
 cs_lapi_request_duration_seconds_count 3
-cs_active_decisions 7
+cs_active_decisions{origin="crowdsec",action="ban"} 2
+cs_active_decisions{origin="cscli",action="ban"} 1
+cs_active_decisions{origin="CAPI",action="ban"} 50000
+cs_active_decisions{origin="lists",action="ban"} 100
 not valid
 `);
-	assert.equal(samples.length, 7);
+	assert.equal(samples.length, 10);
 	assert.deepEqual(samples[0].labels, { source: "nginx" });
 	assert.deepEqual(summarizeCrowdsecMetrics(samples), {
-		active_decisions: 7,
+		active_decisions: 50103,
+		local_active_decisions: 3,
+		community_active_decisions: 50100,
+		decision_origins: [
+			{ name: "capi", count: 50000 },
+			{ name: "lists", count: 100 },
+			{ name: "crowdsec", count: 2 },
+			{ name: "cscli", count: 1 },
+		],
 		alerts: 0,
 		appsec_requests: 12,
 		appsec_blocked: 3,
@@ -199,6 +210,13 @@ not valid
 		average_lapi_ms: 500,
 		average_parsing_ms: null,
 	});
+});
+
+test("decision origin totals degrade safely when an older metric has no origin label", () => {
+	const summary = summarizeCrowdsecMetrics(parsePrometheusText("cs_active_decisions 7"));
+	assert.equal(summary.active_decisions, 7);
+	assert.equal(summary.local_active_decisions, null);
+	assert.equal(summary.community_active_decisions, null);
 });
 
 test("CrowdSec payload validation rejects malformed upstream responses", () => {

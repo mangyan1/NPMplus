@@ -18,6 +18,17 @@ export interface CrowdsecDecisionPage {
 	items: CrowdsecDecision[];
 	limit: number;
 	truncated: boolean;
+	page: number;
+	pageSize: number;
+	hasNext: boolean;
+	matched: number;
+}
+
+export interface CrowdsecDecisionParams {
+	page?: number;
+	pageSize?: number;
+	search?: string;
+	origin?: "local" | "community" | "all";
 }
 
 export interface CrowdsecEventMeta {
@@ -81,6 +92,7 @@ export interface CrowdsecInsights {
 	windowHours: number;
 	alertCount: number;
 	activeDecisions: number | null;
+	localActiveDecisions: number | null;
 	sampled: boolean;
 	activity: { start: string; count: number }[];
 	locations: { latitude: number; longitude: number; country: string; count: number }[];
@@ -115,6 +127,9 @@ export interface CrowdsecMetrics {
 	available: boolean;
 	error?: string;
 	activeDecisions?: number;
+	localActiveDecisions?: number | null;
+	communityActiveDecisions?: number | null;
+	decisionOrigins?: { name: string; count: number }[];
 	alerts?: number;
 	appsecRequests?: number;
 	appsecBlocked?: number;
@@ -146,8 +161,17 @@ export async function getCrowdsecMetrics(signal?: AbortSignal): Promise<Crowdsec
 	return await api.get({ url: "/crowdsec/metrics" }, signal);
 }
 
-export async function getCrowdsecDecisions(signal?: AbortSignal): Promise<CrowdsecDecisionPage> {
-	return await api.get({ url: "/crowdsec/decisions" }, signal);
+export async function getCrowdsecDecisions(
+	params: CrowdsecDecisionParams = {},
+	signal?: AbortSignal,
+): Promise<CrowdsecDecisionPage> {
+	return await api.get(
+		{
+			url: "/crowdsec/decisions",
+			params: { page: params.page, pageSize: params.pageSize, search: params.search, origin: params.origin },
+		},
+		signal,
+	);
 }
 
 export async function getCrowdsecAlerts(scope: string, value: string, signal?: AbortSignal): Promise<CrowdsecAlert[]> {

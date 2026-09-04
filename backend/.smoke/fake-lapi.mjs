@@ -48,7 +48,7 @@ const decisions = [
 		scope: "Ip",
 		value: "198.51.100.7",
 		type: "ban",
-		origin: "crowdsecurity/http-probing",
+		origin: "crowdsec",
 		scenario: "crowdsecurity/http-probing",
 		duration: "4h",
 		until: in2h,
@@ -177,7 +177,17 @@ const server = http.createServer((req, res) => {
 					decisions.filter((d) => d.scenario.includes(scenarios)),
 				);
 			}
-			return send(200, decisions);
+			const origins = url.searchParams
+				.get("origins")
+				?.split(",")
+				.map((origin) => origin.toLocaleLowerCase());
+			const limit = Number(url.searchParams.get("limit") || String(decisions.length));
+			return send(
+				200,
+				decisions
+					.filter((decision) => !origins || origins.includes(decision.origin.toLocaleLowerCase()))
+					.slice(0, limit),
+			);
 		}
 		if (url.pathname === "/v1/watchers/login" && req.method === "POST") {
 			// crowdsec's lapi validates the client user agent against the machine

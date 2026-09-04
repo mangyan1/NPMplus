@@ -4,6 +4,7 @@
 import { createHmac } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const SMOKEDIR = path.dirname(fileURLToPath(import.meta.url));
@@ -92,15 +93,19 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 	});
 	check("GET with a bad session cookie -> 401", ghost.status === 401, `got ${ghost.status}`);
 
-	// 2. admin GET decisions -> the paged fixture, cap in the query, bouncer key sent
+	// 2. admin GET decisions -> only local decisions; CAPI never crosses the UI boundary
 	const list = await fetch(`${base}/decisions`, { headers: admin });
 	const decisions = (await list.json()).items ?? [];
 	check(
-		"GET decisions -> 200 with 4 rows",
-		list.status === 200 && decisions.length === 4,
+		"GET decisions -> 200 with 3 local rows",
+		list.status === 200 && decisions.length === 3 && !decisions.some((decision) => decision.origin === "capi"),
 		`got ${list.status} ${JSON.stringify(decisions).slice(0, 80)}`,
 	);
-	check("lapi got the limit=201 cap probe", (await lapiLog()).at(-1).query === "limit=201");
+	check(
+		"lapi decision query filters local origins server-side",
+		(await lapiLog()).at(-1).query?.includes("origins=crowdsec%2Ccscli%2Ccscli-import"),
+		(await lapiLog()).at(-1).query,
+	);
 
 	// 3. no bouncer key file -> 503 not-wired
 	await rm(KEY_FILE);
@@ -162,7 +167,7 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 	const decisions2 = (await list2.json()).items ?? [];
 	check(
 		"unbanned decision is gone from the list",
-		decisions2.length === 3 && !decisions2.some((d) => d.id === 2),
+		decisions2.length === 3 && !decisions2.some((d) => d.id === 2 || d.origin === "capi"),
 		JSON.stringify(decisions2.map((d) => d.value)),
 	);
 
@@ -299,6 +304,8 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 		metrics.status === 200 &&
 			metricsBody.available === true &&
 			metricsBody.appsec_blocked === 3 &&
+			metricsBody.local_active_decisions === 3 &&
+			metricsBody.community_active_decisions === 42100 &&
 			metricsBody.parser_success_rate === 0.9 &&
 			metricsBody.average_lapi_ms === 500,
 		`got ${metrics.status} ${JSON.stringify(metricsBody)}`,

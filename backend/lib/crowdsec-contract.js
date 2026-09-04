@@ -14,6 +14,8 @@ const BAN_TYPES = new Set(["ban", "captcha"]);
 const REASONS_RE = /^[\w .,:;#@-]{1,64}$/;
 const PROMETHEUS_LINE_SPLIT_RE = /\r?\n/;
 const PROMETHEUS_SAMPLE_RE = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?\s+([^\s]+)(?:\s+\d+)?$/;
+const LOCAL_DECISION_ORIGINS = new Set(["crowdsec", "cscli", "cscli-import"]);
+const COMMUNITY_DECISION_ORIGINS = new Set(["capi", "lists"]);
 const ALERT_FIELD_TOKEN_RE = /^(scenario|country|ip|target|asn|machine):(.*)$/;
 const WHITESPACE_RE = /\s+/;
 const QUOTE_RE = /^["']|["']$/g;
@@ -241,9 +243,25 @@ const summarizeCrowdsecMetrics = (samples) => {
 	const parserOk = sum("cs_parser_hits_ok_total");
 	const lapiCount = sum("cs_lapi_request_duration_seconds_count");
 	const parsingCount = sum("cs_parsing_time_seconds_count");
+	const activeDecisionSamples = samples.filter((sample) => sample.name === "cs_active_decisions");
+	const hasDecisionOriginLabels = activeDecisionSamples.some((sample) => optionalString(sample.labels?.origin));
+	const decisionOriginCounts = new Map();
+	for (const sample of activeDecisionSamples) {
+		const origin = optionalString(sample.labels?.origin).toLocaleLowerCase() || "unknown";
+		decisionOriginCounts.set(origin, (decisionOriginCounts.get(origin) ?? 0) + sample.value);
+	}
+	const countOrigins = (origins) =>
+		[...decisionOriginCounts.entries()]
+			.filter(([origin]) => origins.has(origin))
+			.reduce((total, [, value]) => total + value, 0);
 
 	return {
-		active_decisions: sum("cs_active_decisions"),
+		active_decisions: activeDecisionSamples.reduce((total, sample) => total + sample.value, 0),
+		local_active_decisions: hasDecisionOriginLabels ? countOrigins(LOCAL_DECISION_ORIGINS) : null,
+		community_active_decisions: hasDecisionOriginLabels ? countOrigins(COMMUNITY_DECISION_ORIGINS) : null,
+		decision_origins: [...decisionOriginCounts.entries()]
+			.map(([name, count]) => ({ name, count }))
+			.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
 		alerts: sum("cs_alerts"),
 		appsec_requests: sum("cs_appsec_reqs_total"),
 		appsec_blocked: sum("cs_appsec_block_total"),

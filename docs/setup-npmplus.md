@@ -86,6 +86,19 @@ The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. I
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.
 
+## Security dashboard
+
+Open **CrowdSec** in the NPMplus navigation to see the combined CrowdSec and Anubis security dashboard. Its four tabs separate the daily operator view from deeper details:
+
+- **Overview** shows attack activity, local bans, community protection, and Anubis as clickable summary cards.
+- **Attack activity** shows alerts observed by this instance, with search, filters, sanitized event details, and one-click manual-ban prefilling.
+- **Active bans** lists only local detections, manual bans, and imported local decisions. It loads 25 rows at a time and provides audited unban actions.
+- **System** contains AppSec, parser, bouncer, machine, and LAPI performance metrics.
+
+CrowdSec CAPI and blocklist decisions remain downloaded and enforced by the configured remediation components. The dashboard summarizes them as a community-protection count instead of loading the large remote IP list. It intentionally does not offer ordinary unban actions for those remote entries because CrowdSec can download them again. Clicking the community card shows the aggregate origin counts without exposing the individual addresses.
+
+The Anubis card shows container health and active honeypot bans. Open it to see recent honeypot catches. The dashboard toolbar remains visible while its content scrolls, and the normal NPMplus page header and footer remain part of the page.
+
 ## Secrets and certificate plugins
 
 Use mounted secret files instead of literal secret values in Compose. NPMplus supports `_FILE` variants for `COOKIE_SECRET`, `OIDC_CLIENT_SECRET`, `INITIAL_ADMIN_PASSWORD`, `INITIAL_SETUP_TOKEN`, `ACME_EAB_HMAC_KEY`, `DB_MYSQL_PASSWORD`, and `DB_POSTGRES_PASSWORD`. The sample `compose.yaml` contains commented Compose-secret examples. Do not set both a value and its `_FILE` variant. A custom `INITIAL_SETUP_TOKEN` must contain at least 32 characters; operator-supplied secret files are not deleted by NPMplus.

@@ -27,6 +27,8 @@ const LAPI_MACHINE_ID = process.env.CROWDSEC_LAPI_MACHINE_ID || "npmplus-ui";
 const LAPI_MACHINE_KEY_FILE = process.env.CROWDSEC_LAPI_MACHINE_KEY_FILE || "/data/crowdsec/lapi-ui-machine.key";
 const LAPI_DECISION_LIMIT = 200;
 const LAPI_PAGE_MAX_ITEMS = 500;
+const LOCAL_DECISION_ORIGINS = ["crowdsec", "cscli", "cscli-import"];
+const COMMUNITY_DECISION_ORIGINS = ["capi", "lists"];
 const LAPI_ALERT_LIMIT = 5;
 const LAPI_HONEYPOT_LIMIT = 25;
 const INSIGHTS_WINDOW_HOURS = 24;
@@ -382,15 +384,19 @@ router
 			const page = queryInteger(req.query.page, 1, 1, 1000);
 			const pageSize = queryInteger(req.query.page_size, 25, 1, 100);
 			const search = queryString(req.query.search).toLocaleLowerCase();
-			const origin = queryString(req.query.origin, 32).toLocaleLowerCase();
+			const requestedOrigin = queryString(req.query.origin, 32).toLocaleLowerCase();
+			const origin = ["all", "local", "community"].includes(requestedOrigin) ? requestedOrigin : "local";
 			const requestedEnd = page * pageSize;
 			if (paginated && requestedEnd > LAPI_PAGE_MAX_ITEMS) {
 				res.status(400).send({ error: { message: "crowdsec.page-too-deep" } });
 				return;
 			}
 			let fetchLimit = LAPI_DECISION_LIMIT + 1;
-			if (paginated) fetchLimit = search || origin ? LAPI_PAGE_MAX_ITEMS + 1 : requestedEnd + 1;
-			const payload = await lapiFetch(`/v1/decisions?limit=${fetchLimit}`);
+			if (paginated) fetchLimit = search ? LAPI_PAGE_MAX_ITEMS + 1 : requestedEnd + 1;
+			const decisionQuery = new URLSearchParams({ limit: String(fetchLimit) });
+			if (origin === "local") decisionQuery.set("origins", LOCAL_DECISION_ORIGINS.join(","));
+			if (origin === "community") decisionQuery.set("origins", COMMUNITY_DECISION_ORIGINS.join(","));
+			const payload = await lapiFetch(`/v1/decisions?${decisionQuery}`);
 			let decisions;
 			try {
 				decisions = normalizeCrowdsecDecisions(payload);
@@ -403,14 +409,18 @@ router
 					items: decisions.slice(0, LAPI_DECISION_LIMIT),
 					limit: LAPI_DECISION_LIMIT,
 					truncated: decisions.length > LAPI_DECISION_LIMIT,
+					page: 1,
+					page_size: LAPI_DECISION_LIMIT,
+					has_next: decisions.length > LAPI_DECISION_LIMIT,
+					matched: Math.min(decisions.length, LAPI_DECISION_LIMIT),
 				});
 				return;
 			}
 
 			const filtered = decisions.filter((decision) => {
-				if (origin === "local" && !["crowdsec", "cscli"].includes(decision.origin.toLocaleLowerCase()))
+				if (origin === "local" && !LOCAL_DECISION_ORIGINS.includes(decision.origin.toLocaleLowerCase()))
 					return false;
-				if (origin === "community" && ["crowdsec", "cscli"].includes(decision.origin.toLocaleLowerCase()))
+				if (origin === "community" && !COMMUNITY_DECISION_ORIGINS.includes(decision.origin.toLocaleLowerCase()))
 					return false;
 				if (!search) return true;
 				return [decision.value, decision.scope, decision.scenario, decision.origin, decision.type].some(
@@ -709,9 +719,13 @@ router
 
 			const requestedWindow = queryInteger(req.query.window_hours, INSIGHTS_WINDOW_HOURS, 1, 168);
 			const windowHours = INSIGHTS_WINDOW_OPTIONS.has(requestedWindow) ? requestedWindow : INSIGHTS_WINDOW_HOURS;
+			const localDecisionQuery = new URLSearchParams({
+				limit: String(LAPI_DECISION_LIMIT + 1),
+				origins: LOCAL_DECISION_ORIGINS.join(","),
+			});
 			const [payload, decisionPayload] = await Promise.all([
 				readAlertsSample(windowHours, INSIGHTS_ALERT_LIMIT),
-				lapiFetch(`/v1/decisions?limit=${LAPI_DECISION_LIMIT + 1}`).catch((err) => {
+				lapiFetch(`/v1/decisions?${localDecisionQuery}`).catch((err) => {
 					debug(logger, `CrowdSec active decision count unavailable: ${err.message}`);
 					return null;
 				}),
@@ -760,6 +774,7 @@ router
 				window_hours: windowHours,
 				alert_count: alerts.length,
 				active_decisions: activeDecisions,
+				local_active_decisions: activeDecisions,
 				sampled: alerts.length >= INSIGHTS_ALERT_LIMIT,
 				activity,
 				locations: [...locationCounts.values()].sort((a, b) => b.count - a.count).slice(0, 100),
