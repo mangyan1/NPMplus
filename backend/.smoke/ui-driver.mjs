@@ -184,12 +184,20 @@ const api = async (route) => {
 				start: iso((index - 23) * 3600 * 1000),
 				count: index === 23 ? 7 : index % 5,
 			})),
-			locations: [{ latitude: 51.16, longitude: 10.45, country: "DE", count: 5 }],
+			locations: [
+				{ latitude: 51.16, longitude: 10.45, country: "DE", count: 5 },
+				{ latitude: 37.09, longitude: -95.71, country: "US", count: 3 },
+				{ latitude: 1.35, longitude: 103.82, country: "SG", count: 2 },
+			],
 			signals: [{ id: "bans-3", severity: "info", type: "active-bans", count: 3 }],
 			topScenarios: [{ name: "crowdsecurity/http-probing", count: 4 }],
-			topCountries: [{ name: "DE", count: 5 }],
-			topAsns: [{ name: "Example ASN", count: 7 }],
-			topTargets: [{ name: "/.env", count: 4 }],
+			topCountries: [
+				{ name: "DE", count: 5 },
+				{ name: "US", count: 3 },
+				{ name: "SG", count: 2 },
+			],
+			topAsns: [{ name: "Example Telecommunications and Hosting Provider ASN", count: 7 }],
+			topTargets: [{ name: "very-long-subdomain-for-responsive-testing.example.internal/.env", count: 4 }],
 		});
 	if (apiPath === "/crowdsec/history/alerts")
 		return respond({
@@ -228,6 +236,8 @@ const api = async (route) => {
 		return respond({
 			configured: true,
 			honeypot: {
+				status: "ready",
+				decisionsAvailable: true,
 				activeCount: 1,
 				truncated: false,
 				items: decisions.filter((decision) => decision.scenario === "anubis-honeypot"),
@@ -256,6 +266,19 @@ await page.getByRole("heading", { name: "Security overview" }).waitFor({ timeout
 check("security dashboard has one sticky toolbar", (await page.locator(".sticky-top").count()) === 1);
 check("dashboard exposes four focused tabs", (await page.getByRole("tab").count()) === 4);
 check(
+	"honeypot status distinguishes log readiness from active bans",
+	(await page.getByText("Honeypot logging ready", { exact: true }).count()) >= 1,
+);
+check("manual action is named clearly", (await page.getByRole("button", { name: "Add IP ban" }).count()) === 1);
+const dashboardButtonLabels = await page
+	.locator("button")
+	.evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label") || button.textContent?.trim()));
+check(
+	"browser alert control communicates its current state",
+	(await page.getByRole("button", { name: /Browser alerts (off|unavailable|blocked)/ }).count()) === 1,
+	JSON.stringify(dashboardButtonLabels),
+);
+check(
 	"dashboard header uses the animated hexagon mark",
 	(await page
 		.getByRole("heading", { name: "Security overview" })
@@ -263,7 +286,21 @@ check(
 		.count()) === 1,
 );
 
-await page.getByRole("button", { name: /Community protection/i }).click();
+const overviewTab = page.getByRole("tab", { name: "Overview" });
+await overviewTab.focus();
+await overviewTab.press("ArrowRight");
+check(
+	"dashboard tabs support arrow-key navigation",
+	(await page.getByRole("tab", { name: "Attack activity" }).getAttribute("aria-selected")) === "true",
+);
+await overviewTab.click();
+check(
+	"attack map uses geographic land shapes",
+	(await page.locator('svg[aria-label*="plotted across"] path').count()) >= 6,
+);
+check("attack map renders animated origin markers", (await page.locator('[class*="meteor"]').count()) >= 3);
+
+await page.getByRole("button", { name: /Community blocklist entries/i }).click();
 const communityModal = page.getByRole("dialog");
 const communityText = await communityModal.innerText();
 check(
@@ -303,7 +340,7 @@ check(
 );
 
 await page.getByRole("tab", { name: "Overview" }).click();
-await page.getByRole("button", { name: /Anubis/i }).click();
+await page.getByRole("button", { name: /Honeypot bans/i }).click();
 const anubisModal = page.getByRole("dialog");
 const anubisText = await anubisModal.innerText();
 check(
@@ -319,6 +356,10 @@ check(
 	"technical metrics moved to the System tab",
 	/appsec requests/i.test(systemText) && systemText.includes("500.0 ms"),
 	systemText.slice(0, 300),
+);
+check(
+	"system metrics are informational cards rather than misleading buttons",
+	(await page.getByRole("button", { name: /AppSec requests/i }).count()) === 0,
 );
 
 await page.getByRole("tab", { name: "Attack activity" }).click();

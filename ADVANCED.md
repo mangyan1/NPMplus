@@ -156,6 +156,8 @@ labels:
 12. Note that when using crowdsec requests will always be buffered, so setting `proxy_(request_)buffering` to off will not work
 
 ## Use of external php-fpm (recommended)
+This section is configuration guidance only. `setup-npmplus.sh` does not currently create, configure, update, or monitor a dedicated PHP-FPM container. Automation may be considered later after its isolation, performance, networking, compatibility, rollback, and maintenance tradeoffs are reviewed.
+
 To set it per location: press the gear button, set the scheme to `path`, put in the path and paste the following in the new text field at the bottom, you need to adjust the last line:
 ```
 location ~* [^/]\.php(?:$|/) {

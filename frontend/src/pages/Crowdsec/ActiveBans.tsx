@@ -15,7 +15,7 @@ import { useCrowdsecAlerts, useCrowdsecDecisions, useUnbanCrowdsecDecision } fro
 import { formatDateTime, intl, T } from "src/locale";
 import { showDeleteConfirmModal, showManualBanModal } from "src/modals";
 import { showError } from "src/notifications";
-import AnimatedLogo from "./AnimatedLogo";
+import { TableSkeleton } from "./LoadingSkeleton";
 import { decisionTarget } from "./utils";
 
 const AlertContext = ({ decision }: { decision: CrowdsecDecision }) => {
@@ -135,9 +135,7 @@ const ActiveBans = () => {
 					<T id={query.error?.message || "error.unknown"} />
 				</Alert>
 			) : !query.data ? (
-				<div className="py-5 d-flex justify-content-center">
-					<AnimatedLogo />
-				</div>
+				<TableSkeleton />
 			) : (
 				<>
 					{query.isError && (
@@ -194,8 +192,8 @@ const ActiveBans = () => {
 														/>
 													</button>
 												</td>
-												<td>{decisionTarget(decision)}</td>
-												<td>{decision.scenario}</td>
+												<td className="text-break">{decisionTarget(decision)}</td>
+												<td className="text-break">{decision.scenario}</td>
 												<td>{decision.origin}</td>
 												<td>{decision.type}</td>
 												<td>

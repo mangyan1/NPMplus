@@ -1,0 +1,50 @@
+.block {
+	position: relative;
+	overflow: hidden;
+	border-radius: var(--tblr-border-radius);
+	background: color-mix(in srgb, var(--tblr-secondary) 14%, transparent);
+}
+
+.block::after {
+	position: absolute;
+	inset: 0;
+	content: "";
+	background: linear-gradient(90deg, transparent, color-mix(in srgb, white 32%, transparent), transparent);
+	transform: translateX(-100%);
+	animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+
+.label {
+	width: 58%;
+	height: 0.75rem;
+}
+
+.value {
+	width: 34%;
+	height: 1.75rem;
+}
+
+.hint {
+	width: 46%;
+	height: 0.65rem;
+}
+
+.chart {
+	height: 12rem;
+}
+
+.row {
+	height: 2.75rem;
+}
+
+@keyframes skeleton-sweep {
+	to {
+		transform: translateX(100%);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.block::after {
+		animation: none;
+	}
+}

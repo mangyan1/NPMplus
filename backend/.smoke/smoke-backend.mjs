@@ -208,6 +208,8 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 	check(
 		"GET anubis -> 200 with the honeypot decision",
 		anubis.status === 200 &&
+			anubisBody.honeypot.status === "ready" &&
+			anubisBody.honeypot.decisionsAvailable === true &&
 			anubisBody.honeypot.activeCount === 1 &&
 			anubisBody.honeypot.items[0]?.value === "203.0.113.9" &&
 			anubisBody.honeypot.items[0]?.scenario === "anubis-honeypot",
@@ -228,6 +230,19 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 		(anubisBody.recent ?? []).length === 3 && anubisBody.recent[0] === "203.0.113.99",
 		JSON.stringify(anubisBody.recent),
 	);
+	await rm(KEY_FILE);
+	const anubisWithoutLapi = await fetch(`${base}/anubis`, { headers: admin });
+	const anubisWithoutLapiBody = await anubisWithoutLapi.json();
+	check(
+		"anubis health remains visible when decision counts are unavailable",
+		anubisWithoutLapi.status === 200 &&
+			anubisWithoutLapiBody.honeypot.decisionsAvailable === false &&
+			anubisWithoutLapiBody.honeypot.activeCount === null &&
+			anubisWithoutLapiBody.honeypot.status === "ready" &&
+			anubisWithoutLapiBody.container.up === true,
+		JSON.stringify(anubisWithoutLapiBody),
+	);
+	await writeFile(KEY_FILE, "smoke-bouncer-key-1234567890abcdef");
 
 	// 9b. insights: 24h aggregation over recent alerts, stale ones excluded
 	const insights = await fetch(`${base}/insights`, { headers: admin });

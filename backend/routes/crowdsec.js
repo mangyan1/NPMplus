@@ -114,18 +114,19 @@ const readRecentHoneypotIps = async () => {
 	try {
 		content = await readFile(HONEYPOT_LOG_PATH, "utf8");
 	} catch (err) {
-		if (err?.code === "ENOENT") return [];
+		if (err?.code === "ENOENT") return { status: "waiting", items: [] };
 		debug(logger, `Anubis honeypot log is unreadable: ${err}`);
-		return [];
+		return { status: "unavailable", items: [] };
 	}
 	if (content.length > HONEYPOT_LOG_MAX_BYTES) {
 		content = content.slice(-HONEYPOT_LOG_MAX_BYTES);
 	}
-	return content
+	const items = content
 		.split("\n")
 		.map((line) => line.trim())
 		.filter((line) => line.length > 0 && line.length <= 45)
 		.filter((line) => HONEYPOT_IP_PATTERN.test(line));
+	return { status: "ready", items };
 };
 
 const lapiFetch = async (path) => {
@@ -303,7 +304,13 @@ router
 
 			const response = {
 				configured: Boolean(ANUBIS_UPSTREAM),
-				honeypot: { activeCount: 0, truncated: false, items: [] },
+				honeypot: {
+					status: ANUBIS_UPSTREAM ? "waiting" : "disabled",
+					decisionsAvailable: true,
+					activeCount: null,
+					truncated: false,
+					items: [],
+				},
 				container: { up: null, error: null },
 				recent: [],
 			};
@@ -317,6 +324,7 @@ router
 					.then((payload) => {
 						const decisions = normalizeCrowdsecDecisions(payload);
 						response.honeypot = {
+							...response.honeypot,
 							activeCount: decisions.length,
 							truncated: decisions.length > LAPI_HONEYPOT_LIMIT,
 							items: decisions.slice(0, LAPI_HONEYPOT_LIMIT),
@@ -324,7 +332,7 @@ router
 					})
 					.catch((err) => {
 						debug(logger, `Anubis honeypot decisions unavailable: ${err.message}`);
-						throw err;
+						response.honeypot.decisionsAvailable = false;
 					}),
 			);
 
@@ -354,14 +362,15 @@ router
 			// 3. recent honeypot catches from the log anubis writes on the shared
 			//    data volume. the backend never writes it, it only reads.
 			probes.push(
-				readRecentHoneypotIps().then((ips) => {
+				readRecentHoneypotIps().then(({ status, items }) => {
+					if (response.configured) response.honeypot.status = status;
 					// newest-last from the log writer; the view wants newest-first
-					response.recent = ips.slice(-20).reverse();
+					response.recent = items.slice(-20).reverse();
 				}),
 			);
 
-			// the LAPI query is the only probe that must succeed; container state
-			// and recent IPs degrade to neutral values instead of failing the page
+			// Every probe degrades independently so a CrowdSec outage cannot hide
+			// Anubis reachability or honeypot-log readiness (and vice versa).
 			await Promise.all(probes);
 			res.status(200).send(response);
 		} catch (err) {

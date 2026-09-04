@@ -1,5 +1,14 @@
 import { IconBell, IconBellOff, IconChevronLeft, IconChevronRight, IconRefresh, IconSearch } from "@tabler/icons-react";
-import { Fragment, type ReactNode, useDeferredValue, useEffect, useMemo, useState } from "react";
+import {
+	type CSSProperties,
+	Fragment,
+	type KeyboardEvent as ReactKeyboardEvent,
+	type ReactNode,
+	useDeferredValue,
+	useEffect,
+	useMemo,
+	useState,
+} from "react";
 import Alert from "react-bootstrap/Alert";
 import Modal from "react-bootstrap/Modal";
 import type {
@@ -16,11 +25,14 @@ import { formatDateTime, intl, T } from "src/locale";
 import { showManualBanModal } from "src/modals";
 import ActiveBans from "./ActiveBans";
 import AnimatedLogo from "./AnimatedLogo";
+import styles from "./Dashboard.module.css";
+import { MetricsSkeleton, OverviewSkeleton, TableSkeleton } from "./LoadingSkeleton";
 
 const NOTIFICATIONS_KEY = "npmplus.crowdsec.browser-notifications";
 const LAST_SIGNAL_KEY = "npmplus.crowdsec.last-signal";
 type DashboardTab = "overview" | "activity" | "bans" | "system";
 type KpiKind = "attacks" | "local" | "community" | "anubis";
+type BrowserNotificationState = NotificationPermission | "unsupported";
 
 const alertTarget = (alert: CrowdsecAlert) => {
 	for (const event of alert.events)
@@ -30,75 +42,168 @@ const alertTarget = (alert: CrowdsecAlert) => {
 };
 const alertSource = (alert: CrowdsecAlert) => alert.source.ip || alert.source.value || alert.source.rdns || "—";
 
-const ActivityChart = ({ items }: { items: { start: string; count: number }[] }) => {
+const ActivityChart = ({ items, windowHours }: { items: { start: string; count: number }[]; windowHours: number }) => {
 	const width = 720;
-	const height = 160;
+	const height = 184;
+	const plotHeight = 148;
 	const max = Math.max(1, ...items.map((item) => item.count));
+	const total = items.reduce((sum, item) => sum + item.count, 0);
 	const barWidth = Math.max(1, width / Math.max(1, items.length) - 2);
+	const labelIndexes = [...new Set([0, Math.floor((items.length - 1) / 2), items.length - 1])].filter(
+		(index) => index >= 0,
+	);
+	const bucketLabel = (start: string) =>
+		intl.formatDate(
+			new Date(start),
+			windowHours >= 168 ? { month: "short", day: "numeric" } : { hour: "numeric", minute: "2-digit" },
+		);
+	const summary = intl.formatMessage(
+		{ id: "crowdsec.activity.summary" },
+		{ total, hours: windowHours, peak: Math.max(0, ...items.map((item) => item.count)) },
+	);
 	return (
-		<svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={intl.formatMessage({ id: "crowdsec.activity" })}>
-			<title>{intl.formatMessage({ id: "crowdsec.activity" })}</title>
-			<line x1="0" y1={height - 1} x2={width} y2={height - 1} stroke="currentColor" opacity="0.2" />
-			{items.map((item, index) => {
-				const barHeight = (item.count / max) * (height - 18);
-				return (
-					<rect
-						key={item.start}
-						x={index * (width / items.length)}
-						y={height - barHeight - 1}
-						width={barWidth}
-						height={barHeight}
-						rx="2"
-						fill="var(--tblr-azure)"
+		<figure className="mb-0">
+			<svg className={styles.chart} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={summary}>
+				<title>{summary}</title>
+				<text x="0" y="12" className={styles.chartLabel}>
+					{intl.formatNumber(max)}
+				</text>
+				<line x1="0" y1={plotHeight} x2={width} y2={plotHeight} stroke="currentColor" opacity="0.2" />
+				{items.map((item, index) => {
+					const barHeight = (item.count / max) * (plotHeight - 18);
+					return (
+						<rect
+							key={item.start}
+							x={index * (width / Math.max(1, items.length))}
+							y={plotHeight - barHeight}
+							width={barWidth}
+							height={barHeight}
+							rx="2"
+							fill="var(--tblr-azure)"
+						>
+							<title>{`${formatDateTime(item.start)}: ${item.count}`}</title>
+						</rect>
+					);
+				})}
+				{labelIndexes.map((index) => (
+					<text
+						key={items[index].start}
+						x={(index / Math.max(1, items.length - 1)) * width}
+						y="176"
+						textAnchor={index === 0 ? "start" : index === items.length - 1 ? "end" : "middle"}
+						className={styles.chartLabel}
 					>
-						<title>{`${formatDateTime(item.start)}: ${item.count}`}</title>
-					</rect>
-				);
-			})}
-		</svg>
+						{bucketLabel(items[index].start)}
+					</text>
+				))}
+			</svg>
+			{total === 0 && (
+				<div className="text-secondary text-center small mt-2">
+					<T id="crowdsec.activity.empty" />
+				</div>
+			)}
+			<figcaption className="visually-hidden">
+				{summary}
+				<ol>
+					{items.map((item) => (
+						<li key={item.start}>{`${formatDateTime(item.start)}: ${item.count}`}</li>
+					))}
+				</ol>
+			</figcaption>
+		</figure>
 	);
 };
 
-const AttackMap = ({ items }: { items: { latitude: number; longitude: number; country: string; count: number }[] }) => (
-	<svg viewBox="0 0 720 320" role="img" aria-label={intl.formatMessage({ id: "crowdsec.attack-map" })}>
-		<title>{intl.formatMessage({ id: "crowdsec.attack-map" })}</title>
-		<rect width="720" height="320" rx="8" className="fill-secondary-lt" opacity="0.35" />
-		{[-60, -30, 0, 30, 60].map((latitude) => (
-			<line
-				key={latitude}
-				x1="0"
-				y1={160 - (latitude / 90) * 150}
-				x2="720"
-				y2={160 - (latitude / 90) * 150}
-				stroke="currentColor"
-				opacity="0.08"
-			/>
-		))}
-		{[-120, -60, 0, 60, 120].map((longitude) => (
-			<line
-				key={longitude}
-				x1={360 + longitude * 2}
-				y1="0"
-				x2={360 + longitude * 2}
-				y2="320"
-				stroke="currentColor"
-				opacity="0.08"
-			/>
-		))}
-		{items.map((item) => (
-			<circle
-				key={`${item.latitude}-${item.longitude}-${item.country}`}
-				cx={360 + item.longitude * 2}
-				cy={160 - (item.latitude / 90) * 150}
-				r={Math.min(18, 4 + Math.sqrt(item.count) * 2)}
-				fill="var(--tblr-red)"
-				opacity="0.72"
-			>
-				<title>{`${item.country || "Unknown"}: ${item.count}`}</title>
-			</circle>
-		))}
-	</svg>
-);
+const AttackMap = ({ items }: { items: { latitude: number; longitude: number; country: string; count: number }[] }) => {
+	const plotted = items
+		.filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude))
+		.slice(0, 12);
+	const duration = `${Math.max(5, plotted.length * 1.1)}s`;
+	const position = (item: (typeof plotted)[number]) => ({
+		x: Math.min(708, Math.max(12, 360 + item.longitude * 2)),
+		y: Math.min(306, Math.max(14, 160 - (item.latitude / 90) * 148)),
+	});
+	const countryCount = new Set(plotted.map((item) => item.country).filter(Boolean)).size;
+	const summary = intl.formatMessage(
+		{ id: "crowdsec.attack-map.summary" },
+		{ count: plotted.reduce((sum, item) => sum + item.count, 0), countries: countryCount },
+	);
+	return (
+		<figure className="mb-0">
+			<svg className={`${styles.worldMap} text-secondary`} viewBox="0 0 720 320" role="img" aria-label={summary}>
+				<title>{summary}</title>
+				<desc>{intl.formatMessage({ id: "crowdsec.attack-map.motion-note" })}</desc>
+				{[-60, -30, 0, 30, 60].map((latitude) => (
+					<line
+						key={latitude}
+						x1="0"
+						y1={160 - (latitude / 90) * 148}
+						x2="720"
+						y2={160 - (latitude / 90) * 148}
+						className={styles.worldGrid}
+					/>
+				))}
+				{[-120, -60, 0, 60, 120].map((longitude) => (
+					<line
+						key={longitude}
+						x1={360 + longitude * 2}
+						y1="0"
+						x2={360 + longitude * 2}
+						y2="320"
+						className={styles.worldGrid}
+					/>
+				))}
+				<g className={styles.worldLand}>
+					<path d="M40 76 72 48 128 35 178 47 205 73 188 96 158 103 140 126 108 121 90 103 58 98Z" />
+					<path d="M173 127 205 139 218 174 206 215 187 262 169 244 160 202 146 166Z" />
+					<path d="M309 62 333 49 358 56 368 76 350 91 320 87Z" />
+					<path d="M334 102 376 95 408 116 420 156 398 211 372 251 344 222 328 174 310 139Z" />
+					<path d="M373 72 430 48 512 43 584 61 650 91 675 121 637 139 594 126 558 145 512 132 474 113 430 120 397 101Z" />
+					<path d="M548 211 588 197 630 211 650 240 628 261 582 257 552 237Z" />
+					<path d="M674 173 688 168 696 181 684 192Z" />
+				</g>
+				{plotted.map((item, index) => {
+					const { x, y } = position(item);
+					const label = `${item.country || intl.formatMessage({ id: "unknown" })}: ${intl.formatNumber(item.count)}`;
+					const animationStyle = {
+						"--meteor-delay": `${index * 1.1}s`,
+						"--meteor-duration": duration,
+					} as CSSProperties;
+					return (
+						<g
+							key={`${item.latitude}-${item.longitude}-${item.country}`}
+							transform={`translate(${x} ${y})`}
+						>
+							<title>{label}</title>
+							<g className={styles.meteor} style={animationStyle}>
+								<line x1="-22" y1="-14" x2="-3" y2="-2" className={styles.meteorTrail} />
+								<circle cx="0" cy="0" r="3.5" className={styles.meteorHead} />
+							</g>
+							<circle r={Math.min(11, 3.5 + Math.sqrt(item.count))} className={styles.locationDot} />
+							<circle r="5" className={styles.locationPulse} style={animationStyle} />
+						</g>
+					);
+				})}
+			</svg>
+			<figcaption className="mt-2">
+				<div className={styles.locationLegend}>
+					{plotted.slice(0, 3).map((item) => (
+						<div
+							className={`${styles.locationLegendItem} small d-flex justify-content-between gap-2`}
+							key={`${item.country}-${item.latitude}-${item.longitude}`}
+						>
+							<span className="text-truncate">{item.country || <T id="unknown" />}</span>
+							<span className="badge bg-red-lt">{intl.formatNumber(item.count)}</span>
+						</div>
+					))}
+				</div>
+				<div className="text-secondary small mt-2">
+					<T id="crowdsec.attack-map.motion-note" />
+				</div>
+			</figcaption>
+		</figure>
+	);
+};
 
 const QuickFilters = ({ items, onSelect }: { items: CrowdsecInsightsItem[]; onSelect: (value: string) => void }) =>
 	items.length === 0 ? (
@@ -111,7 +216,7 @@ const QuickFilters = ({ items, onSelect }: { items: CrowdsecInsightsItem[]; onSe
 				<button
 					type="button"
 					key={item.name}
-					className="btn btn-sm btn-outline-secondary"
+					className={`btn btn-sm btn-outline-secondary ${styles.quickFilter}`}
 					onClick={() => onSelect(item.name)}
 				>
 					{item.name} <span className="badge bg-secondary-lt ms-1">{item.count}</span>
@@ -125,32 +230,49 @@ const Metric = ({
 	value,
 	onClick,
 	tone = "azure",
+	description,
 }: {
 	label: ReactNode;
 	value: string | number;
 	onClick?: () => void;
 	tone?: string;
-}) => (
-	<div className="col-sm-6 col-xl-3">
-		<button
-			type="button"
-			className="card card-sm h-100 w-100 text-start"
-			onClick={onClick}
-			aria-haspopup={onClick ? "dialog" : undefined}
-		>
+	description?: ReactNode;
+}) => {
+	const content = (
+		<>
 			<div className={`card-status-start bg-${tone}`} />
 			<div className="card-body">
-				<div className="text-secondary text-uppercase small">{label}</div>
+				<div className="d-flex justify-content-between align-items-start gap-2">
+					<div className={`${styles.metricLabel} text-secondary text-uppercase small`}>{label}</div>
+					{onClick && <IconChevronRight size={16} className="text-secondary" aria-hidden="true" />}
+				</div>
 				<div className="h2 mb-0 mt-1">{typeof value === "number" ? intl.formatNumber(value) : value}</div>
+				<div className={`${styles.metricDescription} text-secondary small mt-2`}>{description}</div>
 				{onClick && (
-					<div className="text-secondary small mt-2">
+					<span className="visually-hidden">
 						<T id="crowdsec.kpi.open" />
-					</div>
+					</span>
 				)}
 			</div>
-		</button>
-	</div>
-);
+		</>
+	);
+	return (
+		<div className="col-sm-6 col-xl-3">
+			{onClick ? (
+				<button
+					type="button"
+					className={`${styles.metricCard} card card-sm h-100 w-100 text-start`}
+					onClick={onClick}
+					aria-haspopup="dialog"
+				>
+					{content}
+				</button>
+			) : (
+				<div className={`${styles.metricCard} card card-sm h-100 w-100 text-start`}>{content}</div>
+			)}
+		</div>
+	);
+};
 
 const ItemList = ({ title, items }: { title: ReactNode; items: CrowdsecInsightsItem[] }) => (
 	<div className="col-md-6">
@@ -158,9 +280,9 @@ const ItemList = ({ title, items }: { title: ReactNode; items: CrowdsecInsightsI
 		{items.length ? (
 			<div className="list-group list-group-flush">
 				{items.map((item) => (
-					<div key={item.name} className="list-group-item px-0 d-flex justify-content-between">
-						<span>{item.name}</span>
-						<span className="badge bg-secondary-lt">{item.count}</span>
+					<div key={item.name} className="list-group-item px-0 d-flex justify-content-between gap-2">
+						<span className="text-break">{item.name}</span>
+						<span className="badge bg-secondary-lt flex-shrink-0">{item.count}</span>
 					</div>
 				))}
 			</div>
@@ -171,6 +293,29 @@ const ItemList = ({ title, items }: { title: ReactNode; items: CrowdsecInsightsI
 		)}
 	</div>
 );
+
+interface StatusPresentation {
+	label: string;
+	tone: "green" | "orange" | "red" | "secondary";
+}
+
+const anubisServiceStatus = (anubis?: AnubisStatus): StatusPresentation => {
+	if (!anubis) return { label: "crowdsec.status.checking", tone: "orange" };
+	if (!anubis.configured) return { label: "crowdsec.anubis.service-disabled", tone: "secondary" };
+	if (anubis.container.up === true) return { label: "crowdsec.anubis.container-up", tone: "green" };
+	if (anubis.container.up === false) return { label: "crowdsec.anubis.container-down", tone: "red" };
+	return { label: "crowdsec.status.checking", tone: "orange" };
+};
+
+const honeypotStatus = (anubis?: AnubisStatus): StatusPresentation => {
+	if (!anubis) return { label: "crowdsec.anubis.honeypot-checking", tone: "orange" };
+	if (!anubis.configured || anubis.honeypot.status === "disabled")
+		return { label: "crowdsec.anubis.honeypot-disabled", tone: "secondary" };
+	if (anubis.container.up === false || anubis.honeypot.status === "unavailable")
+		return { label: "crowdsec.anubis.honeypot-unavailable", tone: "red" };
+	if (anubis.honeypot.status === "waiting") return { label: "crowdsec.anubis.honeypot-waiting", tone: "orange" };
+	return { label: "crowdsec.anubis.honeypot-ready", tone: "green" };
+};
 
 const KpiDetailsModal = ({
 	kind,
@@ -191,8 +336,10 @@ const KpiDetailsModal = ({
 		attacks: "crowdsec.kpi.attacks",
 		local: "crowdsec.kpi.local",
 		community: "crowdsec.kpi.community",
-		anubis: "crowdsec.anubis.title",
+		anubis: "crowdsec.kpi.honeypot",
 	};
+	const serviceStatus = anubisServiceStatus(anubis);
+	const trapStatus = honeypotStatus(anubis);
 	const navigate = (tab: DashboardTab) => {
 		onClose();
 		onNavigate(tab);
@@ -261,18 +408,26 @@ const KpiDetailsModal = ({
 				)}
 				{kind === "anubis" && (
 					<>
-						<div className="d-flex gap-2 mb-3">
-							<span className={`badge ${anubis?.container.up ? "bg-green-lt" : "bg-red-lt"}`}>
-								{anubis?.container.up ? (
-									<T id="crowdsec.anubis.container-up" />
-								) : (
-									<T id="crowdsec.anubis.container-down" />
-								)}
+						<div className="d-flex flex-wrap gap-2 mb-3">
+							<span className={`badge bg-${serviceStatus.tone}-lt`}>
+								<T id={serviceStatus.label} />
 							</span>
-							<span className="badge bg-orange-lt">
-								<T id="crowdsec.anubis.active" data={{ count: anubis?.honeypot.activeCount ?? 0 }} />
+							<span className={`badge bg-${trapStatus.tone}-lt`}>
+								<T id={trapStatus.label} />
 							</span>
 						</div>
+						<p className="text-secondary">
+							<T id="crowdsec.anubis.honeypot-help" />
+						</p>
+						{typeof anubis?.honeypot.activeCount === "number" ? (
+							<div className="h2">
+								<T id="crowdsec.anubis.active" data={{ count: anubis.honeypot.activeCount }} />
+							</div>
+						) : (
+							<Alert variant="warning">
+								<T id="crowdsec.anubis.decisions-unavailable" />
+							</Alert>
+						)}
 						<h4>
 							<T id="crowdsec.anubis.recent" />
 						</h4>
@@ -377,7 +532,7 @@ const AttackHistory = ({
 			</div>
 			<div className="d-flex flex-wrap gap-2 mb-3">
 				{[scenario, country, target].filter(Boolean).map((value) => (
-					<span key={value} className="badge bg-azure-lt">
+					<span key={value} className="badge bg-azure-lt text-break">
 						{value}
 					</span>
 				))}
@@ -392,9 +547,7 @@ const AttackHistory = ({
 					<T id={history.error?.message || "error.unknown"} />
 				</Alert>
 			) : !history.data ? (
-				<div className="py-5 d-flex justify-content-center">
-					<AnimatedLogo />
-				</div>
+				<TableSkeleton />
 			) : (
 				<>
 					{history.data.truncated && (
@@ -428,7 +581,13 @@ const AttackHistory = ({
 								{history.data.items.length === 0 && (
 									<tr>
 										<td colSpan={6} className="text-center text-secondary py-5">
-											<T id="crowdsec.no-matches" />
+											<T
+												id={
+													scenario || country || target || search
+														? "crowdsec.no-matches"
+														: "crowdsec.history.empty"
+												}
+											/>
 										</td>
 									</tr>
 								)}
@@ -442,9 +601,9 @@ const AttackHistory = ({
 														? formatDateTime(item.createdAt || item.startAt, locale)
 														: "—"}
 												</td>
-												<td>{alertSource(item)}</td>
-												<td>{item.scenario}</td>
-												<td>{alertTarget(item) || "—"}</td>
+												<td className="text-break">{alertSource(item)}</td>
+												<td className="text-break">{item.scenario}</td>
+												<td className="text-break">{alertTarget(item) || "—"}</td>
 												<td>{item.eventsCount}</td>
 												<td className="text-end">
 													<div className="btn-list justify-content-end">
@@ -543,9 +702,7 @@ const AttackHistory = ({
 
 const SystemMetrics = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetrics> }) =>
 	!metrics.data ? (
-		<div className="py-5 d-flex justify-content-center">
-			<AnimatedLogo />
-		</div>
+		<MetricsSkeleton />
 	) : !metrics.data.available ? (
 		<Alert variant="secondary">
 			<T id={metrics.data.error || "crowdsec.metrics-unavailable"} />
@@ -602,8 +759,15 @@ const CrowdsecDashboard = () => {
 	const [country, setCountry] = useState("");
 	const [target, setTarget] = useState("");
 	const [notificationsEnabled, setNotificationsEnabled] = useState(
-		() => localStorage.getItem(NOTIFICATIONS_KEY) === "true",
+		() =>
+			typeof Notification !== "undefined" &&
+			Notification.permission === "granted" &&
+			localStorage.getItem(NOTIFICATIONS_KEY) === "true",
 	);
+	const [notificationPermission, setNotificationPermission] = useState<BrowserNotificationState>(() =>
+		typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+	);
+	const [showNotificationHelp, setShowNotificationHelp] = useState(false);
 	const insights = useCrowdsecInsights(windowHours);
 	const metrics = useCrowdsecMetrics();
 	const anubis = useAnubisStatus();
@@ -633,12 +797,21 @@ const CrowdsecDashboard = () => {
 		if (notificationsEnabled) {
 			localStorage.setItem(NOTIFICATIONS_KEY, "false");
 			setNotificationsEnabled(false);
+			setShowNotificationHelp(false);
 			return;
 		}
-		if (typeof Notification !== "undefined" && (await Notification.requestPermission()) === "granted") {
+		if (typeof Notification === "undefined") return;
+		const permission =
+			Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+		setNotificationPermission(permission);
+		if (permission === "granted") {
 			localStorage.setItem(NOTIFICATIONS_KEY, "true");
 			setNotificationsEnabled(true);
+			setShowNotificationHelp(false);
+			return;
 		}
+		localStorage.setItem(NOTIFICATIONS_KEY, "false");
+		setShowNotificationHelp(true);
 	};
 	const quickFilter = (setter: (value: string) => void, value: string) => {
 		setter(value);
@@ -652,37 +825,80 @@ const CrowdsecDashboard = () => {
 		{ id: "bans", label: "crowdsec.tabs.bans" },
 		{ id: "system", label: "crowdsec.tabs.system" },
 	];
+	const serviceStatus =
+		anubis.isError && !anubis.data
+			? { label: "crowdsec.anubis.container-down", tone: "red" as const }
+			: anubisServiceStatus(anubis.data);
+	const trapStatus =
+		anubis.isError && !anubis.data
+			? { label: "crowdsec.anubis.honeypot-unavailable", tone: "red" as const }
+			: honeypotStatus(anubis.data);
+	const crowdsecStatus =
+		insights.isError && !insights.data
+			? { label: "crowdsec.status.down", tone: "red" }
+			: insights.isRefetchError
+				? { label: "crowdsec.status.stale", tone: "orange" }
+				: { label: "crowdsec.status.up", tone: "green" };
+	const notificationLabel =
+		notificationPermission === "unsupported"
+			? "crowdsec.notifications.unsupported"
+			: notificationPermission === "denied"
+				? "crowdsec.notifications.blocked"
+				: notificationsEnabled
+					? "crowdsec.notifications.on"
+					: "crowdsec.notifications.off";
+	const partialRefreshFailed = insights.isRefetchError || metrics.isRefetchError || anubis.isRefetchError;
+	const secondarySourceUnavailable = (metrics.isError && !metrics.data) || (anubis.isError && !anubis.data);
+	const lastUpdatedAt = Math.max(
+		insights.data ? insights.dataUpdatedAt : 0,
+		metrics.data ? metrics.dataUpdatedAt : 0,
+		anubis.data ? anubis.dataUpdatedAt : 0,
+	);
+	const moveTabFocus = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
+		let nextIndex: number | undefined;
+		if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+		if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+		if (event.key === "Home") nextIndex = 0;
+		if (event.key === "End") nextIndex = tabs.length - 1;
+		if (nextIndex === undefined) return;
+		event.preventDefault();
+		setTab(tabs[nextIndex].id);
+		document.getElementById(`crowdsec-tab-${tabs[nextIndex].id}`)?.focus();
+	};
 
 	return (
 		<>
 			<div className="card mt-4 overflow-visible">
 				<div className="card-status-top bg-azure" />
-				<div className="sticky-top bg-body border-bottom" style={{ zIndex: 20 }}>
+				<div className={`${styles.toolbar} sticky-top bg-body border-bottom`}>
 					<div className="card-header border-0">
 						<div className="row w-100 align-items-center g-2">
-							<div className="col">
+							<div className="col-12 col-md">
 								<h2 className="card-title d-flex align-items-center gap-2">
 									<AnimatedLogo size="compact" />
 									<T id="crowdsec.dashboard" />
 								</h2>
-								<div className="d-flex gap-2 mt-1">
-									<span className={`badge ${insights.isError ? "bg-red-lt" : "bg-green-lt"}`}>
-										<T id={insights.isError ? "crowdsec.status.down" : "crowdsec.status.up"} />
+								<div className="d-flex flex-wrap align-items-center gap-2 mt-1">
+									<span className={`badge bg-${crowdsecStatus.tone}-lt`}>
+										<T id={crowdsecStatus.label} />
 									</span>
-									<span
-										className={`badge ${anubis.data?.container.up ? "bg-green-lt" : "bg-orange-lt"}`}
-									>
-										<T
-											id={
-												anubis.data?.container.up
-													? "crowdsec.anubis.container-up"
-													: "crowdsec.anubis.container-down"
-											}
-										/>
+									<span className={`badge bg-${serviceStatus.tone}-lt`}>
+										<T id={serviceStatus.label} />
 									</span>
+									<span className={`badge bg-${trapStatus.tone}-lt`}>
+										<T id={trapStatus.label} />
+									</span>
+									{lastUpdatedAt > 0 && (
+										<span className="text-secondary small">
+											<T
+												id="crowdsec.last-updated"
+												data={{ date: formatDateTime(new Date(lastUpdatedAt).toISOString()) }}
+											/>
+										</span>
+									)}
 								</div>
 							</div>
-							<div className="col-auto d-flex flex-wrap gap-2">
+							<div className={`${styles.controls} col-12 col-md-auto d-flex gap-2`}>
 								<select
 									className="form-select form-select-sm w-auto"
 									aria-label={intl.formatMessage({ id: "crowdsec.window" })}
@@ -700,19 +916,14 @@ const CrowdsecDashboard = () => {
 								<Button
 									actionType="secondary"
 									variant="outline"
-									disabled={typeof Notification === "undefined"}
+									disabled={notificationPermission === "unsupported"}
 									aria-pressed={notificationsEnabled}
+									aria-label={intl.formatMessage({ id: notificationLabel })}
 									onClick={toggleNotifications}
 								>
 									{notificationsEnabled ? <IconBell size={16} /> : <IconBellOff size={16} />}
-									<span className="ms-1">
-										<T
-											id={
-												notificationsEnabled
-													? "crowdsec.notifications.on"
-													: "crowdsec.notifications.off"
-											}
-										/>
+									<span className={`${styles.notificationText} ms-1`}>
+										<T id={notificationLabel} />
 									</span>
 								</Button>
 								<Button actionType="danger" onClick={() => showManualBanModal({})}>
@@ -722,6 +933,7 @@ const CrowdsecDashboard = () => {
 									actionType="secondary"
 									variant="outline"
 									isLoading={insights.isFetching || metrics.isFetching || anubis.isFetching}
+									aria-label={intl.formatMessage({ id: "crowdsec.refresh" })}
 									onClick={refresh}
 								>
 									<IconRefresh size={16} />
@@ -732,25 +944,53 @@ const CrowdsecDashboard = () => {
 							</div>
 						</div>
 					</div>
-					<div className="px-3">
-						<ul className="nav nav-tabs card-header-tabs">
-							{tabs.map((item) => (
-								<li className="nav-item" key={item.id}>
+					<div className={`${styles.tabScroller} px-3`}>
+						<div
+							className={`${styles.tabs} nav nav-tabs card-header-tabs`}
+							role="tablist"
+							aria-label={intl.formatMessage({ id: "crowdsec.tabs.label" })}
+						>
+							{tabs.map((item, index) => (
+								<div className="nav-item" key={item.id}>
 									<button
+										id={`crowdsec-tab-${item.id}`}
 										type="button"
 										role="tab"
 										aria-selected={tab === item.id}
+										aria-controls="crowdsec-tab-panel"
+										tabIndex={tab === item.id ? 0 : -1}
 										className={`nav-link ${tab === item.id ? "active" : ""}`}
 										onClick={() => setTab(item.id)}
+										onKeyDown={(event) => moveTabFocus(event, index)}
 									>
 										<T id={item.label} />
 									</button>
-								</li>
+								</div>
 							))}
-						</ul>
+						</div>
 					</div>
 				</div>
-				<div className="card-body">
+				<div
+					id="crowdsec-tab-panel"
+					className="card-body"
+					role="tabpanel"
+					aria-labelledby={`crowdsec-tab-${tab}`}
+				>
+					{showNotificationHelp && notificationPermission === "denied" && (
+						<Alert variant="warning" dismissible onClose={() => setShowNotificationHelp(false)}>
+							<T id="crowdsec.notifications.blocked-help" />
+						</Alert>
+					)}
+					{partialRefreshFailed && (
+						<Alert variant="warning">
+							<T id="crowdsec.partial-refresh" />
+						</Alert>
+					)}
+					{secondarySourceUnavailable && (
+						<Alert variant="warning">
+							<T id="crowdsec.partial-unavailable" />
+						</Alert>
+					)}
 					{insights.isError && !insights.data && (
 						<Alert variant="danger">
 							<T id="crowdsec.insights.error" />: <T id={insights.error?.message || "error.unknown"} />
@@ -758,9 +998,7 @@ const CrowdsecDashboard = () => {
 					)}
 					{tab === "overview" &&
 						(!insights.data ? (
-							<div className="py-5 d-flex justify-content-center">
-								<AnimatedLogo />
-							</div>
+							<OverviewSkeleton />
 						) : (
 							<>
 								{insights.data.signals.some((signal) => signal.type === "attack-spike") && (
@@ -772,6 +1010,7 @@ const CrowdsecDashboard = () => {
 									<Metric
 										label={<T id="crowdsec.kpi.attacks" />}
 										value={insights.data.alertCount}
+										description={<T id="crowdsec.kpi.attacks-hint" data={{ hours: windowHours }} />}
 										onClick={() => setKpi("attacks")}
 									/>
 									<Metric
@@ -782,18 +1021,21 @@ const CrowdsecDashboard = () => {
 											"—"
 										}
 										tone="red"
+										description={<T id="crowdsec.kpi.local-hint" />}
 										onClick={() => setKpi("local")}
 									/>
 									<Metric
 										label={<T id="crowdsec.kpi.community" />}
 										value={metrics.data?.communityActiveDecisions ?? "—"}
 										tone="green"
+										description={<T id="crowdsec.kpi.community-hint" />}
 										onClick={() => setKpi("community")}
 									/>
 									<Metric
-										label={<T id="crowdsec.anubis.title" />}
+										label={<T id="crowdsec.kpi.honeypot" />}
 										value={anubis.data?.honeypot.activeCount ?? "—"}
-										tone="orange"
+										tone={trapStatus.tone}
+										description={<T id={trapStatus.label} />}
 										onClick={() => setKpi("anubis")}
 									/>
 								</div>
@@ -802,7 +1044,7 @@ const CrowdsecDashboard = () => {
 										<h3>
 											<T id="crowdsec.activity" />
 										</h3>
-										<ActivityChart items={insights.data.activity} />
+										<ActivityChart items={insights.data.activity} windowHours={windowHours} />
 									</div>
 									<div className="col-lg-5">
 										<h3>

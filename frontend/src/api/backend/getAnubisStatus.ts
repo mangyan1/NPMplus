@@ -6,7 +6,9 @@ export type AnubisHoneypotBan = CrowdsecDecision;
 export interface AnubisStatus {
 	configured: boolean;
 	honeypot: {
-		activeCount: number;
+		status: "ready" | "waiting" | "unavailable" | "disabled";
+		decisionsAvailable: boolean;
+		activeCount: number | null;
 		truncated: boolean;
 		items: AnubisHoneypotBan[];
 	};
