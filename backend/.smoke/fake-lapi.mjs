@@ -77,8 +77,26 @@ const alerts = [
 		message: "http-probing from 198.51.100.7",
 		scenario: "crowdsecurity/http-probing",
 		started_at: new Date(Date.now() - 3600 * 1000).toISOString(),
-		events_count: 6,
-		events: [{}],
+		events_count: 2,
+		source: {
+			cn: "DE",
+			as_number: "64496",
+			as_name: "Example ASN",
+			range: "198.51.100.0/24",
+			rdns: "host.example.com",
+		},
+		events: [
+			{
+				timestamp: new Date(Date.now() - 3600 * 1000).toISOString(),
+				meta: [
+					{ key: "source_ip", value: "198.51.100.7" },
+					{ key: "method", value: "GET" },
+					{ key: "target_uri", value: "/.env" },
+					{ key: "http_user_agent", value: "python-requests/2.31" },
+					{ key: "raw_request", value: "GET /.env HTTP/1.1" },
+				],
+			},
+		],
 	},
 ];
 

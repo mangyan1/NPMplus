@@ -31,6 +31,43 @@ export const normalizeCrowdsecDecisions = (payload) => {
 	});
 };
 
+// per-event meta keys that are safe and useful to show an operator: they
+// describe the attacker and the request, never payloads or secrets
+const EVENT_META_KEYS = new Set([
+	"source_ip",
+	"source_rdns",
+	"source_as_number",
+	"source_as_name",
+	"source_range",
+	"source_country",
+	"target_uri",
+	"target_fqdn",
+	"target_host",
+	"method",
+	"http_user_agent",
+	"service",
+	"log_type",
+]);
+
+const EVENT_LIMIT = 10;
+
+const normalizeEvent = (event) => {
+	if (!event || typeof event !== "object") return null;
+	const meta = [];
+	if (Array.isArray(event.meta)) {
+		for (const item of event.meta) {
+			if (!item || typeof item !== "object") continue;
+			const key = typeof item.key === "string" ? item.key : "";
+			const value = typeof item.value === "string" ? item.value : "";
+			if (!EVENT_META_KEYS.has(key) || !value) continue;
+			// hard cap each value: long user agents or uris must not bloat the page
+			meta.push({ key, value: value.slice(0, 512) });
+		}
+	}
+	const timestamp = typeof event.timestamp === "string" ? event.timestamp : "";
+	return { timestamp, meta };
+};
+
 export const normalizeCrowdsecAlerts = (payload) => {
 	if (payload === null || typeof payload === "undefined") return [];
 	if (!Array.isArray(payload)) throw new TypeError("CrowdSec alerts response is not an array");
@@ -43,6 +80,13 @@ export const normalizeCrowdsecAlerts = (payload) => {
 		if (!id) throw new TypeError("CrowdSec alert is missing its id");
 
 		const eventsCount = Number(alert.events_count);
+		const events = [];
+		if (Array.isArray(alert.events)) {
+			for (const event of alert.events.slice(0, EVENT_LIMIT)) {
+				const normalized = normalizeEvent(event);
+				if (normalized) events.push(normalized);
+			}
+		}
 		return {
 			id,
 			scenario: optionalString(alert.scenario),
@@ -50,6 +94,15 @@ export const normalizeCrowdsecAlerts = (payload) => {
 			start_at: optionalString(alert.start_at),
 			stop_at: optionalString(alert.stop_at),
 			events_count: Number.isSafeInteger(eventsCount) && eventsCount >= 0 ? eventsCount : 0,
+			// attacker identity as recorded by the local agent: geo/ASN only
+			source: {
+				country: optionalString(alert.source?.cn),
+				as_number: optionalString(alert.source?.as_number),
+				as_name: optionalString(alert.source?.as_name),
+				range: optionalString(alert.source?.range),
+				rdns: optionalString(alert.source?.rdns),
+			},
+			events,
 		};
 	});
 };

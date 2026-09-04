@@ -17,6 +17,16 @@ export interface CrowdsecDecisionPage {
 	truncated: boolean;
 }
 
+export interface CrowdsecEventMeta {
+	key: string;
+	value: string;
+}
+
+export interface CrowdsecEvent {
+	timestamp: string;
+	meta: CrowdsecEventMeta[];
+}
+
 export interface CrowdsecAlert {
 	id: number;
 	message: string;
@@ -24,6 +34,14 @@ export interface CrowdsecAlert {
 	startAt: string;
 	stopAt: string;
 	eventsCount: number;
+	source: {
+		country: string;
+		asNumber: string;
+		asName: string;
+		range: string;
+		rdns: string;
+	};
+	events: CrowdsecEvent[];
 }
 
 export interface CrowdsecUnbanResult {

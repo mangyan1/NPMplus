@@ -26,6 +26,17 @@ import {
 	sortCrowdsecDecisions,
 } from "./utils";
 
+const sourceGeoLine = (alert: CrowdsecAlert): string =>
+	[
+		alert.source?.country,
+		alert.source?.asName,
+		alert.source?.asNumber ? `AS${alert.source.asNumber}` : undefined,
+		alert.source?.range,
+		alert.source?.rdns,
+	]
+		.filter(Boolean)
+		.join(" · ");
+
 const AlertContext = ({ decision }: { decision: CrowdsecDecision }) => {
 	const { locale } = useLocaleState();
 	const { isFetching, isError, error, data } = useCrowdsecAlerts(decision.id, decision.scope, decision.value, true);
@@ -41,7 +52,11 @@ const AlertContext = ({ decision }: { decision: CrowdsecDecision }) => {
 	if (!data?.length) {
 		return (
 			<div className="text-secondary small py-2">
-				<T id="crowdsec.no-alerts" />
+				{decision.origin === "CAPI" || decision.origin === "lists" ? (
+					<T id="crowdsec.capi-no-local-alerts" />
+				) : (
+					<T id="crowdsec.no-alerts" />
+				)}
 			</div>
 		);
 	}
@@ -53,22 +68,40 @@ const AlertContext = ({ decision }: { decision: CrowdsecDecision }) => {
 					<T id="crowdsec.stale" />
 				</div>
 			)}
-			{data.map((alert: CrowdsecAlert) => (
-				<div key={alert.id} className="mb-2">
-					<div>
-						<span className="badge bg-cyan me-2">{alert.scenario}</span>
-						{alert.message}
+			{data.map((alert: CrowdsecAlert) => {
+				const geo = sourceGeoLine(alert);
+				return (
+					<div key={alert.id} className="mb-2">
+						<div>
+							<span className="badge bg-cyan me-2">{alert.scenario}</span>
+							{alert.message}
+						</div>
+						{geo && <div className="small">{geo}</div>}
+						<div className="text-secondary small">
+							{alert.startAt ? formatDateTime(alert.startAt, locale) : null}
+							{alert.eventsCount ? (
+								<>
+									&nbsp;· <T id="crowdsec.events-count" data={{ count: alert.eventsCount }} />
+								</>
+							) : null}
+						</div>
+						{alert.events.map((event, eventIndex) => (
+							<div key={`${alert.id}-${eventIndex}`} className="mb-1">
+								{event.timestamp ? (
+									<div className="text-secondary small">
+										{formatDateTime(event.timestamp, locale)}
+									</div>
+								) : null}
+								{event.meta.map((item) => (
+									<div key={item.key} className="small">
+										<span className="text-secondary">{item.key}:</span> {item.value}
+									</div>
+								))}
+							</div>
+						))}
 					</div>
-					<div className="text-secondary small">
-						{alert.startAt ? formatDateTime(alert.startAt, locale) : null}
-						{alert.eventsCount ? (
-							<>
-								&nbsp;· <T id="crowdsec.events-count" data={{ count: alert.eventsCount }} />
-							</>
-						) : null}
-					</div>
-				</div>
-			))}
+				);
+			})}
 		</div>
 	);
 };

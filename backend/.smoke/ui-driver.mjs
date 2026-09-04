@@ -84,7 +84,24 @@ const alerts = [
 		scenario: "crowdsecurity/http-probing",
 		started_at: iso(-3600 * 1000),
 		events_count: 6,
-		events: [{}],
+		source: {
+			country: "DE",
+			as_number: "64496",
+			as_name: "Example ASN",
+			range: "198.51.100.0/24",
+			rdns: "host.example.com",
+		},
+		events: [
+			{
+				timestamp: iso(-3600 * 1000),
+				meta: [
+					{ key: "source_ip", value: "198.51.100.7" },
+					{ key: "method", value: "GET" },
+					{ key: "target_uri", value: "/.env" },
+					{ key: "http_user_agent", value: "python-requests/2.31" },
+				],
+			},
+		],
 	},
 ];
 
@@ -253,6 +270,16 @@ check(
 	JSON.stringify(seen.alertsFor),
 );
 check("context shows the events count", context.includes("6 events"), context);
+check(
+	"context shows attacker geo details",
+	context.includes("DE") && context.includes("Example ASN") && context.includes("AS64496"),
+	context,
+);
+check(
+	"context shows how they attacked (event meta)",
+	context.includes("target_uri:") && context.includes("/.env") && context.includes("http_user_agent:"),
+	context,
+);
 await page.screenshot({ path: ".smoke/ui-context.png", fullPage: true });
 
 // unban: confirm modal, then the row disappears from the refreshed list

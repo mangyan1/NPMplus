@@ -84,15 +84,11 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 	//     trailing '=' stripped) so cookie-parser accepts it as signed and
 	//     jwt.verify then rejects the payload as not-a-jwt.
 	const signCookieValue = (value) =>
-		`s:${value}.${createHmac("sha256", COOKIE_SECRET).update(value).digest("base64").replace(/=+$/, "")}`;
+		`s:${value}.${createHmac("sha256", COOKIE_SECRET).update(value).digest("base64").replace(/[=]+$/, "")}`;
 	const ghost = await fetch(`${base}/decisions`, {
 		headers: { cookie: `__Host-Http-token=${signCookieValue("not.a.jwt")}` },
 	});
-	check(
-		"GET with a bad session cookie -> 401",
-		ghost.status === 401,
-		`got ${ghost.status}`,
-	);
+	check("GET with a bad session cookie -> 401", ghost.status === 401, `got ${ghost.status}`);
 
 	// 2. admin GET decisions -> the paged fixture, cap in the query, bouncer key sent
 	const list = await fetch(`${base}/decisions`, { headers: admin });
@@ -168,13 +164,24 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 		JSON.stringify(decisions2.map((d) => d.value)),
 	);
 
-	// 7. alerts context for an ip
+	// 7. alerts context for an ip: attacker geo + sanitized event meta
 	const alerts = await fetch(`${base}/alerts?scope=Ip&value=198.51.100.7`, { headers: admin });
 	const alertsBody = await alerts.json();
 	check(
 		"GET alerts -> 200 with the alert",
 		alerts.status === 200 && alertsBody.length === 1 && alertsBody[0].scenario === "crowdsecurity/http-probing",
 		`got ${alerts.status} ${JSON.stringify(alertsBody).slice(0, 80)}`,
+	);
+	check(
+		"alert carries attacker geo details",
+		alertsBody[0]?.source?.country === "DE" && alertsBody[0]?.source?.as_name === "Example ASN",
+		JSON.stringify(alertsBody[0]?.source),
+	);
+	check(
+		"alert events keep attack meta but strip unknown keys",
+		alertsBody[0]?.events?.[0]?.meta?.some((m) => m.key === "target_uri" && m.value === "/.env") &&
+			!alertsBody[0]?.events?.[0]?.meta?.some((m) => m.key === "raw_request"),
+		JSON.stringify(alertsBody[0]?.events?.[0]?.meta),
 	);
 
 	// 8. no machine key file -> 503 not-wired-machine
