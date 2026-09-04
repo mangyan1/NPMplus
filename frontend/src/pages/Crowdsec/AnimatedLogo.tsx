@@ -5,8 +5,13 @@ import styles from "./AnimatedLogo.module.css";
 // smil baked into the svg asset, so the browser plays it even inside an
 // <img>. smil cannot be paused from css, so for users who prefer reduced
 // motion the animated image is not rendered at all - a static mark replaces it
-const AnimatedLogo = () => {
+interface AnimatedLogoProps {
+	size?: "default" | "compact";
+}
+
+const AnimatedLogo = ({ size = "default" }: AnimatedLogoProps) => {
 	const [reducedMotion, setReducedMotion] = useState(false);
+	const className = size === "compact" ? `${styles.logo} ${styles.compact}` : styles.logo;
 
 	useEffect(() => {
 		const query = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -17,10 +22,10 @@ const AnimatedLogo = () => {
 	}, []);
 
 	if (reducedMotion) {
-		return <img className={styles.logo} src="/images/logo-no-text.svg" alt="" aria-hidden="true" />;
+		return <img className={className} src="/images/logo-no-text.svg" alt="" aria-hidden="true" />;
 	}
 
-	return <img className={styles.logo} src="/images/crowdsec-logo-animated.svg" alt="" aria-hidden="true" />;
+	return <img className={className} src="/images/crowdsec-logo-animated.svg" alt="" aria-hidden="true" />;
 };
 
 export default AnimatedLogo;

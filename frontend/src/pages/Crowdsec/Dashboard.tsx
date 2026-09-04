@@ -1,12 +1,4 @@
-import {
-	IconBell,
-	IconBellOff,
-	IconChevronLeft,
-	IconChevronRight,
-	IconRefresh,
-	IconSearch,
-	IconShieldCheck,
-} from "@tabler/icons-react";
+import { IconBell, IconBellOff, IconChevronLeft, IconChevronRight, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { Fragment, type ReactNode, useDeferredValue, useEffect, useMemo, useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import Modal from "react-bootstrap/Modal";
@@ -670,7 +662,7 @@ const CrowdsecDashboard = () => {
 						<div className="row w-100 align-items-center g-2">
 							<div className="col">
 								<h2 className="card-title d-flex align-items-center gap-2">
-									<IconShieldCheck size={22} />
+									<AnimatedLogo size="compact" />
 									<T id="crowdsec.dashboard" />
 								</h2>
 								<div className="d-flex gap-2 mt-1">

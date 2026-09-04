@@ -255,6 +255,13 @@ await page.goto("http://localhost:5173/crowdsec", { waitUntil: "networkidle" });
 await page.getByRole("heading", { name: "Security overview" }).waitFor({ timeout: 15000 });
 check("security dashboard has one sticky toolbar", (await page.locator(".sticky-top").count()) === 1);
 check("dashboard exposes four focused tabs", (await page.getByRole("tab").count()) === 4);
+check(
+	"dashboard header uses the animated hexagon mark",
+	(await page
+		.getByRole("heading", { name: "Security overview" })
+		.locator('img[src="/images/crowdsec-logo-animated.svg"]')
+		.count()) === 1,
+);
 
 await page.getByRole("button", { name: /Community protection/i }).click();
 const communityModal = page.getByRole("dialog");
@@ -321,6 +328,12 @@ check("attack history lives inside the dashboard", attackRows === 1, `${attackRo
 
 await page.getByRole("tab", { name: "Overview" }).click();
 await page.screenshot({ path: ".smoke/ui-security-dashboard.png", fullPage: true });
+await page.setViewportSize({ width: 390, height: 844 });
+check(
+	"security dashboard fits a narrow viewport",
+	await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+);
+await page.screenshot({ path: ".smoke/ui-security-dashboard-mobile.png", fullPage: true });
 console.log(failures === 0 ? "ALL UI SMOKE CHECKS PASSED" : `${failures} FAILURES`);
 await browser.close();
 process.exit(failures === 0 ? 0 : 1);
