@@ -79,6 +79,7 @@ const alerts = [
 		started_at: new Date(Date.now() - 3600 * 1000).toISOString(),
 		events_count: 2,
 		source: {
+			ip: "198.51.100.7",
 			cn: "DE",
 			as_number: "64496",
 			as_name: "Example ASN",
@@ -97,6 +98,41 @@ const alerts = [
 				],
 			},
 		],
+	},
+	// second recent alert: different scenario + country, feeds the insights
+	// aggregation with more than one bucket per column
+	{
+		id: 100,
+		message: "ssh brute force from 203.0.113.20",
+		scenario: "crowdsecurity/ssh-bf",
+		started_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+		events_count: 1,
+		source: {
+			ip: "203.0.113.20",
+			cn: "FR",
+			as_number: "64500",
+			as_name: "Second ASN",
+			range: "203.0.113.0/24",
+			rdns: "host2.example.com",
+		},
+		events: [],
+	},
+	// old alert beyond the 24h insights window: must not be aggregated
+	{
+		id: 101,
+		message: "stale alert from three days ago",
+		scenario: "crowdsecurity/http-bad-user-agent",
+		started_at: new Date(Date.now() - 3 * 86400 * 1000).toISOString(),
+		events_count: 1,
+		source: {
+			ip: "192.0.2.99",
+			cn: "JP",
+			as_number: "64501",
+			as_name: "Stale ASN",
+			range: "192.0.2.0/24",
+			rdns: "stale.example.com",
+		},
+		events: [],
 	},
 ];
 
@@ -147,10 +183,62 @@ const server = http.createServer((req, res) => {
 		}
 		if (url.pathname === "/v1/alerts" && req.method === "GET") {
 			if (req.headers.authorization !== `Bearer ${JWT}`) return send(403, { message: "no bearer" });
-			return send(
-				200,
-				alerts.filter((a) => url.searchParams.get("value") === "198.51.100.7"),
-			);
+			let matches = alerts;
+			const value = url.searchParams.get("value");
+			if (value) {
+				matches = matches.filter((a) => a.source?.ip === value || a.source?.value === value);
+			}
+			const since = url.searchParams.get("since");
+			if (since) {
+				// parse the crowdsec duration syntax: 24h, 1h, 30m, 7d...
+				const match = /^([1-9][0-9]*)(s|m|h|d)$/.exec(since);
+				if (!match) return send(400, { message: `bad since: ${since}` });
+				const unitSeconds = { s: 1, m: 60, h: 3600, d: 86400 }[match[2]];
+				const cutoff = Date.now() - Number(match[1]) * unitSeconds * 1000;
+				matches = matches.filter((a) => new Date(a.started_at).getTime() >= cutoff);
+			}
+			return send(200, matches);
+		}
+		if (url.pathname === "/v1/alerts" && req.method === "POST") {
+			if (req.headers.authorization !== `Bearer ${JWT}`) return send(403, { message: "no bearer" });
+			const payload = JSON.parse(body);
+			if (!Array.isArray(payload) || payload.length !== 1) {
+				return send(400, { message: "alerts payload must be a single-element array" });
+			}
+			const alert = payload[0];
+			const capacity = Number(alert.capacity);
+			const leaks = Number(alert.leakspeed);
+			if (alert.scenario !== "manual/web-ui" || !Number.isFinite(capacity) || !Number.isFinite(leaks)) {
+				return send(422, { message: "bad manual alert shape" });
+			}
+			const decision = alert.decisions?.[0];
+			if (
+				!decision ||
+				typeof decision.value !== "string" ||
+				typeof decision.duration !== "string" ||
+				typeof decision.scope !== "string" ||
+				!decision.scope
+			) {
+				return send(422, { message: "missing decision fields" });
+			}
+			// simulate what cscli manual bans do: allocate an id, mark origin cscli
+			const id = decisions.length + 100;
+			decisions.push({
+				id,
+				uuid: `manual-${id}`,
+				scope: decision.scope,
+				value: decision.value,
+				type: decision.type || "ban",
+				origin: "cscli",
+				scenario: "manual/web-ui",
+				duration: decision.duration,
+				until: new Date(Date.now() + 4 * 3600 * 1000).toISOString(),
+				simulated: false,
+			});
+			return send(200, {
+				nbAlerts: 1,
+				nbDecisions: decision.type === "captcha" ? "0" : "1",
+			});
 		}
 		send(404, { message: `unexpected ${req.method} ${url.pathname}` });
 	});

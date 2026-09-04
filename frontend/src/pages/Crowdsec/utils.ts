@@ -14,6 +14,13 @@ export const LOCAL_ORIGINS = ["crowdsec", "cscli"];
 export const decisionTarget = (decision: CrowdsecDecision) =>
 	decision.scope === "Ip" || !decision.scope ? decision.value : `${decision.scope}: ${decision.value}`;
 
+// structured search tokens (key:value) narrow the field they name, the
+// remaining words stay a free-text contains match over all fields.
+// examples: "origin:crowdsec ssh" or "type:ban 192.0.2."
+const FIELD_TOKEN_RE = /^(origin|scenario|type|ip|scope):(.*)$/;
+const WHITESPACE_RE = /\s+/;
+const QUOTE_RE = /^["']|["']$/g;
+
 export const filterCrowdsecDecisions = (
 	decisions: CrowdsecDecision[],
 	search: string,
@@ -23,14 +30,41 @@ export const filterCrowdsecDecisions = (
 	if (origin === "local") matches = matches.filter((decision) => LOCAL_ORIGINS.includes(decision.origin));
 	if (origin === "community") matches = matches.filter((decision) => !LOCAL_ORIGINS.includes(decision.origin));
 
-	const needle = search.trim().toLocaleLowerCase();
-	if (!needle) return matches;
+	const tokens = search.trim().toLocaleLowerCase().split(WHITESPACE_RE).filter(Boolean);
+	if (tokens.length === 0) return matches;
 
-	return matches.filter((decision) =>
-		[decisionTarget(decision), decision.scenario, decision.origin, decision.type].some((field) =>
-			field.toLocaleLowerCase().includes(needle),
-		),
-	);
+	const fieldFilters: { field: string; needle: string }[] = [];
+	const words: string[] = [];
+	for (const token of tokens) {
+		const fieldMatch = FIELD_TOKEN_RE.exec(token);
+		if (fieldMatch) {
+			const needle = fieldMatch[2].replace(QUOTE_RE, "");
+			if (needle) fieldFilters.push({ field: fieldMatch[1], needle });
+		} else {
+			words.push(token);
+		}
+	}
+
+	return matches.filter((decision) => {
+		for (const { field, needle } of fieldFilters) {
+			let haystack: string;
+			switch (field) {
+				case "ip":
+					haystack = decision.value;
+					break;
+				case "scope":
+					haystack = decision.scope;
+					break;
+				default:
+					haystack = decision[field as "origin" | "scenario" | "type"] ?? "";
+			}
+			if (!haystack.toLocaleLowerCase().includes(needle)) return false;
+		}
+		if (words.length === 0) return true;
+		return [decisionTarget(decision), decision.scenario, decision.origin, decision.type].some((fieldValue) =>
+			words.some((word) => fieldValue.toLocaleLowerCase().includes(word)),
+		);
+	});
 };
 
 export const sortCrowdsecDecisions = (

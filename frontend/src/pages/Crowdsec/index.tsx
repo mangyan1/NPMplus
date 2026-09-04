@@ -11,9 +11,15 @@ import Alert from "react-bootstrap/Alert";
 import type { CrowdsecAlert, CrowdsecDecision } from "src/api/backend";
 import { Button, HasPermission } from "src/components";
 import { useLocaleState } from "src/context";
-import { useAnubisStatus, useCrowdsecAlerts, useCrowdsecDecisions, useUnbanCrowdsecDecision } from "src/hooks";
+import {
+	useAnubisStatus,
+	useCrowdsecAlerts,
+	useCrowdsecDecisions,
+	useCrowdsecInsights,
+	useUnbanCrowdsecDecision,
+} from "src/hooks";
 import { formatDateTime, intl, T } from "src/locale";
-import { showDeleteConfirmModal } from "src/modals";
+import { showDeleteConfirmModal, showManualBanModal } from "src/modals";
 import { ADMIN, VIEW } from "src/modules/Permissions";
 import { showError } from "src/notifications";
 import AnimatedLogo from "./AnimatedLogo";
@@ -146,6 +152,99 @@ const SortHeader = ({ label, column, sortKey, direction, onSort }: SortHeaderPro
 	);
 };
 
+// the insights strip: a live 24h aggregation of recent alerts - top
+// scenarios, countries and ASNs plus the alert count, so the page opens with
+// the "what is happening" summary the console dashboards lead with
+const InsightsCard = () => {
+	const { isFetching, isError, error, data, dataUpdatedAt, refetch } = useCrowdsecInsights();
+	const { locale } = useLocaleState();
+
+	if (isError && !data) return null;
+	if (!data) {
+		return (
+			<div className="card mt-4">
+				<div className="card-status-top bg-azure" />
+				<div className="card-body py-4 d-flex justify-content-center">
+					<AnimatedLogo />
+				</div>
+			</div>
+		);
+	}
+
+	const topList = (items: { name: string; count: number }[], emptyId: string) =>
+		items.length === 0 ? (
+			<span className="text-secondary small">
+				<T id={emptyId} />
+			</span>
+		) : (
+			items.map((item) => (
+				<span key={item.name} className="badge bg-secondary-lt me-1 mb-1">
+					{item.name} <span className="text-secondary">×{item.count}</span>
+				</span>
+			))
+		);
+
+	return (
+		<div className="card mt-4">
+			<div className="card-status-top bg-azure" />
+			<div className="card-header">
+				<div className="row w-full">
+					<div className="col">
+						<h2 className="mt-1 mb-0 d-flex align-items-center gap-2">
+							<T id="crowdsec.insights.title" />
+							<span className="badge bg-azure-lt">
+								<T id="crowdsec.insights.alerts" data={{ count: data.alertCount }} />
+							</span>
+						</h2>
+						<div className="text-secondary small mt-1">
+							<T
+								id="crowdsec.insights.window"
+								data={{ date: formatDateTime(new Date(dataUpdatedAt).toISOString(), locale) }}
+							/>
+						</div>
+					</div>
+					<div className="col-md-auto col-sm-12">
+						<div className="ms-auto d-flex flex-wrap btn-list">
+							<span className="text-secondary small me-2 my-auto">{isFetching ? "…" : ""}</span>
+							<Button actionType="secondary" variant="outline" onClick={() => refetch()}>
+								<IconRefresh size={16} className="me-1" />
+								<T id="crowdsec.refresh" />
+							</Button>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div className="card-body py-2">
+				{isError && (
+					<div className="text-warning small mb-2">
+						<T id="crowdsec.stale" /> <T id={error?.message || "error.unknown"} />
+					</div>
+				)}
+				<div className="row">
+					<div className="col-md-4 py-1">
+						<div className="text-secondary small">
+							<T id="crowdsec.insights.scenarios" />
+						</div>
+						{topList(data.topScenarios, "crowdsec.insights.empty")}
+					</div>
+					<div className="col-md-4 py-1">
+						<div className="text-secondary small">
+							<T id="crowdsec.insights.countries" />
+						</div>
+						{topList(data.topCountries, "crowdsec.insights.empty")}
+					</div>
+					<div className="col-md-4 py-1">
+						<div className="text-secondary small">
+							<T id="crowdsec.insights.asns" />
+						</div>
+						{topList(data.topAsns, "crowdsec.insights.empty")}
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+};
+
 const Content = () => {
 	const { locale } = useLocaleState();
 	const { isFetching, isError, error, data, dataUpdatedAt, refetch } = useCrowdsecDecisions();
@@ -269,6 +368,9 @@ const Content = () => {
 									</select>
 								</div>
 							)}
+							<Button actionType="danger" onClick={() => showManualBanModal({})}>
+								<T id="crowdsec.ban" />
+							</Button>
 							<span className="text-secondary small me-2 my-auto">
 								<T id="crowdsec.live" />
 							</span>
@@ -611,6 +713,7 @@ const AnubisSection = () => {
 
 const Crowdsec = () => (
 	<HasPermission section={ADMIN} permission={VIEW} pageLoading loadingNoLogo>
+		<InsightsCard />
 		<Content />
 		<AnubisSection />
 	</HasPermission>

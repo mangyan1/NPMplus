@@ -53,3 +53,59 @@ test("sorting keeps separate decisions for the same target", () => {
 		[11, 10],
 	);
 });
+
+test("structured field tokens narrow the named field", () => {
+	const decisions = [
+		decision(1, "192.0.2.1"),
+		decision(2, "198.51.100.2", "ssh-bruteforce"),
+		{ ...decision(3, "203.0.113.3"), origin: "CAPI" },
+	];
+	assert.deepEqual(
+		filterCrowdsecDecisions(decisions, "scenario:ssh").map(({ id }) => id),
+		[2],
+	);
+	assert.deepEqual(
+		filterCrowdsecDecisions(decisions, "origin:capi").map(({ id }) => id),
+		[3],
+	);
+	assert.deepEqual(
+		filterCrowdsecDecisions(decisions, "ip:198.51.").map(({ id }) => id),
+		[2],
+	);
+	assert.deepEqual(
+		filterCrowdsecDecisions(decisions, "type:ban").map(({ id }) => id),
+		[1, 2, 3],
+	);
+});
+
+test("field tokens combine with free-text words as an AND match", () => {
+	const decisions = [
+		decision(1, "192.0.2.1", "http-probing"),
+		decision(2, "192.0.2.9", "ssh-bruteforce"),
+		decision(3, "198.51.100.2", "ssh-bruteforce"),
+	];
+	assert.deepEqual(
+		filterCrowdsecDecisions(decisions, "scenario:ssh 192.0.2.").map(({ id }) => id),
+		[2],
+	);
+});
+
+test("quoted field token values strip their quotes", () => {
+	const decisions = [decision(1, "192.0.2.1"), decision(2, "198.51.100.2", "ssh-bruteforce")];
+	assert.deepEqual(
+		filterCrowdsecDecisions(decisions, 'scenario:"ssh-bruteforce"').map(({ id }) => id),
+		[2],
+	);
+	assert.deepEqual(
+		filterCrowdsecDecisions(decisions, "scenario:'ssh-bruteforce'").map(({ id }) => id),
+		[2],
+	);
+});
+
+test("empty field token value is treated as free text", () => {
+	const decisions = [decision(1, "192.0.2.1"), decision(2, "198.51.100.2")];
+	assert.deepEqual(
+		filterCrowdsecDecisions(decisions, "origin: 198").map(({ id }) => id),
+		[2],
+	);
+});

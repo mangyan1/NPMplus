@@ -5,6 +5,7 @@ import {
 	normalizeCrowdsecAlerts,
 	normalizeCrowdsecDecisions,
 	parseCrowdsecDecisionId,
+	validateManualBan,
 } from "../lib/crowdsec-contract.js";
 
 const notArrayPattern = /not an array/;
@@ -133,4 +134,23 @@ test("CrowdSec endpoints require a positive admin permission result", () => {
 	assert.equal(hasCrowdsecAdminAccess({ granted: true }), true);
 	assert.equal(hasCrowdsecAdminAccess(null), false);
 	assert.equal(hasCrowdsecAdminAccess(false), false);
+});
+
+test("manual ban input accepts ips, cidr ranges, and valid durations", () => {
+	assert.deepEqual(validateManualBan({ value: "192.0.2.10", duration: "4h" }), []);
+	assert.deepEqual(validateManualBan({ value: "2001:db8::1", duration: "1h" }), []);
+	assert.deepEqual(validateManualBan({ value: "192.0.2.0/24", duration: "7d" }), []);
+	assert.deepEqual(validateManualBan({ value: "192.0.2.10", duration: "4h", type: "captcha", reason: "abuse" }), []);
+	// reason is optional
+	assert.deepEqual(validateManualBan({ value: "192.0.2.10", duration: "4h", reason: "" }), []);
+});
+
+test("manual ban input rejects hostile or malformed values", () => {
+	assert.deepEqual(validateManualBan({ value: "not an ip", duration: "4h" }), ["value"]);
+	assert.deepEqual(validateManualBan({ value: "192.0.2.10", duration: "forever" }), ["duration"]);
+	assert.deepEqual(validateManualBan({ value: "192.0.2.10", duration: "4h", type: "delete" }), ["type"]);
+	assert.deepEqual(validateManualBan({ value: "192.0.2.10", duration: "4h", reason: "' OR 1=1 --" }), ["reason"]);
+	assert.deepEqual(validateManualBan({ value: "http://example.com/", duration: "4h" }), ["value"]);
+	// every invalid field is reported together
+	assert.deepEqual(validateManualBan({ value: null, duration: "0h", type: "nope" }), ["value", "duration", "type"]);
 });

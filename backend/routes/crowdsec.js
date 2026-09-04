@@ -9,6 +9,7 @@ import {
 	normalizeCrowdsecAlerts,
 	normalizeCrowdsecDecisions,
 	parseCrowdsecDecisionId,
+	validateManualBan,
 } from "../lib/crowdsec-contract.js";
 import jwtdecode from "../lib/express/jwt-decode.js";
 import { debug, express as logger } from "../logger.js";
@@ -22,6 +23,10 @@ const LAPI_MACHINE_KEY_FILE = process.env.CROWDSEC_LAPI_MACHINE_KEY_FILE || "/da
 const LAPI_DECISION_LIMIT = 200;
 const LAPI_ALERT_LIMIT = 5;
 const LAPI_HONEYPOT_LIMIT = 25;
+const INSIGHTS_WINDOW_HOURS = 24;
+const INSIGHTS_ALERT_LIMIT = 100;
+const INSIGHTS_TOP_N = 5;
+const MANUAL_BAN_SCENARIO = "manual/web-ui";
 const MACHINE_TOKEN_TTL_MS = 30 * 1000;
 const SCOPE_PATTERN = /^[a-zA-Z]{1,32}$/;
 const configuredTimeout = Number.parseInt(process.env.CROWDSEC_LAPI_TIMEOUT_MS || "5000", 10);
@@ -137,15 +142,20 @@ const lapiLogin = async () => {
 	return body.token;
 };
 
-const lapiMachineFetch = async (path, method = "GET", mayRetry = true) => {
+const lapiMachineFetch = async (path, method = "GET", mayRetry = true, body = null) => {
 	const token = await lapiLogin();
-	const response = await fetchCrowdsec(`${LAPI_URL}${path}`, {
+	const options = {
 		method,
 		headers: { Authorization: `Bearer ${token}` },
-	});
+	};
+	if (body !== null) {
+		options.headers["Content-Type"] = "application/json";
+		options.body = JSON.stringify(body);
+	}
+	const response = await fetchCrowdsec(`${LAPI_URL}${path}`, options);
 	if (response.status === 401 || response.status === 403) {
 		machineTokenCache = null;
-		if (mayRetry) return lapiMachineFetch(path, method, false);
+		if (mayRetry) return lapiMachineFetch(path, method, false, body);
 		throw publicError("crowdsec.bad-machine-key", 502);
 	}
 	if (!response.ok) throw publicError("crowdsec.lapi-error", 502);
@@ -376,6 +386,147 @@ router
 				throw publicError("crowdsec.invalid-response", 502);
 			}
 			res.status(200).send(alerts);
+		} catch (err) {
+			sendError(req, res, next, err);
+		}
+	});
+
+// manual ban: the LAPI accepts an alert wrapper whose decision carries
+// origin "cscli", so the ban appears like a cscli decisions add - the same
+// pattern the crowdsec cli and other dashboards use
+router
+	.route("/decisions")
+	.options((_, res) => res.sendStatus(204))
+	.all(jwtdecode())
+	.post(async (req, res, next) => {
+		try {
+			if (!(await requireAdmin(res))) {
+				res.status(403).send({ error: { message: "access.denied" } });
+				return;
+			}
+
+			const { value, duration, type, reason } = req.body ?? {};
+			const errors = validateManualBan({ value, duration, type, reason });
+			if (errors.length > 0) {
+				res.status(400).send({ error: { message: "crowdsec.invalid-ban-input", fields: errors } });
+				return;
+			}
+
+			// Record the operator's intent before changing CrowdSec.
+			const auditEntry = await internalAuditLog.add(res.locals.access, {
+				action: "create",
+				object_type: "crowdsec-decision",
+				object_id: 0,
+				meta: { value, duration, type, reason, status: "requested", manual: true },
+			});
+
+			const now = new Date().toISOString();
+			// ip scope for plain addresses, range scope for cidr targets
+			const scope = value.includes("/") ? "range" : "ip";
+			const payload = [
+				{
+					scenario: MANUAL_BAN_SCENARIO,
+					message: reason ? `Manual ban from NPMplus: ${reason}` : "Manual ban from NPMplus",
+					events_count: 1,
+					start_at: now,
+					stop_at: now,
+					capacity: 0,
+					leakspeed: "0",
+					simulated: false,
+					events: [],
+					scenario_hash: "",
+					scenario_version: "",
+					source: { scope, value },
+					decisions: [
+						{
+							type,
+							duration,
+							value,
+							scope,
+							origin: "cscli",
+							scenario: MANUAL_BAN_SCENARIO,
+						},
+					],
+				},
+			];
+
+			let result;
+			try {
+				result = await lapiMachineFetch("/v1/alerts", "POST", true, payload);
+			} catch (err) {
+				try {
+					await auditEntry.$query().patch({
+						action: "create-failed",
+						meta: { value, duration, type, reason, status: "failed", error: err.message },
+					});
+				} catch (auditErr) {
+					logger.warn(`Could not finalize failed CrowdSec audit entry ${auditEntry.id}: ${auditErr}`);
+				}
+				throw err;
+			}
+
+			let auditLogged = true;
+			try {
+				await auditEntry.$query().patch({
+					action: "created",
+					object_id: 0,
+					meta: { value, duration, type, reason, status: "created", manual: true },
+				});
+			} catch (auditErr) {
+				auditLogged = false;
+				logger.warn(`Could not finalize successful CrowdSec audit entry ${auditEntry.id}: ${auditErr}`);
+			}
+
+			res.status(200).send({ created: true, audit_logged: auditLogged, result });
+		} catch (err) {
+			sendError(req, res, next, err);
+		}
+	});
+
+// insights: a live 24h aggregation over recent alerts - top countries,
+// ASNs and scenarios plus the alert count. computed per request, no cache
+router
+	.route("/insights")
+	.options((_, res) => res.sendStatus(204))
+	.all(jwtdecode())
+	.get(async (req, res, next) => {
+		try {
+			if (!(await requireAdmin(res))) {
+				res.status(403).send({ error: { message: "access.denied" } });
+				return;
+			}
+
+			const query = new URLSearchParams({
+				since: `${INSIGHTS_WINDOW_HOURS}h`,
+				limit: String(INSIGHTS_ALERT_LIMIT),
+			});
+			const payload = await lapiMachineFetch(`/v1/alerts?${query}`);
+			const alerts = normalizeCrowdsecAlerts(payload);
+
+			const top = (counts) =>
+				Object.entries(counts)
+					.sort((a, b) => b[1] - a[1])
+					.slice(0, INSIGHTS_TOP_N)
+					.map(([name, count]) => ({ name, count }));
+
+			const countries = {};
+			const asns = {};
+			const scenarios = {};
+			for (const alert of alerts) {
+				if (alert.scenario) scenarios[alert.scenario] = (scenarios[alert.scenario] ?? 0) + 1;
+				const country = alert.source?.country;
+				if (country) countries[country] = (countries[country] ?? 0) + 1;
+				const asn = alert.source?.as_name || (alert.source?.as_number ? `AS${alert.source.as_number}` : "");
+				if (asn) asns[asn] = (asns[asn] ?? 0) + 1;
+			}
+
+			res.status(200).send({
+				window_hours: INSIGHTS_WINDOW_HOURS,
+				alert_count: alerts.length,
+				top_scenarios: top(scenarios),
+				top_countries: top(countries),
+				top_asns: top(asns),
+			});
 		} catch (err) {
 			sendError(req, res, next, err);
 		}

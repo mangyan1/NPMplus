@@ -222,6 +222,104 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 		JSON.stringify(anubisBody.recent),
 	);
 
+	// 9b. insights: 24h aggregation over recent alerts, stale ones excluded
+	const insights = await fetch(`${base}/insights`, { headers: admin });
+	const insightsBody = await insights.json();
+	check(
+		"GET insights -> 200 with a 24h window",
+		insights.status === 200 && insightsBody.window_hours === 24,
+		`got ${insights.status} ${JSON.stringify(insightsBody).slice(0, 120)}`,
+	);
+	check(
+		"insights aggregates the two recent alerts only",
+		insightsBody.alert_count === 2,
+		`got ${JSON.stringify(insightsBody)}`,
+	);
+	const insightNames = (items) => items.map((i) => i.name);
+	check(
+		"insights top scenarios cover both recent scenarios",
+		["crowdsecurity/http-probing", "crowdsecurity/ssh-bf"].every((s) =>
+			insightNames(insightsBody.top_scenarios).includes(s),
+		) && !insightNames(insightsBody.top_scenarios).includes("crowdsecurity/http-bad-user-agent"),
+		JSON.stringify(insightsBody.top_scenarios),
+	);
+	check(
+		"insights top countries and asns exclude the stale alert",
+		insightNames(insightsBody.top_countries).includes("DE") &&
+			insightNames(insightsBody.top_countries).includes("FR") &&
+			!insightNames(insightsBody.top_countries).includes("JP") &&
+			insightNames(insightsBody.top_asns).includes("Example ASN") &&
+			!insightNames(insightsBody.top_asns).includes("Stale ASN"),
+		JSON.stringify([insightsBody.top_countries, insightsBody.top_asns]),
+	);
+	check(
+		"insights lapi query carries the since filter",
+		(await lapiLog()).some((r) => r.path === "/v1/alerts" && r.query?.includes("since=24h")),
+		"no since=24h probe logged",
+	);
+
+	// 9c. manual ban: validation rejects hostile input before touching the lapi
+	const logBeforeBan = (await lapiLog()).length;
+	const badBan = await fetch(`${base}/decisions`, {
+		method: "POST",
+		headers: admin,
+		body: JSON.stringify({ value: "http://example.com/", duration: "4h", type: "ban" }),
+	});
+	const badBanBody = await badBan.json();
+	check(
+		"POST decisions with a bad target -> 400 crowdsec.invalid-ban-input",
+		badBan.status === 400 && badBanBody.error?.message === "crowdsec.invalid-ban-input",
+		`got ${badBan.status} ${JSON.stringify(badBanBody)}`,
+	);
+	check(
+		"invalid ban reports the offending fields",
+		Array.isArray(badBanBody.error?.fields) && badBanBody.error.fields.includes("value"),
+		JSON.stringify(badBanBody.error?.fields),
+	);
+	check("invalid ban never reached the lapi", (await lapiLog()).length === logBeforeBan);
+
+	const anonBan = await fetch(`${base}/decisions`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ value: "192.0.2.50", duration: "4h", type: "ban" }),
+	});
+	check("anon POST decisions -> 403", anonBan.status === 403, `got ${anonBan.status}`);
+
+	// 9d. manual ban: valid input posts the manual/web-ui alert and shows up as cscli
+	const ban = await fetch(`${base}/decisions`, {
+		method: "POST",
+		headers: admin,
+		body: JSON.stringify({ value: "192.0.2.0/24", duration: "4h", type: "ban", reason: "smoke ban" }),
+	});
+	const banBody = await ban.json();
+	check(
+		"POST decisions with a cidr -> 200 created",
+		ban.status === 200 && banBody.created === true && banBody.audit_logged === true,
+		`got ${ban.status} ${JSON.stringify(banBody).slice(0, 120)}`,
+	);
+	const banProbe = (await lapiLog()).at(-1);
+	check(
+		"the lapi saw the manual alert post",
+		banProbe.method === "POST" && banProbe.path === "/v1/alerts",
+		JSON.stringify(banProbe),
+	);
+	const list3 = await fetch(`${base}/decisions`, { headers: admin });
+	const decisions3 = (await list3.json()).items ?? [];
+	const manualDecision = decisions3.find((d) => d.value === "192.0.2.0/24");
+	check(
+		"the manual ban appears in the list with cscli origin",
+		list3.status === 200 && decisions3.length === 4 && manualDecision?.origin === "cscli",
+		`got ${list3.status} ${JSON.stringify(decisions3.map((d) => d.value))}`,
+	);
+	const banRow = db.prepare("select * from audit_log order by id desc limit 1").get();
+	check(
+		"the manual ban was written to the audit log",
+		banRow.action === "created" &&
+			banRow.object_type === "crowdsec-decision" &&
+			JSON.parse(banRow.meta).value === "192.0.2.0/24",
+		JSON.stringify(banRow),
+	);
+
 	// 10. a hung anubis (accepts the connection, never answers) must read as down
 	const fakeAnubis = await import("./fake-anubis.mjs");
 	fakeAnubis.setAnswering(false);

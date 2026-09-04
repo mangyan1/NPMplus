@@ -49,6 +49,39 @@ export interface CrowdsecUnbanResult {
 	auditLogged: boolean;
 }
 
+export interface CrowdsecBanInput {
+	value: string;
+	duration: string;
+	type: string;
+	reason?: string;
+}
+
+export interface CrowdsecBanResult {
+	created: boolean;
+	auditLogged: boolean;
+}
+
+export interface CrowdsecInsightsItem {
+	name: string;
+	count: number;
+}
+
+export interface CrowdsecInsights {
+	windowHours: number;
+	alertCount: number;
+	topScenarios: CrowdsecInsightsItem[];
+	topCountries: CrowdsecInsightsItem[];
+	topAsns: CrowdsecInsightsItem[];
+}
+
+export async function createCrowdsecBan(data: CrowdsecBanInput): Promise<CrowdsecBanResult> {
+	return await api.post({ url: "/crowdsec/decisions", data });
+}
+
+export async function getCrowdsecInsights(signal?: AbortSignal): Promise<CrowdsecInsights> {
+	return await api.get({ url: "/crowdsec/insights" }, signal);
+}
+
 export async function getCrowdsecDecisions(signal?: AbortSignal): Promise<CrowdsecDecisionPage> {
 	return await api.get({ url: "/crowdsec/decisions" }, signal);
 }

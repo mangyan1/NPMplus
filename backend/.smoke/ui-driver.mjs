@@ -105,7 +105,7 @@ const alerts = [
 	},
 ];
 
-const seen = { deleted: null, alertsFor: null };
+const seen = { deleted: null, alertsFor: null, ban: null };
 let failures = 0;
 const check = (name, ok, detail = "") => {
 	if (!ok) failures++;
@@ -146,7 +146,37 @@ const api = async (route) => {
 		if (i >= 0) decisions.splice(i, 1);
 		return respondWith({ nbDeleted: "1", auditLogged: true });
 	}
+	if (apiPath === "/crowdsec/decisions" && req.method() === "POST") {
+		seen.ban = req.postDataJSON();
+		decisions.unshift({
+			id: 100,
+			uuid: "manual-100",
+			scope: "Ip",
+			value: seen.ban?.value,
+			type: seen.ban?.type ?? "ban",
+			origin: "cscli",
+			scenario: "manual/web-ui",
+			duration: seen.ban?.duration ?? "4h",
+			until: in3d,
+			simulated: false,
+		});
+		return respondWith({ created: true, auditLogged: true, result: { nbAlerts: 1, nbDecisions: "1" } });
+	}
 	if (apiPath === "/crowdsec/decisions") return respondWith({ items: decisions, limit: 200, truncated: false });
+	if (apiPath === "/crowdsec/insights")
+		return respondWith({
+			windowHours: 24,
+			alertCount: 7,
+			topScenarios: [
+				{ name: "crowdsecurity/http-probing", count: 4 },
+				{ name: "crowdsecurity/ssh-bf", count: 3 },
+			],
+			topCountries: [
+				{ name: "DE", count: 5 },
+				{ name: "FR", count: 2 },
+			],
+			topAsns: [{ name: "Example ASN", count: 7 }],
+		});
 	if (apiPath === "/crowdsec/anubis")
 		return respondWith({
 			configured: true,
@@ -253,6 +283,51 @@ await page.locator("#crowdsec-origin-filter").selectOption("all");
 await page.waitForTimeout(200);
 await decisionsTable.first().waitFor();
 
+// insights card: 24h summary strip at the top of the page
+const insightsCard = page.locator(".card").filter({ hasText: "Last 24 hours" }).first();
+await insightsCard.waitFor({ timeout: 5000 });
+const insightsText = await insightsCard.innerText();
+check(
+	"insights card renders the alert count",
+	insightsText.includes("7 alerts") && insightsText.includes("Last 24 hours"),
+	insightsText.slice(0, 200),
+);
+check(
+	"insights card lists top scenarios, countries and asns",
+	insightsText.includes("crowdsecurity/http-probing") &&
+		insightsText.includes("DE") &&
+		insightsText.includes("Example ASN"),
+	insightsText.slice(0, 300),
+);
+check(
+	"insights badges carry their counts",
+	insightsText.includes("×4") && insightsText.includes("×5") && insightsText.includes("×7"),
+	insightsText.slice(0, 300),
+);
+
+// structured search: field tokens narrow the named field
+await page.locator("#crowdsec-search").fill("origin:capi");
+await page.waitForTimeout(200);
+rows = await decisionsTable.allInnerTexts();
+check(
+	"structured search origin:capi keeps only the capi ban",
+	rows.length === 1 && rows[0]?.includes("192.0.2.55"),
+	JSON.stringify(rows),
+);
+await page.locator("#crowdsec-search").fill("scenario:ssh 192.0.");
+await page.waitForTimeout(200);
+rows = await decisionsTable.allInnerTexts();
+check(
+	"field token combines with free text as AND",
+	rows.length === 1 && rows[0]?.includes("192.0.2.55"),
+	JSON.stringify(rows),
+);
+await page.locator("#crowdsec-search").fill("");
+await page.waitForTimeout(200);
+await decisionsTable.first().waitFor();
+
+// alert context: expand a row, wait for the alert fixture to render
+
 // alert context: expand a row, wait for the alert fixture to render
 await decisionsTable.nth(1).locator("button").first().click();
 await page.waitForSelector("tbody tr td[colspan='7']");
@@ -303,6 +378,37 @@ check(
 	JSON.stringify(banRows),
 );
 await page.screenshot({ path: ".smoke/ui-final.png", fullPage: true });
+
+// manual ban: open the modal, submit, and the row appears
+await page.locator(".card").filter({ hasText: "CrowdSec Bans" }).first().getByRole("button", { name: /^Ban$/ }).click();
+const banModal = page.locator(".modal.show");
+await banModal.waitFor();
+const banModalText = await banModal.innerText();
+check(
+	"manual ban modal opens with the form",
+	banModalText.includes("IP address or CIDR range") && banModalText.includes("Duration"),
+	banModalText.slice(0, 200),
+);
+check(
+	"ban submit is disabled while the target is empty",
+	await banModal.getByRole("button", { name: /^Ban$/ }).last().isDisabled(),
+	"submit enabled with empty target",
+);
+await banModal.locator('input[placeholder="1.2.3.4"]').fill("192.0.2.200");
+await banModal.getByRole("button", { name: /^Ban$/ }).last().click();
+await page.waitForTimeout(600);
+check(
+	"manual ban POSTed the target to the api",
+	seen.ban?.value === "192.0.2.200" && seen.ban?.duration === "4h",
+	JSON.stringify(seen.ban),
+);
+rows = await decisionsTable.allInnerTexts();
+check(
+	"the manually banned ip appears in the table",
+	rows.some((r) => r.includes("192.0.2.200") && r.includes("manual/web-ui")),
+	JSON.stringify(rows.map((r) => r.split("\n")[0])),
+);
+await page.screenshot({ path: ".smoke/ui-ban.png", fullPage: true });
 
 console.log(failures === 0 ? "ALL UI SMOKE CHECKS PASSED" : `${failures} FAILURES`);
 await browser.close();
