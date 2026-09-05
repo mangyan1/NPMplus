@@ -20,5 +20,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: caddy-fmt
         run: |
-          diff=$(docker run --rm -v ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro caddy:2.11.4@sha256:df7f1c2fb114453b951de51a98efc010db1655a92c2e86be6706714e2417a78d caddy fmt --diff /etc/caddy/Caddyfile)
-          if [ -n "$diff" ]; then printf '%s\n' "$diff"; exit 1; fi
+          formatted="$(mktemp)"
+          trap 'rm -f "$formatted"' EXIT
+          docker run --rm \
+            -v "${PWD}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.11.4@sha256:df7f1c2fb114453b951de51a98efc010db1655a92c2e86be6706714e2417a78d \
+            caddy fmt /etc/caddy/Caddyfile >"$formatted"
+          diff -u caddy/Caddyfile "$formatted"
