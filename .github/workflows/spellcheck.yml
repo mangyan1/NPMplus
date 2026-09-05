@@ -19,7 +19,7 @@ jobs:
         with:
           check_filenames: true
           check_hidden: true
-          # crowdsec-logo-animated.svg embeds the original logo as base64 -
-          # random binary runs trip the dictionary, nothing to spellcheck
-          skip: pnpm-lock.yaml,./frontend/translations,./frontend/public/images/crowdsec-logo-animated.svg
+          # These animated SVGs embed raster frames as base64. Random binary
+          # runs trip the dictionary, but there is no prose to spellcheck.
+          skip: pnpm-lock.yaml,./frontend/translations,./frontend/public/images/crowdsec-logo-animated.svg,./docs/animated-logo.svg
           ignore_words_list: afterAll,alog,clen
