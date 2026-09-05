@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.27"
+SCRIPT_VERSION="1.28"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -1774,8 +1774,8 @@ if command -v ufw >/dev/null; then
 			if [[ -z "$DETECTED_LAN_IP" || -z "$DETECTED_LAN_CIDR" ]]; then
 				echo "could not detect a private IPv4 LAN; keeping the admin UI on localhost" >&2
 			else
-				ADMIN_BIND_IP=$(ask "VM private LAN address for the admin UI" "$DETECTED_LAN_IP")
-				ADMIN_LAN_CIDR=$(ask "Private LAN subnet allowed to use the admin UI" "$DETECTED_LAN_CIDR")
+				ADMIN_BIND_IP="$DETECTED_LAN_IP"
+				ADMIN_LAN_CIDR="$DETECTED_LAN_CIDR"
 				private_ipv4 "$ADMIN_BIND_IP" || {
 					echo "invalid or non-private LAN address; refusing to expose the admin UI" >&2
 					exit 1
@@ -1785,6 +1785,7 @@ if command -v ufw >/dev/null; then
 					exit 1
 				}
 				EXPOSE_ADMIN="y"
+				echo "detected private LAN: admin https://$ADMIN_BIND_IP:81, allowed subnet $ADMIN_LAN_CIDR"
 			fi
 		fi
 	fi

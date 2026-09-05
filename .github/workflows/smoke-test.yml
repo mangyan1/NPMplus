@@ -94,8 +94,6 @@ jobs:
               n # host networking
               y # configure ufw (stubbed above)
               y # allow admin UI from the private LAN
-              '' # detected private VM address
-              '' # detected private LAN subnet
               y # unattended upgrades
               '' # detected SSH port
               n # do not restrict SSH in this disposable test
