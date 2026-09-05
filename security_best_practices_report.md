@@ -1,5 +1,48 @@
 # NPMplus security remediation report
 
+## GitHub code-scanning dashboard check — 2026-09-05
+
+Baseline: `develop` at `70a37330c7c716eda7941a09dd11a6b3f07a4bea`, with the published release candidate at `b332a53aaffab7fab5df4056f6543ad8929542f1`.
+
+### Executive summary
+
+GitHub listed **34 open code-scanning alerts** at the start of this review: 29 Trivy container findings and 5 CodeQL findings. After the remediation below, GitHub lists **zero open code-scanning alerts**. The 29 Trivy occurrences were 16 unique, already reviewed advisories in the upstream CrowdSec and Anubis images. They remain visible in downloadable scan reports and pass the enforcement workflow only through documented exceptions that expire on 2026-10-04. The 5 CodeQL results were individually dismissed as false positives with source-specific explanations.
+
+There is no open Trivy alert for the fork-built NPMplus or Caddy images. Both production `pnpm audit` checks returned zero advisories. The latest CodeQL run, release-image scans, and scheduled container-security gate completed successfully. No critical alert or directly actionable high-severity fork-code defect was identified in this dashboard review.
+
+### CS-001 — Accepted container findings were republished as open SARIF alerts — resolved
+
+- Rule ID: supply-chain alert hygiene
+- Severity: **Medium operational risk**, not a new runtime vulnerability
+- Location: `.github/workflows/container-security.yml:69-91`, especially SARIF generation at line 89
+- Evidence: the readable report receives the component's `--ignorefile` plus `--show-suppressed`, and the enforcement scan receives the `--ignorefile`. The separate SARIF command receives neither, so every accepted CrowdSec and Anubis baseline match is uploaded to GitHub as open.
+- Impact: the Security tab remains red with 29 known occurrences, which can cause alert fatigue and make a genuinely new finding harder to notice. The configuration does not weaken the enforcement gate or create additional container exposure.
+- Resolution: commit `70a37330c7c716eda7941a09dd11a6b3f07a4bea` keeps the full `--show-suppressed` table as the review artifact and applies the same expiring ignore file to SARIF generation without `--show-suppressed`. The failing enforcement scan remains unchanged.
+- Verification: manually dispatched [Container Security run 33948757129](https://github.com/mangyan1/NPMplus/actions/runs/33948757129) passed the NPMplus, Caddy, CrowdSec, and Anubis scan and SARIF-upload jobs. GitHub then reconciled all 29 accepted Trivy occurrences out of the open-alert view.
+- False-positive notes: the underlying advisories are not all false positives. They are upstream matches with reduced or inactive paths, accepted temporarily while awaiting patched upstream builds.
+
+### CS-002 — Five reviewed CodeQL false positives remained open — resolved
+
+- Rule ID: `js/insufficient-password-hash`, `js/clear-text-storage-of-sensitive-data`, and `js/sensitive-get-query`
+- Severity: **Low dashboard-hygiene risk** after source review
+- Locations: `backend/routes/crowdsec.js:188`, `backend/routes/oidc.js:188`, `backend/routes/oidc.js:201`, `backend/routes/nginx/certificates.js:231`, and `backend/routes/nginx/certificates.js:345`
+- Evidence: the CrowdSec SHA-256 value is only an in-memory cache fingerprint for a high-entropy machine credential, not a password verifier. The OIDC bearer values are placed in signed, `Secure`, `HttpOnly`, `SameSite=Strict`, `__Host-` cookies with bounded expiry. The two certificate values are validated numeric path IDs guarded by API authentication and authorization, not sensitive query-string data.
+- Impact: these results make the open count look worse but do not establish credential disclosure, weak password verification, or unauthenticated certificate access.
+- Resolution: alerts 1 through 5 were individually dismissed as false positives on 2026-09-05. Each GitHub alert records the applicable source-specific rationale. No CodeQL query was disabled or weakened.
+- Verification: the code-scanning API reports all five alerts as dismissed by `mangyan1` with reason `false positive`; the repository now has zero open code-scanning alerts.
+- False-positive notes: this assessment depends on the machine credential remaining high entropy, TLS remaining mandatory, cookie flags not being weakened, and authorization staying enforced in `internalCertificate`.
+
+### CS-003 — Upstream CrowdSec and Anubis advisories remain temporarily accepted
+
+- Rule ID: 16 unique Trivy IDs across 29 binary/package occurrences
+- Severity: **Medium operational priority**, although GitHub labels each occurrence high
+- Location: upstream CrowdSec 1.8.1/latest and Anubis 1.27.0 container contents; exception records are in `.trivy/crowdsec.yaml` and `.trivy/anubis.yaml`
+- Evidence: CrowdSec accounts for 18 occurrences and Anubis for 11. The exception statements document loopback-only listeners, inactive optional notification/PostgreSQL paths where applicable, and the need for upstream rebuilds. Every exception expires on 2026-10-04, after which the enforcement workflow fails unless it is deliberately reviewed again.
+- Impact: reachable parser or HTTP/2 resource-exhaustion paths could affect availability if present in the compiled binaries. Loopback binding reduces direct exposure, but Anubis and CrowdSec AppSec still process data originating from untrusted proxy requests, so the alerts should not be dismissed as universally unreachable.
+- Fix: update to patched upstream images as soon as CrowdSec and Anubis publish them, then remove the corresponding exception entries.
+- Mitigation: retain loopback-only bindings, per-host Anubis enablement, request/connection limits, daily scanning, and immutable-digest updates.
+- False-positive notes: optional notification plugins, CrowdSec's PostgreSQL driver, and Anubis gRPC/xDS paths are not enabled by the standard installer. Other denial-of-service-related paths may still be relevant.
+
 ## CVE remediation status — 2026-09-04
 
 The repository-controlled recommendations from the point-in-time rescan have been implemented in the working tree:
