@@ -162,6 +162,8 @@ Setup script v1.36 fixes the command-line validator so the documented emergency 
 
 Setup script v1.37 removes a protected-start race caused by combining `grep -q` with shell `pipefail` while discovering optional Compose services. Protected startup now reads the complete Compose service list once and starts every configured public service, so Anubis or Caddy cannot be intermittently omitted by a harmless upstream SIGPIPE.
 
+Setup script v1.38 repairs RC-era installations where an interrupted/retried setup left the installer-generated firewall-bouncer package and configuration without its ownership marker. During update, adoption occurs only when the CrowdSec Compose service, installed package, local-LAPI address, and setup-script configuration signature all match. This lets protected startup be enabled without blindly claiming an unrelated administrator-managed bouncer.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.

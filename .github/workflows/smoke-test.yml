@@ -336,6 +336,10 @@ jobs:
             /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
           sudo rm -f /usr/local/sbin/npmplus-wait-for-crowdsec-lapi \
             /etc/systemd/system/crowdsec-firewall-bouncer.service.d/10-npmplus-container-lapi.conf
+          # RC retries could leave our generated package configuration without
+          # its ownership marker. Safe update must recognize and adopt it before
+          # checking or repairing protected startup.
+          sudo rm -f /var/lib/npmplus/installed-firewall-bouncer
           sudo systemctl daemon-reload
           sudo systemctl stop crowdsec-firewall-bouncer
           if sudo docker exec npmplus awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' /etc/resolv.conf; then
@@ -346,6 +350,7 @@ jobs:
           sudo bash setup-npmplus.sh --update --enable-appsec \
             --enable-cloudflare-origin-lock 2>&1 | tee "$update_log"
           grep -q 'update healthy - last good snapshot kept' "$update_log"
+          grep -q 'adopting legacy installer-managed firewall bouncer' "$update_log"
           rm -f "$update_log"
           sudo test -x /opt/npmplus/setup-npmplus.sh
           sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=5' /usr/local/bin/npmplus-safe-update
@@ -374,6 +379,7 @@ jobs:
             -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t
           sudo test -x /usr/local/sbin/npmplus-wait-for-crowdsec-lapi
           sudo systemctl is-active --quiet crowdsec-firewall-bouncer
+          sudo test -f /var/lib/npmplus/installed-firewall-bouncer
           sudo systemctl is-active --quiet npmplus-public.service
           sudo systemctl is-active --quiet npmplus-cloudflare-origin-lock.service
           sudo /usr/local/sbin/npmplus-cloudflare-origin-lock status
