@@ -115,6 +115,8 @@ Setup script v1.25 replaces the ambiguous public-admin prompt with an optional p
 
 Setup script v1.26 retains the safe SSH port-22 fallback when `sshd -T` cannot inspect an incomplete host configuration, rather than aborting UFW setup under shell `pipefail`.
 
+Setup script v1.27 locates `systemd-socket-proxyd` in both Debian/Ubuntu systemd library paths when the distribution does not place this helper on root's executable search path.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.

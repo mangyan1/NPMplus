@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.26"
+SCRIPT_VERSION="1.27"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -124,8 +124,16 @@ remove_admin_lan_proxy() {
 }
 
 configure_admin_lan_proxy() { # configure_admin_lan_proxy PRIVATE_IP
-	local listen_ip="$1" proxy_binary
+	local listen_ip="$1" proxy_binary candidate
 	proxy_binary=$(command -v systemd-socket-proxyd || true)
+	if [[ -z "$proxy_binary" ]]; then
+		for candidate in /usr/lib/systemd/systemd-socket-proxyd /lib/systemd/systemd-socket-proxyd; do
+			if [[ -x "$candidate" ]]; then
+				proxy_binary="$candidate"
+				break
+			fi
+		done
+	fi
 	[[ -n "$proxy_binary" ]] || {
 		echo "systemd-socket-proxyd is unavailable; refusing to expose the admin UI" >&2
 		return 1
