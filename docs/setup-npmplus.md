@@ -4,15 +4,15 @@
 
 The installer intentionally does not deploy PHP-FPM. This fork treats NPMplus as a reverse proxy and security boundary; every proxied application remains responsible for its own runtime, application files, updates, and health checks. Keep the `PHP83`, `PHP84`, and `PHP85` options disabled unless you deliberately leave this recommended deployment model and accept the advanced compatibility tradeoffs documented in `ADVANCED.md`.
 
-GitHub releases provide a version-pinned installer and checksum for controlled deployments. The current `v2.15.1-mangyan1.rc.2` build is a release candidate for test systems; no stable fork release has been published yet. A release candidate uses the `rc` image channel and does not move the stable `latest` channel. The raw `develop` installer remains available to advanced testers who intentionally want a rolling build.
+GitHub releases provide a version-pinned installer and checksum for controlled deployments. The current `v2.15.1-mangyan1.rc.3` build is a release candidate for test systems; no stable fork release has been published yet. A release candidate uses the `rc` image channel and does not move the stable `latest` channel. The raw `develop` installer remains available to advanced testers who intentionally want a rolling build.
 
 ## Fresh installation
 
 Download the current release-candidate script and checksum, verify them, review the script, and run it on a test server:
 
 ```bash
-wget -O setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.2/setup-npmplus.sh
-wget -O setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.2/setup-npmplus.sh.sha256
+wget -O setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.3/setup-npmplus.sh
+wget -O setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.3/setup-npmplus.sh.sha256
 sha256sum -c setup-npmplus.sh.sha256
 less setup-npmplus.sh
 sudo bash setup-npmplus.sh
