@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.19"
+SCRIPT_VERSION="1.20"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -275,6 +275,17 @@ ensure_crowdsec_metrics_port() {
 	mv "$tmp" "$COMPOSE_FILE"
 }
 
+normalize_crowdsec_appsec_acquisition() {
+	local acquisition="$CROWDSEC_DIR/conf/acquis.d/npmplus.yaml"
+	[[ -s "$acquisition" ]] || return 0
+	# CrowdSec still accepts the old singular key, but documents it as
+	# deprecated. Migrate installer-managed legacy acquisitions in place.
+	if grep -qE '^appsec_config:[[:space:]]*' "$acquisition"; then
+		sed -i -E 's|^appsec_config:[[:space:]]*(.+)$|appsec_configs:\n  - \1|' "$acquisition"
+		say "migrated CrowdSec AppSec acquisition to current list syntax"
+	fi
+}
+
 enable_crowdsec_appsec() {
 	local acquisition="$CROWDSEC_DIR/conf/acquis.d/npmplus.yaml"
 	local bouncer_conf="$DATA_DIR/crowdsec/crowdsec.conf"
@@ -290,13 +301,15 @@ enable_crowdsec_appsec() {
 		cat >>"$acquisition" <<'EOF'
 ---
 listen_addr: 0.0.0.0:7422
-appsec_config: crowdsecurity/appsec-default
+appsec_configs:
+  - crowdsecurity/appsec-default
 name: appsec
 source: appsec
 labels:
   type: appsec
 EOF
 	fi
+	normalize_crowdsec_appsec_acquisition
 
 	# Reuse the bouncer's known-good LAPI host so this works for both bridge and
 	# host networking without guessing from the Compose layout.
@@ -991,6 +1004,7 @@ if [[ "${1:-}" == "--update" ]]; then
 		CROWDSEC_IMAGE=$(pin_image "$CROWDSEC_IMAGE_CHANNEL")
 		set_compose_service_image crowdsec "$CROWDSEC_IMAGE"
 		ensure_crowdsec_metrics_port
+		normalize_crowdsec_appsec_acquisition
 		[[ "$ENABLE_APPSEC_ON_UPDATE" != "true" ]] || enable_crowdsec_appsec
 	fi
 	if grep -q "container_name: npmplus-caddy" "$COMPOSE_FILE"; then
@@ -1391,7 +1405,8 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 		if [[ "$USE_APPSEC" == "y" ]]; then
 			echo "---"
 			echo "listen_addr: 0.0.0.0:7422"
-			echo "appsec_config: crowdsecurity/appsec-default"
+			echo "appsec_configs:"
+			echo "  - crowdsecurity/appsec-default"
 			echo "name: appsec"
 			echo "source: appsec"
 			echo "labels:"

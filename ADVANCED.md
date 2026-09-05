@@ -62,14 +62,14 @@ sudo bash setup-npmplus.sh
 
 See [docs/setup-npmplus.md](docs/setup-npmplus.md) for update, rollback, backup restoration, uninstall, and reboot diagnostics with `npmplus-boot-trace.sh`.
 
-Fresh v1.19 installations recommend AppSec by default. Ordinary updates preserve the existing AppSec choice; an existing installer-managed CrowdSec deployment can opt in once with `sudo bash setup-npmplus.sh --update --enable-appsec` and receive the normal snapshot, health-check, and automatic-rollback protection.
+Fresh v1.19 and later installations recommend AppSec by default. Ordinary updates preserve the existing AppSec choice; an existing installer-managed CrowdSec deployment can opt in once with `sudo bash setup-npmplus.sh --update --enable-appsec` and receive the normal snapshot, health-check, and automatic-rollback protection.
 
 Later updates: repeat the `wget` line, review the downloaded change, and run `sudo bash setup-npmplus.sh --update` instead. Manual and scheduled updates both go through the transactional snapshot/health/revert wrapper. The script checks its version and content against GitHub at startup; `--update` stops when a newer script exists instead of silently using stale host logic. To wipe the install completely: `sudo bash setup-npmplus.sh --uninstall` — it takes one final backup first (kept in `/var/backups/npmplus`, `--no-backup` skips that) and aborts if that backup fails. It removes only NPMplus containers, data and owned tooling; shared images, unrelated Docker drop-ins/packages and UFW rules are left alone.
 
 - generates the compose stack: npmplus (this fork's own image, ghcr.io/mangyan1/npmplus, so the fixes below are included), CrowdSec with recommended AppSec WAF protection and firewall bouncer, Anubis (optional), and Caddy (optional). AppSec can be exempted per proxy host or custom location without disabling CrowdSec IP decisions. Mutable update channels are resolved to immutable image digests before they are written to compose.
 - keeps an explicitly supplied initial administrator password out of `compose.yaml` by using a root-only, one-time Docker secret; the secret and its Compose references are erased after account creation, and v1.16 scrubs plaintext credentials left by older installer versions during update
 - locks the browser setup wizard behind a generated 256-bit one-time token; retrieve it locally with `docker exec npmplus cat /data/npmplus/setup-token`
-- uses a bridge network, loopback-only admin port, and non-root service UID/GID by default on fresh v1.19 installations; host networking remains an explicit compatibility choice for targets on host `127.0.0.1`
+- uses a bridge network, loopback-only admin port, and non-root service UID/GID by default on fresh v1.19 and later installations; host networking remains an explicit compatibility choice for targets on host `127.0.0.1`
 - UFW firewall: default deny, the detected/configured SSH port plus 80/443 (+81 if you opt in); ssh can be restricted to a subnet (e.g. 192.168.1.0/24), and any pre-existing rule set — including inactive, DENY-only or LIMIT-only configurations — is preserved unless you explicitly approve a reset
 - anubis: image and policy are pinned to the same release, status codes adjusted for auth_request, bbolt store instead of memory, persistent directory ownership matched to the image's non-root user, honeypot IP logging, optional catch-all that challenges everything unmatched
 - honeypot to crowdsec bridge: IPs caught in anubis' honeypot are auto-banned for 24h via a 5 minute cron
@@ -141,7 +141,8 @@ labels:
   type: npmplus
 ---
 listen_addr: 0.0.0.0:7422
-appsec_config: crowdsecurity/appsec-default
+appsec_configs:
+  - crowdsecurity/appsec-default
 name: appsec
 source: appsec
 labels:

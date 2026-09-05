@@ -178,8 +178,9 @@ jobs:
           sudo docker exec npmplus sh -c ': > /etc/resolv.conf'
           # Reproduce an existing install that opted out of AppSec. The explicit
           # update flag must survive delegation through the safe-update wrapper.
+          # Also reproduce the deprecated singular acquisition key from v1.19.
           sudo sed -i 's|^APPSEC_URL=.*|APPSEC_URL=|' /opt/npmplus/crowdsec/crowdsec.conf
-          sudo sed -i '/^---$/,$d' /opt/crowdsec/conf/acquis.d/npmplus.yaml
+          sudo sed -i '/^appsec_configs:$/ { N; s|^appsec_configs:\n  - |appsec_config: |; }' /opt/crowdsec/conf/acquis.d/npmplus.yaml
           if sudo docker exec npmplus awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' /etc/resolv.conf; then
             echo "resolver failure fixture is not empty" >&2
             exit 1
@@ -193,6 +194,11 @@ jobs:
             "$(sudo docker inspect --format '{{.Image}}' npmplus-caddy)"
           sudo grep -q '^APPSEC_URL=http://crowdsec:7422$' /opt/npmplus/crowdsec/crowdsec.conf
           sudo grep -q '^source: appsec$' /opt/crowdsec/conf/acquis.d/npmplus.yaml
+          sudo grep -q '^appsec_configs:$' /opt/crowdsec/conf/acquis.d/npmplus.yaml
+          if sudo grep -q '^appsec_config:' /opt/crowdsec/conf/acquis.d/npmplus.yaml; then
+            echo "deprecated singular AppSec acquisition key was generated" >&2
+            exit 1
+          fi
       - name: uninstall preserves operator-owned Docker configuration
         if: matrix.name == 'alternate'
         run: |
