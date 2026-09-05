@@ -189,10 +189,16 @@ fi
 
 hdr "8c. protected startup"
 if [[ -f /var/lib/npmplus/strict-boot-protection ]]; then
-	if systemctl is-enabled --quiet npmplus-public.service && systemctl is-active --quiet npmplus-public.service; then
+	if systemctl is-enabled --quiet npmplus-public.service && systemctl is-active --quiet npmplus-public.service && \
+		systemctl is-enabled --quiet npmplus-boot-guard.service && \
+		systemctl is-active --quiet npmplus-boot-guard.service && \
+		[[ -x /usr/local/sbin/npmplus-boot-guard ]]; then
 		ok "public listeners are gated behind CrowdSec at boot"
 	else
-		bad "strict boot marker exists but npmplus-public.service is not enabled and active"
+		bad "strict boot marker exists but its public/guard services are incomplete"
+		if /usr/local/sbin/npmplus-boot-guard status >/dev/null 2>&1; then
+			note "the boot guard is active, so external ports 80/443 remain blocked"
+		fi
 		fail=1
 	fi
 	for container in npmplus npmplus-anubis npmplus-caddy; do

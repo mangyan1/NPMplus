@@ -165,6 +165,13 @@ jobs:
             sudo systemctl is-active --quiet crowdsec-firewall-bouncer
             sudo systemctl is-enabled --quiet npmplus-public.service
             sudo systemctl is-active --quiet npmplus-public.service
+            sudo systemctl is-enabled --quiet npmplus-boot-guard.service
+            sudo systemctl is-active --quiet npmplus-boot-guard.service
+            sudo test -x /usr/local/sbin/npmplus-boot-guard
+            if sudo /usr/local/sbin/npmplus-boot-guard status >/dev/null 2>&1; then
+              echo "boot guard remained after healthy startup" >&2
+              exit 1
+            fi
             sudo grep -qx 'PartOf=docker.service' \
               /etc/systemd/system/crowdsec-firewall-bouncer.service.d/10-npmplus-container-lapi.conf
             for container in npmplus npmplus-anubis npmplus-caddy; do
@@ -383,14 +390,26 @@ jobs:
 
           sudo systemctl restart docker.service
           sleep 5
-          for service in npmplus anubis npmplus-caddy; do
-            cid="$(sudo docker compose -f /opt/npmplus/compose.yaml ps -a -q "$service")"
-            test "$(sudo docker inspect --format '{{.State.Status}}' "$cid")" != running
-          done
+          sudo /usr/local/sbin/npmplus-boot-guard status
+          if sudo systemctl is-active --quiet npmplus-public.service; then
+            echo "protected public service unexpectedly succeeded without its firewall bouncer" >&2
+            exit 1
+          fi
+
+          sudo ip netns add npmplus-attacker
+          sudo ip link add npmplus-host type veth peer name npmplus-peer
+          sudo ip link set npmplus-peer netns npmplus-attacker
+          sudo ip address add 198.51.100.1/30 dev npmplus-host
+          sudo ip link set npmplus-host up
+          sudo ip netns exec npmplus-attacker ip address add 198.51.100.2/30 dev npmplus-peer
+          sudo ip netns exec npmplus-attacker ip link set lo up
+          sudo ip netns exec npmplus-attacker ip link set npmplus-peer up
           # Simulate a scripted attacker repeatedly probing during the failed
-          # security startup. No public listener may answer before enforcement.
+          # security startup from a non-private source. Even if Docker revives a
+          # container, the pre-routing boot guard must prevent every response.
           for _ in $(seq 1 20); do
-            code="$(curl -ksS -o /dev/null -w '%{http_code}' --connect-timeout 1 --max-time 1 https://127.0.0.1/ || true)"
+            code="$(sudo ip netns exec npmplus-attacker curl -sS -o /dev/null -w '%{http_code}' \
+              --connect-timeout 1 --max-time 1 http://198.51.100.1/ || true)"
             test "$code" = 000
           done
 
@@ -398,6 +417,15 @@ jobs:
           sudo systemctl start npmplus-public.service
           sudo systemctl is-active --quiet crowdsec-firewall-bouncer.service
           sudo systemctl is-active --quiet npmplus-public.service
+          if sudo /usr/local/sbin/npmplus-boot-guard status >/dev/null 2>&1; then
+            echo "boot guard remained after protected startup succeeded" >&2
+            exit 1
+          fi
+          code="$(sudo ip netns exec npmplus-attacker curl -sS -o /dev/null -w '%{http_code}' \
+            --connect-timeout 2 --max-time 5 http://198.51.100.1/ || true)"
+          test "$code" != 000
+          sudo ip netns delete npmplus-attacker
+          sudo ip link delete npmplus-host 2>/dev/null || true
           ready=false
           for _ in $(seq 1 120); do
             if curl -fkSs --connect-timeout 2 --max-time 5 https://127.0.0.1:81/api |
@@ -463,11 +491,16 @@ jobs:
           test ! -e /etc/systemd/system/npmplus-public.service
           test ! -e /etc/systemd/system/npmplus-cloudflare-origin-lock.service
           test ! -e /usr/local/sbin/npmplus-start-protected
+          test ! -e /usr/local/sbin/npmplus-boot-guard
           test ! -e /usr/local/sbin/npmplus-cloudflare-origin-lock
           test ! -e /var/lib/npmplus/strict-boot-protection
           test ! -e /var/lib/npmplus/cloudflare-origin-lock
           if sudo iptables-save -t raw | grep -q NPMPLUS-CF; then
             echo "Cloudflare origin-lock rules survived uninstall" >&2
+            exit 1
+          fi
+          if sudo iptables-save -t raw | grep -q NPMPLUS-BOOT; then
+            echo "protected-start boot-guard rules survived uninstall" >&2
             exit 1
           fi
           if sudo ipset list npcf4 >/dev/null 2>&1; then

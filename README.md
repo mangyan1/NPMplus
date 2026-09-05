@@ -35,7 +35,7 @@ This command installs the named version instead of silently following later chan
 
 Select **Install NPMplus**, then answer the questions shown by the installer. If you are unsure, press Enter to accept the displayed default. The recommended defaults enable CrowdSec, CrowdSec AppSec web-application protection, the firewall bouncer, and Anubis. Anubis's global catch-all challenge defaults off so APIs, licensing servers, webhooks, monitors, and other non-browser clients continue to work. AppSec can still be turned off for an individual proxy host if an application has a confirmed compatibility problem.
 
-RC4 remains unchanged while it is tested on real websites. The rolling `develop` installer adds post-RC4 boot hardening: when the firewall bouncer is selected, public containers wait for verified CrowdSec host and Docker-forwarding rules before ports 80/443 start. A deliberately optional Cloudflare origin lock can also reject direct public traffic while preserving private-LAN access.
+RC4 remains unchanged while it is tested on real websites. The rolling `develop` installer adds post-RC4 boot hardening: a pre-Docker packet guard blocks external ports 80/443 until verified CrowdSec host/Docker-forwarding rules and healthy public services are ready. A deliberately optional Cloudflare origin lock can also reject direct public traffic while preserving private-LAN access.
 
 After installation, one short local command opens the maintenance menu for safe updates, CrowdSec checks, reboot diagnostics, reconfiguration, and uninstalling. You do not need to memorize a different command for each task.
 
@@ -120,7 +120,7 @@ sudo docker compose -f /opt/npmplus/compose.yaml ps
 
 Every listed service should say `Up`. The `npmplus` service should become `healthy` after startup.
 
-The installer enables Docker and configures the stack to return automatically after a server restart. With protected startup enabled, CrowdSec starts first, the host bouncer must prove that both host and Docker-forwarded traffic are covered, and only then do the public listeners start. A supplied initial administrator password is removed after first use, and NPMplus is recreated without the temporary secret mount before that file is deleted. This prevents the container from depending on a `/run` file that disappears during reboot.
+The installer enables Docker and configures the stack to return automatically after a server restart. With protected startup enabled, a pre-Docker guard blocks external web traffic, CrowdSec starts, the host bouncer must prove that both host and Docker-forwarded traffic are covered, and the guard is removed only after the public services pass health checks. A supplied initial administrator password is removed after first use, and NPMplus is recreated without the temporary secret mount before that file is deleted. This prevents the container from depending on a `/run` file that disappears during reboot.
 
 ## What the installer handles
 

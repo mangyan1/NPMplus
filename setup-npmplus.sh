@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.34"
+SCRIPT_VERSION="1.35"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -346,9 +346,95 @@ set_public_restart_policy() { # set_public_restart_policy POLICY
 remove_strict_boot_protection() {
 	command -v systemctl >/dev/null || return 0
 	systemctl disable --now npmplus-public.service >/dev/null 2>&1 || true
+	systemctl disable --now npmplus-boot-guard.service >/dev/null 2>&1 || true
+	[[ ! -x /usr/local/sbin/npmplus-boot-guard ]] || \
+		/usr/local/sbin/npmplus-boot-guard remove >/dev/null 2>&1 || true
 	rm -f /etc/systemd/system/npmplus-public.service /usr/local/sbin/npmplus-start-protected \
+		/etc/systemd/system/npmplus-boot-guard.service /usr/local/sbin/npmplus-boot-guard \
 		/var/lib/npmplus/strict-boot-protection
 	systemctl daemon-reload >/dev/null 2>&1 || true
+}
+
+configure_boot_guard() {
+	write_root_file /usr/local/sbin/npmplus-boot-guard 0755 <<'EOF'
+#!/bin/bash
+# A pre-Docker raw-table guard. Local/private maintenance stays reachable, but
+# public web traffic cannot reach an early container until protected startup
+# verifies CrowdSec and application health, then removes these owned rules.
+set -euo pipefail
+
+remove_jump() { # remove_jump BINARY PROTOCOL PORTS
+	local binary="$1" protocol="$2" ports="$3"
+	while "$binary" -t raw -C PREROUTING -p "$protocol" -m multiport --dports "$ports" -j NPMPLUS-BOOT >/dev/null 2>&1; do
+		"$binary" -t raw -D PREROUTING -p "$protocol" -m multiport --dports "$ports" -j NPMPLUS-BOOT
+	done
+}
+
+apply_family() { # apply_family BINARY PRIVATE_CIDRS...
+	local binary="$1"; shift
+	local cidr
+	"$binary" -t raw -N NPMPLUS-BOOT >/dev/null 2>&1 || true
+	"$binary" -t raw -F NPMPLUS-BOOT
+	for cidr in "$@"; do
+		"$binary" -t raw -A NPMPLUS-BOOT -s "$cidr" -j RETURN
+	done
+	"$binary" -t raw -A NPMPLUS-BOOT -j DROP
+	remove_jump "$binary" tcp 80,443
+	remove_jump "$binary" udp 443
+	"$binary" -t raw -I PREROUTING 1 -p udp -m multiport --dports 443 -j NPMPLUS-BOOT
+	"$binary" -t raw -I PREROUTING 1 -p tcp -m multiport --dports 80,443 -j NPMPLUS-BOOT
+}
+
+remove_rules() {
+	local binary
+	for binary in iptables ip6tables; do
+		command -v "$binary" >/dev/null || continue
+		remove_jump "$binary" tcp 80,443
+		remove_jump "$binary" udp 443
+		"$binary" -t raw -F NPMPLUS-BOOT >/dev/null 2>&1 || true
+		"$binary" -t raw -X NPMPLUS-BOOT >/dev/null 2>&1 || true
+	done
+}
+
+ipv6_enabled() {
+	[[ ! -r /proc/sys/net/ipv6/conf/all/disable_ipv6 ]] ||
+		[[ "$(< /proc/sys/net/ipv6/conf/all/disable_ipv6)" == 0 ]]
+}
+
+case "${1:-apply}" in
+	apply)
+		apply_family iptables 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+		if ipv6_enabled; then
+			apply_family ip6tables ::1/128 fc00::/7 fe80::/10
+		fi
+		;;
+	remove) remove_rules ;;
+	status)
+		iptables -t raw -C PREROUTING -p tcp -m multiport --dports 80,443 -j NPMPLUS-BOOT
+		if ipv6_enabled; then
+			ip6tables -t raw -C PREROUTING -p tcp -m multiport --dports 80,443 -j NPMPLUS-BOOT
+		fi
+		;;
+	*) echo "usage: $0 {apply|remove|status}" >&2; exit 2 ;;
+esac
+EOF
+	write_root_file /etc/systemd/system/npmplus-boot-guard.service 0644 <<'EOF'
+[Unit]
+Description=Keep NPMplus public ports blocked until protected startup succeeds
+Before=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/npmplus-boot-guard apply
+ExecStop=/usr/local/sbin/npmplus-boot-guard apply
+
+[Install]
+RequiredBy=docker.service
+EOF
+	systemctl daemon-reload
+	systemctl enable npmplus-boot-guard.service >/dev/null
 }
 
 configure_strict_boot_protection() {
@@ -359,6 +445,7 @@ configure_strict_boot_protection() {
 	set_public_restart_policy "on-failure"
 	mkdir -p /var/lib/npmplus
 	touch /var/lib/npmplus/strict-boot-protection
+	configure_boot_guard
 	write_root_file /usr/local/sbin/npmplus-start-protected 0755 <<'EOF'
 #!/bin/bash
 # Starts public listeners only after the containerized LAPI and host packet
@@ -367,6 +454,7 @@ configure_strict_boot_protection() {
 set -euo pipefail
 COMPOSE=/opt/npmplus/compose.yaml
 
+/usr/local/sbin/npmplus-boot-guard apply
 docker compose -f "$COMPOSE" up -d crowdsec
 /usr/local/sbin/npmplus-wait-for-crowdsec-lapi
 systemctl is-active --quiet crowdsec-firewall-bouncer.service
@@ -392,12 +480,32 @@ for service in anubis npmplus-caddy npmplus; do
 	docker compose -f "$COMPOSE" config --services | grep -qx "$service" && services+=("$service")
 done
 docker compose -f "$COMPOSE" up -d --no-deps "${services[@]}"
+
+for _ in $(seq 1 300); do
+	ready=true
+	for service in "${services[@]}"; do
+		cid=$(docker compose -f "$COMPOSE" ps -a -q "$service" 2>/dev/null || true)
+		[[ -n "$cid" && "$(docker inspect --format '{{.State.Status}}' "$cid")" == running ]] || { ready=false; break; }
+		health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")
+		[[ "$health" == none || "$health" == healthy ]] || { ready=false; break; }
+	done
+	if [[ "$ready" == true ]] && \
+		curl -fkSs --connect-timeout 2 --max-time 5 -o /dev/null https://127.0.0.1/ && \
+		curl -fkSs --connect-timeout 2 --max-time 5 https://127.0.0.1:81/api | \
+			grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"'; then
+		/usr/local/sbin/npmplus-boot-guard remove
+		exit 0
+	fi
+	sleep 1
+done
+echo "npmplus: public services did not become healthy; boot guard remains active" >&2
+exit 1
 EOF
 	write_root_file /etc/systemd/system/npmplus-public.service 0644 <<'EOF'
 [Unit]
 Description=Start NPMplus public listeners after CrowdSec enforcement
-Requires=docker.service crowdsec-firewall-bouncer.service
-After=docker.service crowdsec-firewall-bouncer.service npmplus-cloudflare-origin-lock.service network-online.target
+Requires=docker.service crowdsec-firewall-bouncer.service npmplus-boot-guard.service
+After=docker.service crowdsec-firewall-bouncer.service npmplus-boot-guard.service npmplus-cloudflare-origin-lock.service network-online.target
 Wants=network-online.target
 PartOf=docker.service
 
@@ -759,10 +867,16 @@ run_crowdsec_doctor() (
 
 	doctor_header "8c. protected startup"
 	if [[ -f /var/lib/npmplus/strict-boot-protection ]]; then
-		if systemctl is-enabled --quiet npmplus-public.service && systemctl is-active --quiet npmplus-public.service; then
+		if systemctl is-enabled --quiet npmplus-public.service && systemctl is-active --quiet npmplus-public.service && \
+			systemctl is-enabled --quiet npmplus-boot-guard.service && \
+			systemctl is-active --quiet npmplus-boot-guard.service && \
+			[[ -x /usr/local/sbin/npmplus-boot-guard ]]; then
 			doctor_ok "public listeners are gated behind CrowdSec at boot"
 		else
-			doctor_bad "strict boot marker exists but npmplus-public.service is not enabled and active"
+			doctor_bad "strict boot marker exists but its public/guard services are incomplete"
+			if /usr/local/sbin/npmplus-boot-guard status >/dev/null 2>&1; then
+				doctor_note "the boot guard is active, so external ports 80/443 remain blocked"
+			fi
 			fail=1
 		fi
 		for container in npmplus npmplus-anubis npmplus-caddy; do
@@ -901,7 +1015,7 @@ run_boot_trace() (
 
 	trace_section "NPMPLUS HOST SERVICES"
 	for unit in npmplus-admin-lan.socket npmplus-admin-lan.service crowdsec-firewall-bouncer.service \
-		npmplus-public.service npmplus-cloudflare-origin-lock.service; do
+		npmplus-public.service npmplus-boot-guard.service npmplus-cloudflare-origin-lock.service; do
 		trace_run systemctl status "$unit" --no-pager -l
 		trace_run systemctl cat "$unit"
 	done
@@ -937,6 +1051,7 @@ run_boot_trace() (
 		-u npmplus-admin-lan.service \
 		-u crowdsec-firewall-bouncer.service \
 		-u npmplus-public.service \
+		-u npmplus-boot-guard.service \
 		-u npmplus-cloudflare-origin-lock.service \
 		-u systemd-networkd-wait-online.service \
 		-u NetworkManager-wait-online.service \
@@ -1161,7 +1276,8 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 	rm -f /usr/local/bin/npmplus-safe-update /usr/local/bin/npmplus-backup \
 		/usr/local/bin/npmplus-crowdsec-heal /usr/local/bin/anubis-honeypot-ban \
 		/usr/local/sbin/npmplus-wait-for-dns /usr/local/sbin/npmplus-wait-for-crowdsec-lapi \
-		/usr/local/sbin/npmplus-start-protected /usr/local/sbin/npmplus-cloudflare-origin-lock
+		/usr/local/sbin/npmplus-start-protected /usr/local/sbin/npmplus-cloudflare-origin-lock \
+		/usr/local/sbin/npmplus-boot-guard
 	rm -f /var/log/npmplus-update.log /var/log/npmplus-backup.log /var/log/npmplus-crowdsec-heal.log
 	remove_admin_lan_proxy
 
@@ -1726,7 +1842,10 @@ revert() {
 	docker compose -f "$COMPOSE_FILE" logs --no-color --tail 200 >"$BACKUP/failed-logs.txt" 2>&1 || true
 	[[ ! -x /usr/local/sbin/npmplus-cloudflare-origin-lock ]] || \
 		/usr/local/sbin/npmplus-cloudflare-origin-lock stop >/dev/null 2>&1 || true
-	systemctl disable --now npmplus-public.service npmplus-cloudflare-origin-lock.service >/dev/null 2>&1 || true
+	[[ ! -x /usr/local/sbin/npmplus-boot-guard ]] || \
+		/usr/local/sbin/npmplus-boot-guard apply >/dev/null 2>&1 || true
+	systemctl disable --now npmplus-public.service npmplus-cloudflare-origin-lock.service \
+		npmplus-boot-guard.service >/dev/null 2>&1 || true
 	docker compose -f "$COMPOSE_FILE" down >/dev/null 2>&1 || true
 	cp -a "$BACKUP/compose.yaml" "$COMPOSE_FILE"
 	if [[ -s "$BACKUP/anubis.yaml" ]]; then
@@ -1761,8 +1880,10 @@ revert() {
 	done
 	rm -f /etc/systemd/system/npmplus-public.service \
 		/etc/systemd/system/npmplus-cloudflare-origin-lock.service \
+		/etc/systemd/system/npmplus-boot-guard.service \
 		/usr/local/sbin/npmplus-start-protected \
 		/usr/local/sbin/npmplus-cloudflare-origin-lock \
+		/usr/local/sbin/npmplus-boot-guard \
 		/etc/cron.d/npmplus-cloudflare-origin-lock \
 		/var/lib/npmplus/strict-boot-protection \
 		/var/lib/npmplus/cloudflare-origin-lock \
@@ -1776,6 +1897,7 @@ revert() {
 	if [[ -f /var/lib/npmplus/strict-boot-protection ]]; then
 		# The restored Compose file is already digest-pinned. Use the protected
 		# starter so rollback does not create a public pre-enforcement window.
+		systemctl enable npmplus-boot-guard.service >/dev/null || true
 		systemctl enable --now npmplus-public.service >/dev/null || true
 	elif [[ -s "$BACKUP/override.yaml" ]]; then
 		# pin every service back to its exact pre-update image; --pull never keeps
@@ -1783,6 +1905,19 @@ revert() {
 		docker compose -f "$COMPOSE_FILE" -f "$BACKUP/override.yaml" up -d --pull never
 	else
 		docker compose -f "$COMPOSE_FILE" up -d --pull never
+	fi
+	if [[ ! -f /var/lib/npmplus/strict-boot-protection ]]; then
+		for binary in iptables ip6tables; do
+			command -v "$binary" >/dev/null || continue
+			while "$binary" -t raw -C PREROUTING -p tcp -m multiport --dports 80,443 -j NPMPLUS-BOOT >/dev/null 2>&1; do
+				"$binary" -t raw -D PREROUTING -p tcp -m multiport --dports 80,443 -j NPMPLUS-BOOT
+			done
+			while "$binary" -t raw -C PREROUTING -p udp -m multiport --dports 443 -j NPMPLUS-BOOT >/dev/null 2>&1; do
+				"$binary" -t raw -D PREROUTING -p udp -m multiport --dports 443 -j NPMPLUS-BOOT
+			done
+			"$binary" -t raw -F NPMPLUS-BOOT >/dev/null 2>&1 || true
+			"$binary" -t raw -X NPMPLUS-BOOT >/dev/null 2>&1 || true
+		done
 	fi
 	log "reverted - failure diagnostics are in $BACKUP/failed-{ps,logs}.txt"
 	exit 1
@@ -1802,8 +1937,10 @@ done
 host_security_paths=(
 	etc/systemd/system/npmplus-public.service
 	etc/systemd/system/npmplus-cloudflare-origin-lock.service
+	etc/systemd/system/npmplus-boot-guard.service
 	usr/local/sbin/npmplus-start-protected
 	usr/local/sbin/npmplus-cloudflare-origin-lock
+	usr/local/sbin/npmplus-boot-guard
 	etc/cron.d/npmplus-cloudflare-origin-lock
 	var/lib/npmplus/strict-boot-protection
 	var/lib/npmplus/cloudflare-origin-lock

@@ -43,6 +43,7 @@ The script installs these root-owned helpers:
 - `/usr/local/bin/npmplus-crowdsec-heal`: daily validation and repair of CrowdSec credentials.
 - `/usr/local/bin/anubis-honeypot-ban`: optional five-minute Anubis-to-CrowdSec bridge.
 - `/usr/local/sbin/npmplus-start-protected`: optional fail-closed startup gate for the public containers.
+- `/usr/local/sbin/npmplus-boot-guard`: pre-Docker packet guard used by protected startup.
 - `/usr/local/sbin/npmplus-cloudflare-origin-lock`: optional Cloudflare address-list refresh and host/Docker packet filter.
 
 ## GitHub and download integrity
@@ -79,7 +80,7 @@ wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/dev
 sudo bash setup-npmplus.sh --update --enable-strict-boot
 ```
 
-Protected startup changes the public NPMplus, Anubis, and Caddy restart policies to `on-failure`. Docker therefore cannot independently reopen their published ports during daemon startup. The firewall-bouncer unit is restarted with Docker after its packet chains are restored; `npmplus-public.service` then waits for the containerized CrowdSec LAPI, verifies CrowdSec rules in both `INPUT` and `FORWARD`, allows a short initial decision-stream grace period, and only then starts the public containers. A failed check leaves ports 80/443 without a listener. CrowdSec itself retains `unless-stopped` so the LAPI can become ready.
+Protected startup changes the public NPMplus, Anubis, and Caddy restart policies to `on-failure`, but does not depend on Docker honoring that behavior in every daemon-restart edge case. `npmplus-boot-guard.service` is a required precondition for Docker, installs raw-table rules before the daemon starts, and blocks non-private sources on ports 80/443. If the guard itself cannot be installed, Docker startup fails closed instead of exposing an unguarded listener. The firewall-bouncer unit is restarted with Docker after its packet chains are restored; `npmplus-public.service` then waits for the containerized CrowdSec LAPI, verifies CrowdSec rules in both `INPUT` and `FORWARD`, allows a short initial decision-stream grace period, starts the public containers behind the guard, and removes the guard only after every service and both local HTTPS/API probes are healthy. A failed security or health check leaves the external guard active. CrowdSec itself retains `unless-stopped` so the LAPI can become ready.
 
 The firewall bouncer uses its supported iptables/ipset backend with both `INPUT` and `FORWARD` chains. `INPUT` protects host-networked listeners; `FORWARD` protects ordinary Docker-published ports that bypass UFW's usual input path. The bouncer is coupled to Docker so its rules are reinstalled after a daemon restart.
 
@@ -154,6 +155,8 @@ Setup script v1.32 fixes two additional host-service failures found during an RC
 Setup script v1.33 closes the Docker forwarding gap by migrating installer-managed firewall bouncers to iptables/ipset rules on both `INPUT` and `FORWARD`. Its recommended protected-startup mode prevents public containers from bypassing those rules after a reboot, fails closed if enforcement is unavailable, and is covered by a CI daemon-restart test that continuously probes the HTTPS port during an intentionally failed bouncer start. An optional Cloudflare origin lock uses validated, last-known-good Cloudflare network lists and preserves private-LAN sources. The CrowdSec doctor and reboot report now verify these rules, units, markers, and restart policies. Safe-update wrapper v5 snapshots and restores the installer-owned host-security state. RC4 is intentionally not retagged or replaced with these changes.
 
 Setup script v1.34 removes Ubuntu's package-generated `crowdsec-firewall-bouncer.yaml.local` overlay from installer-managed bouncers. Without that cleanup, the overlay silently forced the old nftables backend over v1.33's generated iptables configuration and could crash Ubuntu's 0.0.25 bouncer parser. The main generated config remains the single installer-owned source of truth.
+
+Setup script v1.35 adds the independent pre-Docker boot guard after live CI showed that Docker can revive an `on-failure` container in a daemon-restart edge case. The guard blocks external 80/443 traffic even if a container appears early and is removed only after CrowdSec enforcement plus application health are verified. CI probes the guarded listener from a network namespace using a non-private source address, then proves the same path answers only after protected startup succeeds.
 
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 

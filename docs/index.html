@@ -524,7 +524,7 @@
           <h3>Daily operation</h3>
           <p>Updates take a last-good snapshot and must pass health checks. A failed update can return to the known working state.</p>
           <p>Daily backups are bounded, CrowdSec credentials can self-heal, and boot diagnostics explain DNS or container delays.</p>
-          <p>Optional protected startup keeps ports 80/443 without a listener until CrowdSec rules cover both the host and Docker forwarding path.</p>
+          <p>Optional protected startup blocks external ports 80/443 before Docker starts, then opens them only after CrowdSec enforcement and service health are verified.</p>
         </article>
         <article>
           <h3>Web application protection</h3>
