@@ -76,11 +76,20 @@ jobs:
           [Install]
           WantedBy=sockets.target
           UNIT
+          sudo tee /etc/systemd/system/npmplus-freebind-ci.service >/dev/null <<'UNIT'
+          [Unit]
+          Requires=npmplus-freebind-ci.socket
+          After=npmplus-freebind-ci.socket
+
+          [Service]
+          ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:9
+          UNIT
           sudo systemctl daemon-reload
           sudo systemctl start npmplus-freebind-ci.socket
           sudo systemctl is-active --quiet npmplus-freebind-ci.socket
           sudo systemctl stop npmplus-freebind-ci.socket
-          sudo rm -f /etc/systemd/system/npmplus-freebind-ci.socket
+          sudo rm -f /etc/systemd/system/npmplus-freebind-ci.socket \
+            /etc/systemd/system/npmplus-freebind-ci.service
           sudo systemctl daemon-reload
       # two scenarios that broke real installs: (1) the container starts while
       # the host's dns is not up yet ("no name servers defined"), which must be
