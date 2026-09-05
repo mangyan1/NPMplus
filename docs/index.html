@@ -219,7 +219,7 @@
     h1 {
       max-width: 760px;
       margin: 0;
-      font-size: clamp(2.35rem, 4.5vw, 3.75rem);
+      font-size: clamp(2rem, 3.6vw, 3.1rem);
       line-height: 1.06;
       letter-spacing: -.038em;
     }
@@ -234,23 +234,26 @@
     .actions {
       display: flex;
       flex-wrap: wrap;
-      gap: .8rem;
+      gap: .65rem;
       margin-top: 2rem;
     }
 
     .button {
-      min-height: 44px;
+      position: relative;
+      min-height: 40px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: .62rem 1rem;
+      padding: .48rem .85rem;
       border: 1px solid var(--ink);
       border-radius: 999px;
+      font-size: .9rem;
       font-weight: 720;
       text-decoration: none;
     }
 
     .button.primary { color: var(--paper); background: var(--mint-dark); border-color: var(--mint-dark); }
+    .button::before { content: ""; position: absolute; inset: -2px; }
     .button:hover { color: var(--paper); background: var(--mint-dark); border-color: var(--mint-dark); }
 
     .why {
@@ -422,8 +425,8 @@
       nav { width: 100%; justify-content: center; gap: clamp(.7rem, 5vw, 1.4rem); }
       .brand-logo { width: 48px; height: 48px; flex-basis: 48px; }
       .hero { padding-block: 2.8rem 2.4rem; }
-      h1 { font-size: clamp(2.15rem, 11vw, 2.75rem); }
-      .actions { flex-direction: column; }
+      h1 { font-size: clamp(1.95rem, 8.5vw, 2.4rem); }
+      .actions { flex-direction: column; align-items: flex-start; }
       .preview-frame { padding: .3rem; }
       .preview-frame figcaption { display: block; }
       .preview-frame figcaption a { display: block; margin-top: .3rem; }
