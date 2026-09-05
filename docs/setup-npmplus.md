@@ -158,6 +158,8 @@ Setup script v1.34 removes Ubuntu's package-generated `crowdsec-firewall-bouncer
 
 Setup script v1.35 adds the independent pre-Docker boot guard after live CI showed that Docker can revive an `on-failure` container in a daemon-restart edge case. The guard blocks external 80/443 traffic even if a container appears early and is removed only after CrowdSec enforcement plus application health are verified. CI repeatedly probes the guarded listener from a network namespace using a non-private source address, confirms every probe is blocked during a forced bouncer failure, and verifies the owned guard rules are removed after protected startup and local application health recover.
 
+Setup script v1.36 fixes the command-line validator so the documented emergency uninstall form, `--uninstall --no-backup`, reaches the existing confirmation and cleanup path. Unknown uninstall flags and extra arguments are still rejected.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.

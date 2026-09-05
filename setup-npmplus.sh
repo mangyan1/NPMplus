@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.35"
+SCRIPT_VERSION="1.36"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -1230,6 +1230,12 @@ if [[ "${1:-}" == "--update" ]]; then
 			*) echo "unknown update option: $update_option" >&2; exit 1 ;;
 		esac
 	done
+
+elif [[ "${1:-}" == "--uninstall" ]]; then
+	if [[ $# -gt 2 || ( -n "${2:-}" && "${2}" != "--no-backup" ) ]]; then
+		echo "unknown uninstall option: ${2:-}" >&2
+		exit 1
+	fi
 elif [[ -n "${2:-}" ]]; then
 	echo "${2} is only valid with --update" >&2
 	exit 1
