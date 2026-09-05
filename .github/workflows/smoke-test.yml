@@ -109,7 +109,8 @@ jobs:
             exit 1
           fi
           echo "smoke test ok - all containers up, https answers with $code"
-          if dpkg -s crowdsec >/dev/null 2>&1; then
+          crowdsec_package_status="$(dpkg-query -W -f='${Status}' crowdsec 2>/dev/null || true)"
+          if [[ "$crowdsec_package_status" == "install ok installed" ]]; then
             echo "conflicting native CrowdSec package is still installed" >&2
             exit 1
           fi

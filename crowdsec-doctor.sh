@@ -30,6 +30,9 @@ hdr() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 ok() { printf ' \033[32m[ok]\033[0m %s\n' "$*"; }
 bad() { printf ' \033[31m[FAIL]\033[0m %s\n' "$*"; }
 note() { printf '        %s\n' "$*"; }
+package_is_installed() {
+	[[ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null || true)" == "install ok installed" ]]
+}
 
 fail=0
 
@@ -52,7 +55,7 @@ case $code in
 esac
 
 hdr "2b. is the port the container's? (native crowdsec steals it)"
-if dpkg -s crowdsec >/dev/null 2>&1; then
+if package_is_installed crowdsec; then
 	bad "native crowdsec package is installed on the host"
 	note "its daemon binds 127.0.0.1:8080 before the container can, and"
 	note "then rejects every key the container's cscli ever registered"

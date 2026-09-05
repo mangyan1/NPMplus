@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.23"
+SCRIPT_VERSION="1.24"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -42,6 +42,13 @@ confirm() { # confirm "question" "y|n" -> 0 if yes
 	local answer
 	answer=$(ask "$1" "$2")
 	[[ "$answer" == "y" || "$answer" == "Y" || "$answer" == "yes" ]]
+}
+
+package_is_installed() { # package_is_installed PACKAGE
+	# `dpkg -s` also succeeds for packages that were removed but left their
+	# configuration files behind. Only this exact state means a daemon/package
+	# is still installed and capable of conflicting with the container stack.
+	[[ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null || true)" == "install ok installed" ]]
 }
 
 [[ $EUID -eq 0 ]] || { echo "run as root (sudo)" >&2; exit 1; }
@@ -110,7 +117,7 @@ run_crowdsec_doctor() (
 	esac
 
 	doctor_header "2b. is the port the container's? (native crowdsec steals it)"
-	if dpkg -s crowdsec >/dev/null 2>&1; then
+	if package_is_installed crowdsec; then
 		doctor_bad "native crowdsec package is installed on the host"
 		doctor_note "its daemon binds 127.0.0.1:8080 before the container can, and"
 		doctor_note "then rejects every key the container's cscli ever registered"
@@ -939,14 +946,14 @@ register_machine() { # $1 = name -> machine password on stdout (empty on failure
 # debian-packaged firewall bouncer pulls it in via Recommends. sweep it
 # whenever we manage the dockerized stack
 remove_native_crowdsec() {
-	dpkg -s crowdsec >/dev/null 2>&1 || return 0
+	package_is_installed crowdsec || return 0
 	say "removing a native crowdsec (its daemon steals the container's lapi port)"
 	systemctl disable --now crowdsec >/dev/null 2>&1 || true
 	if ! apt-get remove -y -qq crowdsec; then
 		echo "failed to remove the conflicting native CrowdSec package" >&2
 		return 1
 	fi
-	if dpkg -s crowdsec >/dev/null 2>&1; then
+	if package_is_installed crowdsec; then
 		echo "native CrowdSec is still installed; refusing to start a conflicting container" >&2
 		return 1
 	fi
@@ -1257,7 +1264,8 @@ docker ps --format '{{.Names}}' 2>/dev/null | grep -qx crowdsec || { log "crowds
 
 # a native crowdsec steals the lapi port and no heal can help while its
 # daemon runs - name the cause instead of failing keys forever
-dpkg -s crowdsec >/dev/null 2>&1 && log "WARNING: native crowdsec package installed - if keys keep failing, run crowdsec-doctor.sh"
+[[ "$(dpkg-query -W -f='${Status}' crowdsec 2>/dev/null || true)" == "install ok installed" ]] && \
+	log "WARNING: native crowdsec package installed - if keys keep failing, run crowdsec-doctor.sh"
 
 bouncer_key_works() { # $1 = bouncer key -> 0 when the lapi accepts it
 	[[ -n "$1" ]] || return 1

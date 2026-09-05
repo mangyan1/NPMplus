@@ -109,6 +109,8 @@ Setup script v1.22 adds a terminal-aware maintenance menu to the same standalone
 
 Setup script v1.23 creates the Anubis honeypot log before deployment and mounts its directory read-only outside NPMplus's `/data` bind. This prevents Docker from replacing the expected file with conflicting directory placeholders. Updates repair the affected release-candidate layout before health checks, retain a root-only Compose backup, and restart Anubis when its log path needed repair.
 
+Setup script v1.24 distinguishes an installed native CrowdSec daemon from Debian's harmless `config-files` record. A successful `apt remove crowdsec` can leave that record behind; it no longer blocks the Dockerized CrowdSec service or causes an interrupted fresh installation.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.
