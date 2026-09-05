@@ -151,6 +151,7 @@ jobs:
           fi
           if [[ "${{ matrix.name }}" == "defaults" ]]; then
             sudo grep -qx 'log_mode: file' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+            sudo grep -qx 'daemonize: true' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
             sudo crowdsec-firewall-bouncer \
               -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t
             sudo test -x /usr/local/sbin/npmplus-wait-for-crowdsec-lapi
@@ -309,7 +310,7 @@ jobs:
           sudo sed -i '/^appsec_configs:$/ { N; s|^appsec_configs:\n  - |appsec_config: |; }' /opt/crowdsec/conf/acquis.d/npmplus.yaml
           # Reproduce RC3's firewall-bouncer config and boot unit: its missing
           # log_mode failed validation, and it had no LAPI readiness ordering.
-          sudo sed -i '/^log_mode:/d;/^log_dir:/d;/^log_level:/d;/^log_compression:/d;/^log_max_size:/d;/^log_max_backups:/d;/^log_max_age:/d' \
+          sudo sed -i '/^pid_dir:/d;/^daemonize:/d;/^log_mode:/d;/^log_dir:/d;/^log_level:/d;/^log_compression:/d;/^log_max_size:/d;/^log_max_backups:/d;/^log_max_age:/d' \
             /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
           sudo rm -f /usr/local/sbin/npmplus-wait-for-crowdsec-lapi \
             /etc/systemd/system/crowdsec-firewall-bouncer.service.d/10-npmplus-container-lapi.conf
@@ -342,6 +343,7 @@ jobs:
             exit 1
           fi
           sudo grep -qx 'log_mode: file' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+          sudo grep -qx 'daemonize: true' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
           sudo crowdsec-firewall-bouncer \
             -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t
           sudo test -x /usr/local/sbin/npmplus-wait-for-crowdsec-lapi
