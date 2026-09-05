@@ -137,9 +137,9 @@ NPMplus does not install missing Certbot DNS plugins into the running applicatio
 
 ## Container vulnerability monitoring
 
-GitHub Actions scans the published NPMplus, Caddy, CrowdSec, and latest stable Anubis images every day with a digest-pinned Trivy release. Pull requests also scan the final Linux/AMD64 NPMplus image and any changed Caddy image before they can pass. Each scheduled run keeps a readable report and SARIF result for 30 days and publishes the SARIF data to GitHub code scanning.
+GitHub Actions scans the published NPMplus, Caddy, CrowdSec, and latest stable Anubis images every day with a digest-pinned Trivy release. Pull requests also scan the final Linux/AMD64 NPMplus image and any changed Caddy image before they can pass. Each scheduled run keeps a readable report and SARIF result for 30 days. GitHub code scanning receives only actionable SARIF findings.
 
-New high or critical findings fail the relevant job. The only exceptions are reviewed findings in upstream CrowdSec and Anubis binaries that this fork cannot safely patch without replacing those projects. Those exceptions are kept in separate files under `.trivy/`, explain the deployed mitigation, and expire after 30 days so they must be reviewed again. The scanner still includes suppressed findings in the readable report. NPMplus does not disable CrowdSec, AppSec, the firewall bouncer, or Anubis to make a scan pass.
+New high or critical findings fail the relevant job. The only exceptions are reviewed findings in upstream CrowdSec and Anubis binaries that this fork cannot safely patch without replacing those projects. Those exceptions are kept in separate files under `.trivy/`, explain the deployed mitigation, and expire after 30 days so they must be reviewed again. The downloadable, human-readable report includes suppressed findings for auditing, while the Security tab omits those accepted findings. NPMplus does not disable CrowdSec, AppSec, the firewall bouncer, or Anubis to make a scan pass.
 
 The optional Caddy image is built from the stable Caddy release with a patched Go toolchain and explicit patched versions of the affected Go modules. Its Alpine packages are upgraded during the build. The main NPMplus image removes pip after the pinned Certbot installation, so the packaging code previously reported by container scanners is absent from the runtime image.
 

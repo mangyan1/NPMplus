@@ -66,9 +66,13 @@ jobs:
           IGNORE_FILE: ${{ matrix.ignore }}
           REPORT_NAME: ${{ matrix.name }}
         run: |
-          ignore_args=()
+          report_ignore_args=()
+          sarif_ignore_args=()
           if [ -n "$IGNORE_FILE" ]; then
-            ignore_args=(--ignorefile "/workspace/$IGNORE_FILE" --show-suppressed)
+            # Keep accepted findings in the audit artifact, but publish only
+            # actionable findings to GitHub code scanning.
+            report_ignore_args=(--ignorefile "/workspace/$IGNORE_FILE" --show-suppressed)
+            sarif_ignore_args=(--ignorefile "/workspace/$IGNORE_FILE")
           fi
           docker run --rm \
             -v "$PWD:/workspace" \
@@ -78,7 +82,7 @@ jobs:
             --severity HIGH,CRITICAL \
             --format table \
             --output "/workspace/trivy-$REPORT_NAME.txt" \
-            "${ignore_args[@]}" \
+            "${report_ignore_args[@]}" \
             "$IMAGE"
           docker run --rm \
             -v "$PWD:/workspace" \
@@ -88,6 +92,7 @@ jobs:
             --severity HIGH,CRITICAL \
             --format sarif \
             --output "/workspace/trivy-$REPORT_NAME.sarif" \
+            "${sarif_ignore_args[@]}" \
             "$IMAGE"
       - name: Enforce reviewed baseline
         env:
