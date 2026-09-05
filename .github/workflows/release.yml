@@ -1,0 +1,270 @@
+name: Publish NPMplus Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      channel: ${{ steps.release.outputs.channel }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate release tag and notes
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-mangyan1\.(rc\.)?[0-9]+$'
+          test -s ".github/release-notes/$RELEASE_TAG.md"
+          release_base="${RELEASE_TAG#v}"
+          release_base="${release_base%%-mangyan1.*}"
+          test "$(tr -d '\r\n' < .version)" = "$release_base"
+          if printf '%s' "$RELEASE_TAG" | grep -q '\.rc\.'; then
+            channel=rc
+            prerelease=true
+          else
+            channel=latest
+            prerelease=false
+          fi
+          {
+            echo "channel=$channel"
+            echo "prerelease=$prerelease"
+            echo "tag=$RELEASE_TAG"
+            echo "version=${RELEASE_TAG#v}"
+          } >> "$GITHUB_OUTPUT"
+
+  build-amd64:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+      - name: Set application version
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          jq --arg v "$RELEASE_VERSION" '.version = $v' frontend/package.json > frontend/package.json.tmp
+          mv frontend/package.json.tmp frontend/package.json
+          jq --arg v "$RELEASE_VERSION" '.version = $v' backend/package.json > backend/package.json.tmp
+          mv backend/package.json.tmp backend/package.json
+      - name: Build and push AMD64 candidate
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/npmplus:release-${{ github.sha }}-amd64
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
+          build-args: |
+            FLAGS=-march=x86-64-v2 -mtune=generic -fcf-protection=full
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=release-amd64
+          cache-to: type=gha,mode=max,scope=release-amd64
+
+  build-arm64:
+    needs: validate
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+      - name: Set application version
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          jq --arg v "$RELEASE_VERSION" '.version = $v' frontend/package.json > frontend/package.json.tmp
+          mv frontend/package.json.tmp frontend/package.json
+          jq --arg v "$RELEASE_VERSION" '.version = $v' backend/package.json > backend/package.json.tmp
+          mv backend/package.json.tmp backend/package.json
+      - name: Build and push ARM64 candidate
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/npmplus:release-${{ github.sha }}-arm64
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
+          build-args: |
+            FLAGS=-mbranch-protection=standard
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=release-arm64
+          cache-to: type=gha,mode=max,scope=release-arm64
+
+  scan:
+    needs: [validate, build-amd64, build-arm64]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            platform: linux/amd64
+          - architecture: arm64
+            platform: linux/arm64
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+      - name: Scan exact release candidate
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/workspace" \
+            "$TRIVY_IMAGE" image \
+            --platform "$PLATFORM" \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            --format table \
+            --output "/workspace/trivy-release-$ARCHITECTURE.txt" \
+            --exit-code 1 \
+            "ghcr.io/${{ github.repository_owner }}/npmplus:release-${{ github.sha }}-$ARCHITECTURE"
+      - name: Upload vulnerability report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trivy-release-${{ matrix.architecture }}
+          path: trivy-release-${{ matrix.architecture }}.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-image:
+    needs: [validate, scan]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+      image: ${{ steps.publish.outputs.image }}
+    steps:
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+      - name: Publish multi-architecture image
+        id: publish
+        env:
+          CHANNEL: ${{ needs.validate.outputs.channel }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -eu
+          image="ghcr.io/${{ github.repository_owner }}/npmplus"
+          docker buildx imagetools create \
+            --tag "$image:$RELEASE_TAG" \
+            --tag "$image:$CHANNEL" \
+            --tag "$image:release-${{ github.sha }}" \
+            "$image:release-${{ github.sha }}-amd64" \
+            "$image:release-${{ github.sha }}-arm64"
+          digest="$(docker buildx imagetools inspect "$image:$RELEASE_TAG" --format '{{json .Manifest}}' | jq -er '.digest')"
+          test -n "$digest"
+          {
+            echo "digest=$digest"
+            echo "image=$image:$RELEASE_TAG"
+          } >> "$GITHUB_OUTPUT"
+
+  publish-release:
+    needs: [validate, publish-image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build pinned installer asset
+        env:
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -eu
+          mkdir -p release-assets
+          cp setup-npmplus.sh release-assets/setup-npmplus.sh
+          if [ "$PRERELEASE" = true ]; then
+            self_url="https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG/setup-npmplus.sh"
+          else
+            self_url="https://github.com/${{ github.repository }}/releases/latest/download/setup-npmplus.sh"
+          fi
+          sed -i "s|^SELF_URL=.*|SELF_URL=\"$self_url\"|" release-assets/setup-npmplus.sh
+          sed -i "s|^NPMPLUS_IMAGE_CHANNEL=.*|NPMPLUS_IMAGE_CHANNEL=\"ghcr.io/${{ github.repository_owner }}/npmplus:$RELEASE_TAG\"|" release-assets/setup-npmplus.sh
+          grep -Fx "SELF_URL=\"$self_url\"" release-assets/setup-npmplus.sh
+          grep -Fx "NPMPLUS_IMAGE_CHANNEL=\"ghcr.io/${{ github.repository_owner }}/npmplus:$RELEASE_TAG\"" release-assets/setup-npmplus.sh
+          bash -n release-assets/setup-npmplus.sh
+          (cd release-assets && sha256sum setup-npmplus.sh > setup-npmplus.sh.sha256)
+      - name: Publish GitHub prerelease or release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_DIGEST: ${{ needs.publish-image.outputs.digest }}
+          IMAGE_NAME: ${{ needs.publish-image.outputs.image }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -eu
+          cp ".github/release-notes/$RELEASE_TAG.md" release-body.md
+          {
+            echo
+            echo "### Verified container image"
+            echo
+            echo "\`$IMAGE_NAME@$IMAGE_DIGEST\`"
+          } >> release-body.md
+          release_args=()
+          if [ "$PRERELEASE" = true ]; then
+            release_args+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" \
+            --verify-tag \
+            --title "NPMplus $RELEASE_TAG" \
+            --notes-file release-body.md \
+            "${release_args[@]}" \
+            release-assets/setup-npmplus.sh \
+            release-assets/setup-npmplus.sh.sha256

@@ -5,3 +5,5 @@ CLAUDE.md
 .cursor/
 .cursorrules
 .github/copilot-instructions.md
+.playwright-cli/
+.playwright-mcp/

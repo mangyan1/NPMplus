@@ -4,7 +4,9 @@ NPMplus gives you a web dashboard for publishing services securely through Nginx
 
 It is based on [ZoeyVid/NPMplus](https://github.com/ZoeyVid/NPMplus) and the original [Nginx Proxy Manager](https://github.com/NginxProxyManager/nginx-proxy-manager).
 
-[Project website](https://mangyan1.github.io/NPMplus/) · [Install NPMplus](#new-installation) · [See the main features](#main-features)
+[Project website](https://mangyan1.github.io/NPMplus/) · [Install NPMplus](#new-installation) · [See the main features](#main-features) · [Releases](https://github.com/mangyan1/NPMplus/releases)
+
+The command below follows the rolling `develop` channel. Testable release candidates are published on the [Releases page](https://github.com/mangyan1/NPMplus/releases) with a version-pinned installer and SHA-256 checksum.
 
 ## Before you start
 
@@ -138,6 +140,12 @@ When requesting help, share the command output but remove public IP addresses, d
 - Optional GoAccess statistics and API documentation in the dashboard.
 
 See [Changes in this fork](ADVANCED.md#changes-in-this-fork-vs-zoeyvidnpmplus) for the detailed security and feature list.
+
+## Releases and security reports
+
+Release tags build AMD64 and ARM64 images in this repository, attach build provenance and an SBOM, and scan the exact images before publishing them to GitHub Container Registry. A release candidate updates only the `rc` channel; only a final release can update `latest`.
+
+Each GitHub release includes a version-pinned `setup-npmplus.sh` and its SHA-256 checksum. Release candidates are for test systems first. Report suspected vulnerabilities privately by following [the security policy](SECURITY.md), not through a public issue.
 
 ## Existing NPMplus or Nginx Proxy Manager installation
 

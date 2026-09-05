@@ -4,6 +4,8 @@
 
 The installer intentionally does not deploy PHP-FPM. This fork treats NPMplus as a reverse proxy and security boundary; every proxied application remains responsible for its own runtime, application files, updates, and health checks. Keep the `PHP83`, `PHP84`, and `PHP85` options disabled unless you deliberately leave this recommended deployment model and accept the advanced compatibility tradeoffs documented in `ADVANCED.md`.
 
+The raw `develop` installer below follows the rolling development channel. GitHub releases provide a version-pinned installer and checksum for controlled test deployments. A release candidate uses the `rc` image channel and does not move the stable `latest` channel.
+
 ## Fresh installation
 
 Download the script from this fork, review it, and run it:
