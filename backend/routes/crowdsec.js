@@ -25,6 +25,7 @@ const LAPI_KEY_FILE = process.env.CROWDSEC_LAPI_KEY_FILE || "/data/crowdsec/lapi
 const LAPI_URL = process.env.CROWDSEC_LAPI_URL || "http://127.0.0.1:8080";
 const LAPI_MACHINE_ID = process.env.CROWDSEC_LAPI_MACHINE_ID || "npmplus-ui";
 const LAPI_MACHINE_KEY_FILE = process.env.CROWDSEC_LAPI_MACHINE_KEY_FILE || "/data/crowdsec/lapi-ui-machine.key";
+const CROWDSEC_BOUNCER_CONFIG_FILE = process.env.CROWDSEC_BOUNCER_CONFIG_FILE || "/data/crowdsec/crowdsec.conf";
 const LAPI_DECISION_LIMIT = 200;
 const LAPI_PAGE_MAX_ITEMS = 500;
 const LOCAL_DECISION_ORIGINS = ["crowdsec", "cscli", "cscli-import"];
@@ -104,6 +105,31 @@ const readCrowdsecJson = async (response, maxBytes = LAPI_MAX_RESPONSE_BYTES) =>
 	} catch (err) {
 		debug(logger, `CrowdSec response was invalid: ${err}`);
 		throw publicError("crowdsec.invalid-response", 502);
+	}
+};
+
+// The dashboard needs to distinguish a quiet WAF from a disabled one. Read only
+// non-secret switches from the local bouncer config; never return its API key or
+// endpoint. A missing legacy file degrades to unknown instead of failing metrics.
+const readAppsecConfiguration = async () => {
+	try {
+		const text = (await readFile(CROWDSEC_BOUNCER_CONFIG_FILE, "utf8")).slice(0, 64 * 1024);
+		const setting = (name) => text.match(new RegExp(`^${name}=(.*)$`, "m"))?.[1]?.trim() ?? "";
+		const url = setting("APPSEC_URL");
+		const failureAction = setting("APPSEC_FAILURE_ACTION");
+		const unreadableBody = setting("APPSEC_DROP_UNREADABLE_BODY");
+		return {
+			appsec_configured: Boolean(url),
+			appsec_failure_action: ["deny", "passthrough"].includes(failureAction) ? failureAction : null,
+			appsec_drop_unreadable_body: ["true", "false"].includes(unreadableBody) ? unreadableBody === "true" : null,
+		};
+	} catch (err) {
+		debug(logger, `CrowdSec bouncer config unavailable for AppSec status: ${err}`);
+		return {
+			appsec_configured: null,
+			appsec_failure_action: null,
+			appsec_drop_unreadable_body: null,
+		};
 	}
 };
 
@@ -808,8 +834,13 @@ router
 				res.status(403).send({ error: { message: "access.denied" } });
 				return;
 			}
+			const appsecConfiguration = await readAppsecConfiguration();
 			if (!CROWDSEC_METRICS_URL) {
-				res.status(200).send({ available: false, error: "crowdsec.metrics-unconfigured" });
+				res.status(200).send({
+					available: false,
+					error: "crowdsec.metrics-unconfigured",
+					...appsecConfiguration,
+				});
 				return;
 			}
 			try {
@@ -820,10 +851,18 @@ router
 				);
 				if (!response.ok) throw new Error(`HTTP ${response.status}`);
 				const text = await readBoundedText(response, METRICS_MAX_RESPONSE_BYTES);
-				res.status(200).send({ available: true, ...summarizeCrowdsecMetrics(parsePrometheusText(text)) });
+				res.status(200).send({
+					available: true,
+					...appsecConfiguration,
+					...summarizeCrowdsecMetrics(parsePrometheusText(text)),
+				});
 			} catch (err) {
 				debug(logger, `CrowdSec metrics unavailable: ${err}`);
-				res.status(200).send({ available: false, error: "crowdsec.metrics-unavailable" });
+				res.status(200).send({
+					available: false,
+					error: "crowdsec.metrics-unavailable",
+					...appsecConfiguration,
+				});
 			}
 		} catch (err) {
 			next(err);

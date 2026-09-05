@@ -126,6 +126,10 @@ export interface CrowdsecAlertPage {
 export interface CrowdsecMetrics {
 	available: boolean;
 	error?: string;
+	appsecConfigured?: boolean | null;
+	appsecFailureAction?: "deny" | "passthrough" | null;
+	appsecDropUnreadableBody?: boolean | null;
+	appsecMetricsPresent?: boolean;
 	activeDecisions?: number;
 	localActiveDecisions?: number | null;
 	communityActiveDecisions?: number | null;
@@ -133,6 +137,8 @@ export interface CrowdsecMetrics {
 	alerts?: number;
 	appsecRequests?: number;
 	appsecBlocked?: number;
+	appsecPassed?: number;
+	appsecBlockRate?: number | null;
 	bouncerRequests?: number;
 	machineRequests?: number;
 	parserHits?: number;

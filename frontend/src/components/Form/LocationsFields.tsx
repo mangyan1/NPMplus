@@ -403,19 +403,26 @@ export function LocationsFields({ initialValues, name = "locations" }: Props) {
 									<div>
 										<label className="row" htmlFor={`npmplusCrowdsecAppsec-${item.uiKey}`}>
 											<span className="col">
-												<T id="host.flags.disable-crowdsec-appsec" />
+												<T id="host.flags.crowdsec-appsec" />
+												<span className="form-hint">
+													<T id="host.flags.crowdsec-appsec-help" />
+												</span>
 											</span>
 											<span className="col-auto">
 												<span className="form-check form-check-single form-switch">
 													<input
 														id={`npmplusCrowdsecAppsec-${item.uiKey}`}
 														className={cn("form-check-input", {
-															"bg-lime": item.npmplusCrowdsecAppsec,
+															"bg-lime": !item.npmplusCrowdsecAppsec,
 														})}
 														type="checkbox"
-														checked={item.npmplusCrowdsecAppsec}
+														checked={!item.npmplusCrowdsecAppsec}
 														onChange={(e) =>
-															handleChange(idx, "npmplusCrowdsecAppsec", e.target.checked)
+															handleChange(
+																idx,
+																"npmplusCrowdsecAppsec",
+																!e.target.checked,
+															)
 														}
 													/>
 												</span>

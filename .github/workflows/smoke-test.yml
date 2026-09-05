@@ -176,17 +176,23 @@ jobs:
           sudo chown -R 0:0 /opt/anubis-data
           sudo docker restart npmplus-anubis
           sudo docker exec npmplus sh -c ': > /etc/resolv.conf'
+          # Reproduce an existing install that opted out of AppSec. The explicit
+          # update flag must survive delegation through the safe-update wrapper.
+          sudo sed -i 's|^APPSEC_URL=.*|APPSEC_URL=|' /opt/npmplus/crowdsec/crowdsec.conf
+          sudo sed -i '/^---$/,$d' /opt/crowdsec/conf/acquis.d/npmplus.yaml
           if sudo docker exec npmplus awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' /etc/resolv.conf; then
             echo "resolver failure fixture is not empty" >&2
             exit 1
           fi
-          sudo bash setup-npmplus.sh --update
+          sudo bash setup-npmplus.sh --update --enable-appsec
           sudo test -x /opt/npmplus/setup-npmplus.sh
           sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=3' /usr/local/bin/npmplus-safe-update
           test "$(stat -c '%u:%g' /opt/anubis-data)" = '1000:1000'
           sudo docker exec npmplus awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' /etc/resolv.conf
           test "$(sudo docker inspect --format '{{.Image}}' npmplus)" != \
             "$(sudo docker inspect --format '{{.Image}}' npmplus-caddy)"
+          sudo grep -q '^APPSEC_URL=http://crowdsec:7422$' /opt/npmplus/crowdsec/crowdsec.conf
+          sudo grep -q '^source: appsec$' /opt/crowdsec/conf/acquis.d/npmplus.yaml
       - name: uninstall preserves operator-owned Docker configuration
         if: matrix.name == 'alternate'
         run: |

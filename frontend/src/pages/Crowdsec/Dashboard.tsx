@@ -1,4 +1,13 @@
-import { IconBell, IconBellOff, IconChevronLeft, IconChevronRight, IconRefresh, IconSearch } from "@tabler/icons-react";
+import {
+	IconBell,
+	IconBellOff,
+	IconChevronLeft,
+	IconChevronRight,
+	IconRefresh,
+	IconSearch,
+	IconShield,
+	IconShieldOff,
+} from "@tabler/icons-react";
 import {
 	type CSSProperties,
 	Fragment,
@@ -31,7 +40,7 @@ import { WORLD_LAND_PATH } from "./WorldMapLand";
 
 const NOTIFICATIONS_KEY = "npmplus.crowdsec.browser-notifications";
 const LAST_SIGNAL_KEY = "npmplus.crowdsec.last-signal";
-type DashboardTab = "overview" | "activity" | "bans" | "system";
+type DashboardTab = "overview" | "activity" | "bans" | "waf" | "system";
 type KpiKind = "attacks" | "local" | "community" | "anubis";
 type BrowserNotificationState = NotificationPermission | "unsupported";
 
@@ -332,6 +341,16 @@ const honeypotStatus = (anubis?: AnubisStatus): StatusPresentation => {
 		return { label: "crowdsec.anubis.honeypot-unavailable", tone: "red" };
 	if (anubis.honeypot.status === "waiting") return { label: "crowdsec.anubis.honeypot-waiting", tone: "orange" };
 	return { label: "crowdsec.anubis.honeypot-ready", tone: "green" };
+};
+
+const appsecStatus = (metrics?: CrowdsecMetrics): StatusPresentation => {
+	if (!metrics) return { label: "crowdsec.appsec.status-checking", tone: "orange" };
+	if (metrics.appsecConfigured === false) return { label: "crowdsec.appsec.status-disabled", tone: "secondary" };
+	if (metrics.appsecConfigured === true && !metrics.available)
+		return { label: "crowdsec.appsec.status-monitoring-unavailable", tone: "orange" };
+	if (metrics.appsecMetricsPresent) return { label: "crowdsec.appsec.status-active", tone: "green" };
+	if (metrics.appsecConfigured === true) return { label: "crowdsec.appsec.status-ready", tone: "orange" };
+	return { label: "crowdsec.appsec.status-unknown", tone: "secondary" };
 };
 
 const KpiDetailsModal = ({
@@ -717,6 +736,181 @@ const AttackHistory = ({
 	);
 };
 
+const WafMonitoring = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetrics> }) => {
+	if (!metrics.data) return <MetricsSkeleton />;
+
+	const status = appsecStatus(metrics.data);
+	const requests = metrics.data.appsecRequests ?? 0;
+	const blocked = metrics.data.appsecBlocked ?? 0;
+	const passed = metrics.data.appsecPassed ?? Math.max(0, requests - blocked);
+	const blockRate = metrics.data.appsecBlockRate ?? (requests > 0 ? blocked / requests : null);
+	const blockedWidth = blockRate === null ? 0 : Math.min(100, Math.max(0, blockRate * 100));
+	const passedWidth = requests > 0 ? 100 - blockedWidth : 0;
+	const summary = intl.formatMessage({ id: "crowdsec.appsec.traffic-summary" }, { requests, blocked, passed });
+
+	return (
+		<div className={styles.wafPanel}>
+			<section className={`${styles.wafHero} card`} aria-labelledby="appsec-monitor-title">
+				<div className="card-body d-flex align-items-start gap-3">
+					<div className={`${styles.wafIcon} bg-${status.tone}-lt text-${status.tone}`} aria-hidden="true">
+						{metrics.data.appsecConfigured === false ? (
+							<IconShieldOff size={28} />
+						) : (
+							<IconShield size={28} />
+						)}
+					</div>
+					<div className="flex-fill min-w-0">
+						<div className="d-flex flex-wrap align-items-center gap-2 mb-1">
+							<h3 id="appsec-monitor-title" className="mb-0">
+								<T id="crowdsec.appsec.title" />
+							</h3>
+							<span className={`badge bg-${status.tone}-lt`}>
+								<T id={status.label} />
+							</span>
+						</div>
+						<p className="text-secondary mb-0">
+							<T id="crowdsec.appsec.description" />
+						</p>
+					</div>
+				</div>
+			</section>
+
+			{metrics.data.appsecConfigured === false && (
+				<Alert variant="warning">
+					<T id="crowdsec.appsec.enable-help" /> <code>--update --enable-appsec</code>
+				</Alert>
+			)}
+			{!metrics.data.available && (
+				<Alert variant="secondary">
+					<T id={metrics.data.error || "crowdsec.metrics-unavailable"} />
+				</Alert>
+			)}
+
+			<div className="row g-3">
+				<Metric
+					label={<T id="crowdsec.appsec.inspected" />}
+					value={metrics.data.available ? requests : "\u2014"}
+					description={<T id="crowdsec.appsec.since-restart" />}
+				/>
+				<Metric
+					label={<T id="crowdsec.appsec.passed" />}
+					value={metrics.data.available ? passed : "\u2014"}
+					tone="green"
+					description={<T id="crowdsec.appsec.passed-help" />}
+				/>
+				<Metric
+					label={<T id="crowdsec.appsec.blocked" />}
+					value={metrics.data.available ? blocked : "\u2014"}
+					tone="red"
+					description={<T id="crowdsec.appsec.blocked-help" />}
+				/>
+				<Metric
+					label={<T id="crowdsec.appsec.block-rate" />}
+					value={blockRate === null ? "\u2014" : `${(blockRate * 100).toFixed(1)}%`}
+					tone="orange"
+					description={<T id="crowdsec.appsec.block-rate-help" />}
+				/>
+			</div>
+
+			<section className="card" aria-labelledby="appsec-traffic-title">
+				<div className="card-body">
+					<div className="d-flex justify-content-between align-items-baseline gap-3 mb-3">
+						<h3 id="appsec-traffic-title" className="mb-0">
+							<T id="crowdsec.appsec.traffic" />
+						</h3>
+						<span className="text-secondary small">
+							<T id="crowdsec.appsec.since-restart" />
+						</span>
+					</div>
+					<div className={styles.wafTraffic} role="img" aria-label={summary}>
+						{requests > 0 ? (
+							<>
+								<span className={styles.wafPassed} style={{ width: `${passedWidth}%` }} />
+								<span className={styles.wafBlocked} style={{ width: `${blockedWidth}%` }} />
+							</>
+						) : (
+							<span className={styles.wafEmpty} />
+						)}
+					</div>
+					<div className="d-flex flex-wrap gap-3 mt-2 small">
+						<span className={styles.wafLegendItem}>
+							<span className={`${styles.wafLegendDot} bg-green`} />
+							<T id="crowdsec.appsec.passed" />: {intl.formatNumber(passed)}
+						</span>
+						<span className={styles.wafLegendItem}>
+							<span className={`${styles.wafLegendDot} bg-red`} />
+							<T id="crowdsec.appsec.blocked" />: {intl.formatNumber(blocked)}
+						</span>
+					</div>
+				</div>
+			</section>
+
+			<div className="row g-3">
+				<div className="col-lg-6">
+					<section className="card h-100" aria-labelledby="appsec-policy-title">
+						<div className="card-body">
+							<h3 id="appsec-policy-title">
+								<T id="crowdsec.appsec.policy" />
+							</h3>
+							<div className={styles.wafPolicyList}>
+								<div>
+									<strong>
+										<T id="crowdsec.appsec.rules" />
+									</strong>
+									<span className="text-secondary">
+										<T id="crowdsec.appsec.rules-default" />
+									</span>
+								</div>
+								<div>
+									<strong>
+										<T id="crowdsec.appsec.failure-mode" />
+									</strong>
+									<span className="text-secondary">
+										<T
+											id={`crowdsec.appsec.failure-${metrics.data.appsecFailureAction || "unknown"}`}
+										/>
+									</span>
+								</div>
+								<div>
+									<strong>
+										<T id="crowdsec.appsec.unreadable-body" />
+									</strong>
+									<span className="text-secondary">
+										<T
+											id={
+												metrics.data.appsecDropUnreadableBody === true
+													? "crowdsec.appsec.unreadable-drop"
+													: metrics.data.appsecDropUnreadableBody === false
+														? "crowdsec.appsec.unreadable-allow"
+														: "crowdsec.appsec.unknown"
+											}
+										/>
+									</span>
+								</div>
+							</div>
+						</div>
+					</section>
+				</div>
+				<div className="col-lg-6">
+					<section className="card h-100" aria-labelledby="appsec-compatibility-title">
+						<div className="card-body">
+							<h3 id="appsec-compatibility-title">
+								<T id="crowdsec.appsec.compatibility" />
+							</h3>
+							<p className="text-secondary">
+								<T id="crowdsec.appsec.compatibility-help" />
+							</p>
+							<Alert variant="info" className="mb-0">
+								<T id="crowdsec.appsec.host-toggle-help" />
+							</Alert>
+						</div>
+					</section>
+				</div>
+			</div>
+		</div>
+	);
+};
+
 const SystemMetrics = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetrics> }) =>
 	!metrics.data ? (
 		<MetricsSkeleton />
@@ -730,12 +924,6 @@ const SystemMetrics = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetr
 				<T id="crowdsec.metrics.title" />
 			</h3>
 			<div className="row g-3">
-				<Metric label={<T id="crowdsec.metrics.appsec-requests" />} value={metrics.data.appsecRequests ?? 0} />
-				<Metric
-					label={<T id="crowdsec.metrics.appsec-blocked" />}
-					value={metrics.data.appsecBlocked ?? 0}
-					tone="red"
-				/>
 				<Metric
 					label={<T id="crowdsec.metrics.bouncer-requests" />}
 					value={metrics.data.bouncerRequests ?? 0}
@@ -840,6 +1028,7 @@ const CrowdsecDashboard = () => {
 		{ id: "overview", label: "crowdsec.tabs.overview" },
 		{ id: "activity", label: "crowdsec.tabs.activity" },
 		{ id: "bans", label: "crowdsec.tabs.bans" },
+		{ id: "waf", label: "crowdsec.tabs.waf" },
 		{ id: "system", label: "crowdsec.tabs.system" },
 	];
 	const serviceStatus =
@@ -856,6 +1045,7 @@ const CrowdsecDashboard = () => {
 			: insights.isRefetchError
 				? { label: "crowdsec.status.stale", tone: "orange" }
 				: { label: "crowdsec.status.up", tone: "green" };
+	const wafStatus = appsecStatus(metrics.data);
 	const notificationLabel =
 		notificationPermission === "unsupported"
 			? "crowdsec.notifications.unsupported"
@@ -898,6 +1088,9 @@ const CrowdsecDashboard = () => {
 								<div className="d-flex flex-wrap align-items-center gap-2 mt-1">
 									<span className={`badge bg-${crowdsecStatus.tone}-lt`}>
 										<T id={crowdsecStatus.label} />
+									</span>
+									<span className={`badge bg-${wafStatus.tone}-lt`}>
+										<T id={wafStatus.label} />
 									</span>
 									<span className={`badge bg-${serviceStatus.tone}-lt`}>
 										<T id={serviceStatus.label} />
@@ -1134,6 +1327,7 @@ const CrowdsecDashboard = () => {
 						/>
 					)}
 					{tab === "bans" && <ActiveBans />}
+					{tab === "waf" && <WafMonitoring metrics={metrics} />}
 					{tab === "system" && <SystemMetrics metrics={metrics} />}
 				</div>
 			</div>

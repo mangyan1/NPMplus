@@ -27,7 +27,7 @@ wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/dev
 sudo bash setup-npmplus.sh
 ```
 
-Answer the questions shown by the installer. If you are unsure, press Enter to accept the displayed default.
+Answer the questions shown by the installer. If you are unsure, press Enter to accept the displayed default. The recommended defaults enable CrowdSec, CrowdSec AppSec web-application protection, the firewall bouncer, and Anubis. AppSec can still be turned off for an individual proxy host if an application has a confirmed compatibility problem.
 
 For the easiest first login, provide an administrator email and password when the installer asks. The password is handled as a temporary secret and is not saved in `compose.yaml`.
 
@@ -72,6 +72,13 @@ sudo bash setup-npmplus.sh --update
 
 The updater creates a snapshot, installs the new images, checks the complete stack, and automatically restores the previous working version if the update fails.
 
+An ordinary update keeps your existing AppSec choice. To enable AppSec on an existing installer-managed server, use this one-time command instead:
+
+```bash
+wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
+sudo bash setup-npmplus.sh --update --enable-appsec
+```
+
 ## Check that it is running
 
 ```bash
@@ -85,7 +92,7 @@ The installer enables Docker and configures the containers to return automatical
 ## What the installer handles
 
 - NPMplus and its web dashboard.
-- Optional CrowdSec and AppSec protection.
+- Recommended CrowdSec, AppSec WAF, and firewall-bouncer protection, with AppSec compatibility exceptions per proxy host.
 - Optional Anubis bot protection and honeypot bans.
 - Optional Caddy HTTP-to-HTTPS redirect service.
 - Safe monthly updates with automatic rollback.
@@ -115,6 +122,7 @@ When requesting help, share the command output but remove public IP addresses, d
 - Proxy hosts, redirects, streams, access lists, certificates, and a modern admin dashboard.
 - HTTP/3, modern TLS, mTLS, OIDC, `auth_request`, load balancing, and multiple access lists.
 - Integrated CrowdSec and Anubis security dashboard with a compact overview, clickable KPI details, a lightweight animated geographic attack map, accessible activity charts, explicit CrowdSec/Anubis/honeypot status, paginated local alert and ban views, engine metrics, optional browser alerts while the page is open, manual bans, exact-decision unban, and audit logging. The map renders at most 12 aggregated origins with inline SVG and CSS—no WebGL, map-tile downloads, or browser-side IP lookup. CrowdSec community blocklists remain fully enforced but are summarized as metrics instead of flooding the page with remote IP entries.
+- Dedicated AppSec WAF monitoring shows whether protection is configured, inspected/passed/blocked request totals, block rate, and the active compatibility policy.
 - Security headers, strict browser policy, protected session cookies, rate limits, and safer defaults.
 - Support for Let's Encrypt and other ACME certificate authorities.
 - Optional GoAccess statistics and API documentation in the dashboard.

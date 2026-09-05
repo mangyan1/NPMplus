@@ -114,6 +114,7 @@ const user = {
 };
 
 let failures = 0;
+let appsecConfigured = true;
 const check = (name, ok, detail = "") => {
 	if (!ok) failures++;
 	console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : ` -> ${detail}`}`);
@@ -212,6 +213,10 @@ const api = async (route) => {
 	if (apiPath === "/crowdsec/metrics")
 		return respond({
 			available: true,
+			appsecConfigured,
+			appsecFailureAction: "passthrough",
+			appsecDropUnreadableBody: false,
+			appsecMetricsPresent: appsecConfigured,
 			activeDecisions: 42103,
 			localActiveDecisions: 3,
 			communityActiveDecisions: 42100,
@@ -224,6 +229,8 @@ const api = async (route) => {
 			alerts: 7,
 			appsecRequests: 12,
 			appsecBlocked: 3,
+			appsecPassed: 9,
+			appsecBlockRate: 0.25,
 			bouncerRequests: 20,
 			machineRequests: 8,
 			parserHits: 10,
@@ -253,18 +260,24 @@ const api = async (route) => {
 
 const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM || undefined });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-page.on(
-	"console",
-	(message) => message.type() === "error" && console.log(`  [console error] ${message.text().slice(0, 160)}`),
-);
-page.on("pageerror", (error) => console.log(`  [page error] ${String(error).slice(0, 160)}`));
+const browserErrors = [];
+page.on("console", (message) => {
+	if (message.type() !== "error") return;
+	browserErrors.push(message.text());
+	console.log(`  [console error] ${message.text().slice(0, 160)}`);
+});
+page.on("pageerror", (error) => {
+	browserErrors.push(String(error));
+	console.log(`  [page error] ${String(error).slice(0, 160)}`);
+});
 await page.route("**/api/**", (route) => api(route));
 await page.addInitScript((expires) => localStorage.setItem("auth", expires), iso(86400 * 1000));
 await page.goto("http://localhost:5173/crowdsec", { waitUntil: "networkidle" });
 
 await page.getByRole("heading", { name: "Security overview" }).waitFor({ timeout: 15000 });
 check("security dashboard has one sticky toolbar", (await page.locator(".sticky-top").count()) === 1);
-check("dashboard exposes four focused tabs", (await page.getByRole("tab").count()) === 4);
+check("dashboard exposes five focused tabs", (await page.getByRole("tab").count()) === 5);
+check("dashboard header reports AppSec state", (await page.getByText("AppSec active", { exact: true }).count()) >= 1);
 check(
 	"honeypot status distinguishes log readiness from active bans",
 	(await page.getByText("Honeypot logging ready", { exact: true }).count()) >= 1,
@@ -363,16 +376,44 @@ check(
 );
 await anubisModal.getByRole("button", { name: /close/i }).first().click();
 
+await page.getByRole("tab", { name: "WAF" }).click();
+const wafText = await page.locator("#crowdsec-tab-panel").innerText();
+check(
+	"WAF tab shows protection state and traffic outcomes",
+	/web application firewall/i.test(wafText) &&
+		/inspected requests/i.test(wafText) &&
+		wafText.includes("25.0%") &&
+		/false positives and compatibility/i.test(wafText),
+	wafText.slice(0, 500),
+);
+check(
+	"WAF traffic visualization has an accessible summary",
+	(await page.getByRole("img", { name: /AppSec inspected 12 requests/i }).count()) === 1,
+);
+await page.screenshot({ path: ".smoke/ui-security-dashboard-waf.png", fullPage: true });
+
+appsecConfigured = false;
+await page.reload({ waitUntil: "networkidle" });
+await page.getByRole("tab", { name: "WAF" }).click();
+const disabledWafText = await page.locator("#crowdsec-tab-panel").innerText();
+check(
+	"WAF tab distinguishes globally disabled AppSec",
+	/appsec disabled/i.test(disabledWafText) && disabledWafText.includes("--update --enable-appsec"),
+	disabledWafText.slice(0, 300),
+);
+appsecConfigured = true;
+await page.reload({ waitUntil: "networkidle" });
+
 await page.getByRole("tab", { name: "System" }).click();
 const systemText = await page.locator("body").innerText();
 check(
 	"technical metrics moved to the System tab",
-	/appsec requests/i.test(systemText) && systemText.includes("500.0 ms"),
+	/parser success/i.test(systemText) && systemText.includes("500.0 ms"),
 	systemText.slice(0, 300),
 );
 check(
 	"system metrics are informational cards rather than misleading buttons",
-	(await page.getByRole("button", { name: /AppSec requests/i }).count()) === 0,
+	(await page.getByRole("button", { name: /Parser success/i }).count()) === 0,
 );
 
 await page.getByRole("tab", { name: "Attack activity" }).click();
@@ -395,10 +436,17 @@ const narrowTabLayout = await page.getByRole("tab").evaluateAll((tabs) => {
 	};
 });
 check(
-	"all four tabs form two unclipped rows on mobile",
-	narrowTabLayout.rows === 2 && narrowTabLayout.allVisible,
+	"all five tabs form three unclipped rows on mobile",
+	narrowTabLayout.rows === 3 && narrowTabLayout.allVisible,
 	JSON.stringify(narrowTabLayout),
 );
+await page.getByRole("tab", { name: "WAF" }).click();
+check(
+	"WAF monitoring fits a narrow viewport",
+	await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+);
+await page.screenshot({ path: ".smoke/ui-security-dashboard-waf-mobile.png", fullPage: true });
+await page.getByRole("tab", { name: "Overview" }).click();
 await page.screenshot({ path: ".smoke/ui-security-dashboard-mobile.png", fullPage: true });
 await page.setViewportSize({ width: 320, height: 720 });
 check(
@@ -418,6 +466,19 @@ check(
 		.evaluate((button) => button.scrollWidth <= button.clientWidth),
 );
 await page.screenshot({ path: ".smoke/ui-security-dashboard-320.png", fullPage: true });
+
+await page.setViewportSize({ width: 1280, height: 900 });
+await page.goto("http://localhost:5173/nginx/proxy", { waitUntil: "networkidle" });
+await page.getByRole("heading", { name: "Proxy Hosts", exact: true }).waitFor();
+await page.getByRole("button", { name: "Add Proxy Host" }).click();
+const proxyModal = page.getByRole("dialog");
+const appsecToggle = proxyModal.getByRole("checkbox", { name: /CrowdSec AppSec protection/i });
+check("new proxy hosts enable their AppSec preference by default", await appsecToggle.isChecked());
+await page.screenshot({ path: ".smoke/ui-proxy-host-appsec-toggle.png", fullPage: true });
+await appsecToggle.uncheck();
+check("proxy-host AppSec protection can be turned off", !(await appsecToggle.isChecked()));
+await proxyModal.getByRole("button", { name: /close/i }).click();
+check("changed dashboard and host flows have no browser errors", browserErrors.length === 0, browserErrors.join(" | "));
 console.log(failures === 0 ? "ALL UI SMOKE CHECKS PASSED" : `${failures} FAILURES`);
 await browser.close();
 process.exit(failures === 0 ? 0 : 1);

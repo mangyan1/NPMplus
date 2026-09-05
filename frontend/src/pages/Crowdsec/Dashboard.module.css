@@ -12,7 +12,7 @@
 
 .tabs {
 	display: grid;
-	grid-template-columns: repeat(4, max-content);
+	grid-template-columns: repeat(5, max-content);
 	gap: 0.25rem;
 	min-width: 0;
 	margin: 0 !important;
@@ -205,6 +205,84 @@ button.metricCard:focus-visible {
 	text-align: left;
 }
 
+.wafPanel {
+	display: grid;
+	gap: 1rem;
+}
+
+.wafHero {
+	border-color: color-mix(in srgb, var(--tblr-green) 35%, var(--tblr-border-color));
+}
+
+.wafIcon {
+	display: grid;
+	flex: 0 0 3rem;
+	width: 3rem;
+	height: 3rem;
+	place-items: center;
+	border-radius: var(--tblr-border-radius);
+}
+
+.wafTraffic {
+	display: flex;
+	width: 100%;
+	height: 0.75rem;
+	overflow: hidden;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--tblr-secondary) 14%, transparent);
+}
+
+.wafPassed,
+.wafBlocked,
+.wafEmpty {
+	display: block;
+	height: 100%;
+}
+
+.wafPassed {
+	background: var(--tblr-green);
+}
+
+.wafBlocked {
+	background: var(--tblr-red);
+}
+
+.wafEmpty {
+	width: 100%;
+	background: color-mix(in srgb, var(--tblr-secondary) 18%, transparent);
+}
+
+.wafLegendItem {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+}
+
+.wafLegendDot {
+	display: inline-block;
+	width: 0.5rem;
+	height: 0.5rem;
+	border-radius: 50%;
+}
+
+.wafPolicyList {
+	display: grid;
+	gap: 0.875rem;
+}
+
+.wafPolicyList > div {
+	display: grid;
+	grid-template-columns: minmax(9rem, 0.45fr) minmax(0, 1fr);
+	gap: 1rem;
+	padding-bottom: 0.875rem;
+	border-bottom: 1px solid var(--tblr-border-color);
+}
+
+.wafPolicyList > div:last-child {
+	padding-bottom: 0;
+	border-bottom: 0;
+}
+
 @keyframes meteor-arrival {
 	0%,
 	72% {
@@ -284,6 +362,11 @@ button.metricCard:focus-visible {
 
 	.locationLegend {
 		grid-template-columns: 1fr;
+	}
+
+	.wafPolicyList > div {
+		grid-template-columns: 1fr;
+		gap: 0.25rem;
 	}
 }
 

@@ -10,12 +10,14 @@ import { fileURLToPath } from "node:url";
 const SMOKEDIR = path.dirname(fileURLToPath(import.meta.url));
 const KEY_FILE = path.join(SMOKEDIR, "lapi-ui.key");
 const MACHINE_FILE = path.join(SMOKEDIR, "lapi-ui-machine.key");
+const BOUNCER_CONFIG_FILE = path.join(SMOKEDIR, "crowdsec-bouncer.conf");
 const COOKIE_SECRET = "smoke-cookie-secret";
 
 process.env.CROWDSEC_LAPI_URL = "http://127.0.0.1:18080";
 process.env.CROWDSEC_METRICS_URL = "http://127.0.0.1:18082/metrics";
 process.env.CROWDSEC_LAPI_KEY_FILE = KEY_FILE;
 process.env.CROWDSEC_LAPI_MACHINE_KEY_FILE = MACHINE_FILE;
+process.env.CROWDSEC_BOUNCER_CONFIG_FILE = BOUNCER_CONFIG_FILE;
 process.env.AUTH_REQUEST_ANUBIS_UPSTREAM = "http://127.0.0.1:18081";
 process.env.CROWDSEC_LAPI_TIMEOUT_MS = "2000";
 process.env.ANUBIS_HONEYPOT_LOG_FILE = `${SMOKEDIR}/honeypot.addrs`;
@@ -23,6 +25,10 @@ process.env.ANUBIS_HONEYPOT_LOG_FILE = `${SMOKEDIR}/honeypot.addrs`;
 // env must be set before the router (and the fake lapi) read anything at import time
 await writeFile(KEY_FILE, "smoke-bouncer-key-1234567890abcdef");
 await writeFile(MACHINE_FILE, "smoke-machine-password-123456");
+await writeFile(
+	BOUNCER_CONFIG_FILE,
+	"APPSEC_URL=http://crowdsec:7422\nAPPSEC_FAILURE_ACTION=passthrough\nAPPSEC_DROP_UNREADABLE_BODY=false\n",
+);
 
 const fakeLapi = await import("./fake-lapi.mjs");
 await (await import("./fake-anubis.mjs")).start();
@@ -318,7 +324,14 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 		"GET metrics -> summarized private Prometheus data",
 		metrics.status === 200 &&
 			metricsBody.available === true &&
+			metricsBody.appsec_configured === true &&
+			metricsBody.appsec_failure_action === "passthrough" &&
+			metricsBody.appsec_drop_unreadable_body === false &&
+			metricsBody.appsec_metrics_present === true &&
 			metricsBody.appsec_blocked === 3 &&
+			metricsBody.appsec_passed === 9 &&
+			metricsBody.appsec_block_rate === 0.25 &&
+			!JSON.stringify(metricsBody).includes("crowdsec:7422") &&
 			metricsBody.local_active_decisions === 3 &&
 			metricsBody.community_active_decisions === 42100 &&
 			metricsBody.parser_success_rate === 0.9 &&

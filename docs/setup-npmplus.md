@@ -14,11 +14,11 @@ less setup-npmplus.sh
 sudo bash setup-npmplus.sh
 ```
 
-The interactive prompts cover the initial administrator, CrowdSec and AppSec, the firewall bouncer, Anubis, Caddy, Cloudflare trust, UFW, and unattended security upgrades. Existing UFW rules are preserved unless a reset is explicitly approved. Before a reset, the script detects the active SSH port and asks for confirmation so it does not assume port 22.
+The interactive prompts cover the initial administrator, CrowdSec and AppSec, the firewall bouncer, Anubis, Caddy, Cloudflare trust, UFW, and unattended security upgrades. The recommended defaults enable CrowdSec, AppSec, the firewall bouncer, and Anubis. Existing UFW rules are preserved unless a reset is explicitly approved. Before a reset, the script detects the active SSH port and asks for confirmation so it does not assume port 22.
 
 The generated Compose file is `/opt/npmplus/compose.yaml`. Registry channels are pulled and resolved to immutable `sha256` image digests before that file is written. An explicitly supplied initial administrator password is passed through a root-only, one-time Docker secret under `/run`, never embedded in Compose. After the API confirms that the account exists, the script truncates and removes the secret and removes its Compose references. Setup script v1.16 also scrubs legacy inline `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` entries before an update snapshot is created.
 
-Fresh v1.18 installations use a Compose bridge network, publish the admin listener on host loopback only, and run NPMplus services under UID/GID 1000 after privileged startup. Choose host networking only when an existing proxy target depends on host `127.0.0.1`; with bridge networking, use `host.docker.internal` for a service running directly on the Docker host. Port 81 should remain loopback-only and be reached through an SSH tunnel when remote administration is needed.
+Fresh v1.19 installations use a Compose bridge network, publish the admin listener on host loopback only, and run NPMplus services under UID/GID 1000 after privileged startup. Choose host networking only when an existing proxy target depends on host `127.0.0.1`; with bridge networking, use `host.docker.internal` for a service running directly on the Docker host. Port 81 should remain loopback-only and be reached through an SSH tunnel when remote administration is needed.
 
 If you leave the initial administrator email and password empty, the browser setup wizard is protected by a generated 256-bit one-time token. Retrieve it locally after startup:
 
@@ -53,13 +53,22 @@ less setup-npmplus.sh
 sudo bash setup-npmplus.sh --update
 ```
 
+An ordinary update preserves the existing AppSec setting. To opt an existing installer-managed CrowdSec deployment into AppSec, run the safe update once with the explicit flag:
+
+```bash
+wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
+sudo bash setup-npmplus.sh --update --enable-appsec
+```
+
+The opt-in is included in the same snapshot, health-check, and automatic-rollback transaction as a normal update. It does not disable CrowdSec decisions or the firewall bouncer.
+
 Manual and scheduled updates use the same maintenance lock and safe-update wrapper. The update refuses to use an unhealthy or incomplete running stack as its rollback baseline. It then:
 
 1. Saves the Compose file, exact running image IDs, setup/helper scripts, and cron definitions.
 2. Creates an online SQLite backup before a new application image can perform migrations.
 3. Briefly stops CrowdSec and Anubis while copying their database-backed state, then restarts them. An exit trap attempts to restart a service if this snapshot is interrupted.
 4. Resolves the configured image channels to immutable digests, refreshes optional Anubis policy and CrowdSec credentials, and redeploys. A transient Docker port-release failure during container replacement is retried once before rollback.
-5. Checks every configured container, Docker health status, both NPMplus API listeners, and CrowdSec LAPI credentials.
+5. Checks every configured container, Docker health status, both NPMplus API listeners, CrowdSec LAPI credentials, and the AppSec listener when AppSec is configured.
 6. Restores the saved application database, security-service state, host helpers, Compose file, and exact image IDs if the checks fail twice.
 
 When upgrading an installation made by setup script v1.4 or earlier, v1.6 and later automatically replace the legacy updater before delegation and repair the installed setup script's execute permission. This avoids the legacy `/opt/npmplus/setup-npmplus.sh: Permission denied` failure and wrapper recursion.
@@ -84,24 +93,29 @@ Setup script v1.16 removes one-time administrator bootstrap credentials from gen
 
 Setup script v1.18 keeps fresh-install defaults on bridge networking, loopback-only administration, and UID/GID 1000. It also protects browser-based initial setup with a one-time token. `--update` deliberately preserves an existing installation's network layout and UID/GID to avoid silently breaking proxy targets or filesystem ownership; recreate or edit the stack during a maintenance window if you want to adopt those isolation changes.
 
+Setup script v1.19 makes CrowdSec AppSec the recommended default for fresh installations and adds the explicit `--update --enable-appsec` opt-in for existing installer-managed deployments. Ordinary updates continue to preserve the operator's existing choice. The safe updater now verifies the private AppSec listener whenever AppSec is configured.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.
 
 ## Security dashboard
 
-Open **CrowdSec** in the NPMplus navigation to see the combined CrowdSec and Anubis security dashboard. Its four tabs separate the daily operator view from deeper details:
+Open **CrowdSec** in the NPMplus navigation to see the combined CrowdSec, AppSec, and Anubis security dashboard. Its five tabs separate the daily operator view from deeper details:
 
 - **Overview** shows attack activity, local bans, community protection, and honeypot bans as clickable summary cards. Its geographic map animates up to 12 aggregated attack origins with one inline SVG and CSS-only effects; it does not load map tiles, use WebGL, perform browser-side IP lookup, or render the full CAPI address list. The pulses are a visual sequence, not inferred network routes.
 - **Attack activity** shows alerts observed by this instance, with search, filters, sanitized event details, and one-click manual-ban prefilling.
 - **Active bans** lists only local detections, manual bans, and imported local decisions. It loads 25 rows at a time and provides audited unban actions.
-- **System** contains AppSec, parser, bouncer, machine, and LAPI performance metrics.
+- **WAF** reports whether AppSec is configured, request totals since CrowdSec started, passed and blocked traffic, block rate, and the non-secret failure/body-handling policy.
+- **System** contains parser, bouncer, machine, and LAPI performance metrics.
 
 CrowdSec CAPI and blocklist decisions remain downloaded and enforced by the configured remediation components. The dashboard summarizes them as a community-protection count instead of loading the large remote IP list. It intentionally does not offer ordinary unban actions for those remote entries because CrowdSec can download them again. Clicking the community card shows the aggregate origin counts without exposing the individual addresses.
 
-The header reports CrowdSec availability, Anubis reachability, and honeypot-log readiness separately. Honeypot readiness means the Anubis trap log is readable; it does not claim that an attacker has already been caught. The honeypot KPI reports active bans created from those catches, and its detail modal shows recent captured addresses. If CrowdSec decision counts are temporarily unavailable, the Anubis and honeypot checks still report independently.
+The header reports CrowdSec availability, AppSec state, Anubis reachability, and honeypot-log readiness separately. Honeypot readiness means the Anubis trap log is readable; it does not claim that an attacker has already been caught. The honeypot KPI reports active bans created from those catches, and its detail modal shows recent captured addresses. If CrowdSec decision counts are temporarily unavailable, the AppSec configuration, Anubis, and honeypot checks still report independently where possible.
 
-The activity chart includes readable time labels and a screen-reader summary. Dashboard tabs support the standard arrow, Home, and End keys; they use one row on wider screens and a scrollbar-free two-by-two grid on phones. Long identifiers wrap safely, reduced-motion preferences disable map animation, and loading, empty, stale, partial-failure, and blocked-notification states are shown explicitly. The toolbar remains visible while its content scrolls, and the normal NPMplus page header and footer remain part of the page.
+Each proxy host and custom location has a positive **CrowdSec AppSec protection** switch. It is on by default and takes effect when AppSec is configured globally. Turn it off only for the affected host or location when a legitimate upload, API, or webhook has a confirmed compatibility problem. This exception disables WAF inspection for that route only; CrowdSec IP decisions and firewall-bouncer enforcement remain active.
+
+The activity chart includes readable time labels and a screen-reader summary. Dashboard tabs support the standard arrow, Home, and End keys; they use one row on wider screens and a scrollbar-free two-column wrapping grid on phones. Long identifiers wrap safely, reduced-motion preferences disable map animation, and loading, empty, stale, partial-failure, and blocked-notification states are shown explicitly. The toolbar remains visible while its content scrolls, and the normal NPMplus page header and footer remain part of the page.
 
 ## Secrets and certificate plugins
 

@@ -454,7 +454,10 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 														<div>
 															<label className="row" htmlFor="npmplusCrowdsecAppsec">
 																<span className="col">
-																	<T id="host.flags.disable-crowdsec-appsec" />
+																	<T id="host.flags.crowdsec-appsec" />
+																	<span className="form-hint">
+																		<T id="host.flags.crowdsec-appsec-help" />
+																	</span>
 																</span>
 																<span className="col-auto">
 																	<Field name="npmplusCrowdsecAppsec" type="checkbox">
@@ -464,12 +467,16 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 																					{...field}
 																					id="npmplusCrowdsecAppsec"
 																					className={cn("form-check-input", {
-																						"bg-lime": field.checked,
+																						"bg-lime": !field.checked,
 																					})}
 																					type="checkbox"
+																					checked={!field.checked}
 																					onChange={(e) => {
-																						field.onChange(e);
-																						if (!e.target.checked)
+																						form.setFieldValue(
+																							"npmplusCrowdsecAppsec",
+																							!e.target.checked,
+																						);
+																						if (e.target.checked)
 																							form.setFieldValue(
 																								"npmplusProxyRequestBuffering",
 																								false,

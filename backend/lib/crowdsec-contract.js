@@ -243,6 +243,8 @@ const summarizeCrowdsecMetrics = (samples) => {
 	const parserOk = sum("cs_parser_hits_ok_total");
 	const lapiCount = sum("cs_lapi_request_duration_seconds_count");
 	const parsingCount = sum("cs_parsing_time_seconds_count");
+	const appsecRequests = sum("cs_appsec_reqs_total");
+	const appsecBlocked = sum("cs_appsec_block_total");
 	const activeDecisionSamples = samples.filter((sample) => sample.name === "cs_active_decisions");
 	const hasDecisionOriginLabels = activeDecisionSamples.some((sample) => optionalString(sample.labels?.origin));
 	const decisionOriginCounts = new Map();
@@ -263,8 +265,11 @@ const summarizeCrowdsecMetrics = (samples) => {
 			.map(([name, count]) => ({ name, count }))
 			.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
 		alerts: sum("cs_alerts"),
-		appsec_requests: sum("cs_appsec_reqs_total"),
-		appsec_blocked: sum("cs_appsec_block_total"),
+		appsec_metrics_present: samples.some((sample) => sample.name.startsWith("cs_appsec_")),
+		appsec_requests: appsecRequests,
+		appsec_blocked: appsecBlocked,
+		appsec_passed: Math.max(0, appsecRequests - appsecBlocked),
+		appsec_block_rate: ratio(appsecBlocked, appsecRequests),
 		bouncer_requests: sum("cs_lapi_bouncer_requests_total"),
 		machine_requests: sum("cs_lapi_machine_requests_total"),
 		parser_hits: parserHits,

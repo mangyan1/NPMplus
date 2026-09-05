@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.18"
+SCRIPT_VERSION="1.19"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -45,6 +45,18 @@ confirm() { # confirm "question" "y|n" -> 0 if yes
 }
 
 [[ $EUID -eq 0 ]] || { echo "run as root (sudo)" >&2; exit 1; }
+
+# Existing installs preserve their AppSec choice during an ordinary update.
+# Operators can opt in explicitly without rebuilding the stack interactively;
+# the flag is carried through the transactional safe-update wrapper via env.
+ENABLE_APPSEC_ON_UPDATE="${NPMPLUS_ENABLE_APPSEC_ON_UPDATE:-false}"
+if [[ "${2:-}" == "--enable-appsec" ]]; then
+	[[ "${1:-}" == "--update" ]] || { echo "--enable-appsec must be used with --update" >&2; exit 1; }
+	ENABLE_APPSEC_ON_UPDATE="true"
+elif [[ -n "${2:-}" && "${1:-}" == "--update" ]]; then
+	echo "unknown update option: ${2}" >&2
+	exit 1
+fi
 
 # --uninstall is deliberately handled before dependency installation, network
 # access and docker service changes. Removing an installation must never install
@@ -261,6 +273,45 @@ ensure_crowdsec_metrics_port() {
 	fi
 	chmod --reference="$COMPOSE_FILE" "$tmp"
 	mv "$tmp" "$COMPOSE_FILE"
+}
+
+enable_crowdsec_appsec() {
+	local acquisition="$CROWDSEC_DIR/conf/acquis.d/npmplus.yaml"
+	local bouncer_conf="$DATA_DIR/crowdsec/crowdsec.conf"
+	local api_url appsec_url
+
+	[[ -s "$acquisition" ]] || { echo "CrowdSec acquisition config is missing: $acquisition" >&2; return 1; }
+	[[ -s "$bouncer_conf" ]] || { echo "CrowdSec bouncer config is missing: $bouncer_conf" >&2; return 1; }
+
+	# Keep the log acquisition document untouched and append the installer-owned
+	# AppSec listener only when it is not already present.
+	if ! grep -qE '^source:[[:space:]]*appsec[[:space:]]*$' "$acquisition"; then
+		printf '\n' >>"$acquisition"
+		cat >>"$acquisition" <<'EOF'
+---
+listen_addr: 0.0.0.0:7422
+appsec_config: crowdsecurity/appsec-default
+name: appsec
+source: appsec
+labels:
+  type: appsec
+EOF
+	fi
+
+	# Reuse the bouncer's known-good LAPI host so this works for both bridge and
+	# host networking without guessing from the Compose layout.
+	api_url=$(sed -n 's/^API_URL=//p' "$bouncer_conf" | head -1)
+	case "$api_url" in
+		http://*:8080) appsec_url="${api_url%:8080}:7422" ;;
+		*) echo "cannot derive AppSec endpoint from CrowdSec API_URL" >&2; return 1 ;;
+	esac
+	if grep -q '^APPSEC_URL=' "$bouncer_conf"; then
+		sed -i "s|^APPSEC_URL=.*|APPSEC_URL=$appsec_url|" "$bouncer_conf"
+	else
+		printf 'APPSEC_URL=%s\n' "$appsec_url" >>"$bouncer_conf"
+	fi
+	chmod 600 "$bouncer_conf"
+	say "CrowdSec AppSec enabled (default high-confidence rules)"
 }
 
 # The official Anubis image is non-root. A root-owned bind mount lets it read
@@ -503,6 +554,11 @@ curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -qE
 	log "pre-update check failed: admin API is not healthy"
 	exit 1
 }
+if grep -q '^APPSEC_URL=.' /opt/npmplus/crowdsec/crowdsec.conf 2>/dev/null && \
+	! timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/7422'; then
+	log "pre-update check failed: AppSec is configured but its listener is not healthy"
+	exit 1
+fi
 
 # Take an online sqlite backup before a new image can run migrations. Refuse to
 # call an update safe when the rollback database cannot be created.
@@ -591,6 +647,9 @@ check() {
 	done < <(docker compose -f "$COMPOSE_FILE" config --services)
 	curl -fkSs --connect-timeout 5 --max-time 10 -o /dev/null https://127.0.0.1/ || return 1
 	curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"' || return 1
+	if grep -q '^APPSEC_URL=.' /opt/npmplus/crowdsec/crowdsec.conf 2>/dev/null; then
+		timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/7422' || return 1
+	fi
 	if docker compose -f "$COMPOSE_FILE" config --services | grep -qx crowdsec; then
 		docker exec crowdsec cscli lapi status >/dev/null 2>&1 || return 1
 		key=$(cat /opt/npmplus/crowdsec/lapi-ui.key 2>/dev/null || true)
@@ -866,6 +925,10 @@ if [[ "${1:-}" == "--update" ]]; then
 		echo "no existing install at $COMPOSE_FILE - run without --update first" >&2
 		exit 1
 	fi
+	if [[ "$ENABLE_APPSEC_ON_UPDATE" == "true" ]] && ! grep -q "container_name: crowdsec" "$COMPOSE_FILE"; then
+		echo "cannot enable AppSec because this installation has no CrowdSec service" >&2
+		exit 1
+	fi
 	# Initial credentials are one-time bootstrap inputs. Remove legacy inline
 	# values before the safe-update wrapper snapshots compose.yaml, so neither
 	# the live file nor the new last-good backup retains the password.
@@ -916,7 +979,8 @@ if [[ "${1:-}" == "--update" ]]; then
 		fi
 		candidate=$(readlink -f "$0")
 		chmod 700 "$candidate"
-		NPMPLUS_SETUP_CANDIDATE="$candidate" exec /usr/local/bin/npmplus-safe-update
+		NPMPLUS_ENABLE_APPSEC_ON_UPDATE="$ENABLE_APPSEC_ON_UPDATE" \
+			NPMPLUS_SETUP_CANDIDATE="$candidate" exec /usr/local/bin/npmplus-safe-update
 	fi
 	say "updating"
 	# Resolve update channels once, then persist immutable digests in compose.
@@ -927,6 +991,7 @@ if [[ "${1:-}" == "--update" ]]; then
 		CROWDSEC_IMAGE=$(pin_image "$CROWDSEC_IMAGE_CHANNEL")
 		set_compose_service_image crowdsec "$CROWDSEC_IMAGE"
 		ensure_crowdsec_metrics_port
+		[[ "$ENABLE_APPSEC_ON_UPDATE" != "true" ]] || enable_crowdsec_appsec
 	fi
 	if grep -q "container_name: npmplus-caddy" "$COMPOSE_FILE"; then
 		CADDY_IMAGE=$(pin_image "$CADDY_IMAGE_CHANNEL")
@@ -1019,7 +1084,7 @@ USE_CROWDSEC="n"; confirm "Enable crowdsec?" "y" && USE_CROWDSEC="y"
 USE_APPSEC="n"
 USE_FWBOUNCER="n"
 if [[ "$USE_CROWDSEC" == "y" ]]; then
-	confirm "Enable crowdsec appsec (WAF-style body inspection)?" "n" && USE_APPSEC="y"
+	confirm "Enable crowdsec appsec (recommended WAF protection; disable per host if incompatible)?" "y" && USE_APPSEC="y"
 	confirm "Enable the crowdsec firewall bouncer (kernel-level IP bans via nftables)?" "y" && USE_FWBOUNCER="y"
 fi
 USE_ANUBIS="n"; confirm "Enable anubis (anti-bot proof-of-work)?" "y" && USE_ANUBIS="y"
@@ -1381,7 +1446,8 @@ ALWAYS_SEND_TO_APPSEC=false
 APPSEC_DROP_UNREADABLE_BODY=false
 SSL_VERIFY=true
 EOF
-			# appsec is opt-in only, see issue #3804: empty unless explicitly chosen
+			# The recommended prompt default enables AppSec. Keep the URL empty only
+			# when the operator explicitly declines it for this installation.
 			[[ "$USE_APPSEC" == "y" ]] && sed -i "s|^APPSEC_URL=.*|APPSEC_URL=http://$CROWDSEC_SERVICE_HOST:7422|" "$CONF"
 			chmod 600 "$CONF"
 		else
@@ -1543,6 +1609,9 @@ echo "safe-update: monthly cron, snapshots then updates, auto-reverts on failure
 echo "backup: daily cron, 7 kept in /var/backups/npmplus (log: /var/log/npmplus-backup.log)"
 if [[ "$USE_ANUBIS" == "y" ]]; then
 	echo "anubis: enable per-host via the Auth Request selection in the host form"
+fi
+if [[ "$USE_APPSEC" == "y" ]]; then
+	echo "appsec: WAF protection is on; use each proxy host's AppSec protection switch for compatibility exceptions"
 fi
 if [[ "$USE_CROWDSEC" == "y" && -z "${KEY:-}" ]]; then
 	echo "crowdsec: finish manually, see messages above"
