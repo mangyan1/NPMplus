@@ -52,7 +52,7 @@ jobs:
                 - NET_BIND_SERVICE
                 - SETGID
               security_opt:
-                - no-new-privileges:true
+                - no-new-privileges=true
               volumes:
                 - /tmp/npmplus-ci-data:/data
                 - /tmp/npmplus-ci-resolv.conf:/etc/resolv.conf
@@ -62,6 +62,26 @@ jobs:
                 DISABLE_IPV6: "true"
           EOF
           docker compose -p npmplus-ci -f /tmp/compose-ci.yaml up -d
+      - name: prove a LAN socket can bind before DHCP assigns its address
+        run: |
+          sudo tee /etc/systemd/system/npmplus-freebind-ci.socket >/dev/null <<'UNIT'
+          [Unit]
+          Wants=network-online.target
+          After=network-online.target
+
+          [Socket]
+          ListenStream=192.0.2.1:18081
+          FreeBind=true
+
+          [Install]
+          WantedBy=sockets.target
+          UNIT
+          sudo systemctl daemon-reload
+          sudo systemctl start npmplus-freebind-ci.socket
+          sudo systemctl is-active --quiet npmplus-freebind-ci.socket
+          sudo systemctl stop npmplus-freebind-ci.socket
+          sudo rm -f /etc/systemd/system/npmplus-freebind-ci.socket
+          sudo systemctl daemon-reload
       # two scenarios that broke real installs: (1) the container starts while
       # the host's dns is not up yet ("no name servers defined"), which must be
       # survived by the entrypoint's nginx retry instead of sleeping forever,

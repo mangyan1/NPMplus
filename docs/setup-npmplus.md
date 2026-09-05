@@ -4,15 +4,15 @@
 
 The installer intentionally does not deploy PHP-FPM. This fork treats NPMplus as a reverse proxy and security boundary; every proxied application remains responsible for its own runtime, application files, updates, and health checks. Keep the `PHP83`, `PHP84`, and `PHP85` options disabled unless you deliberately leave this recommended deployment model and accept the advanced compatibility tradeoffs documented in `ADVANCED.md`.
 
-GitHub releases provide a version-pinned installer and checksum for controlled deployments. The current `v2.15.1-mangyan1.rc.3` build is a release candidate for test systems; no stable fork release has been published yet. A release candidate uses the `rc` image channel and does not move the stable `latest` channel. The raw `develop` installer remains available to advanced testers who intentionally want a rolling build.
+GitHub releases provide a version-pinned installer and checksum for controlled deployments. The current `v2.15.1-mangyan1.rc.4` build is a release candidate for test systems; no stable fork release has been published yet. A release candidate uses the `rc` image channel and does not move the stable `latest` channel. The raw `develop` installer remains available to advanced testers who intentionally want a rolling build.
 
 ## Fresh installation
 
 Download the current release-candidate script and checksum, verify them, review the script, and run it on a test server:
 
 ```bash
-wget -O setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.3/setup-npmplus.sh
-wget -O setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.3/setup-npmplus.sh.sha256
+wget -O setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.4/setup-npmplus.sh
+wget -O setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.4/setup-npmplus.sh.sha256
 sha256sum -c setup-npmplus.sh.sha256
 less setup-npmplus.sh
 sudo bash setup-npmplus.sh
@@ -122,6 +122,8 @@ Setup script v1.28 makes private-LAN administration a single yes/no choice. Afte
 Setup script v1.29 changes Anubis's global unmatched-request challenge to an explicit opt-in. Its default is now `n`, preserving API, licensing, webhook, monitoring, RSS, and other non-browser clients while leaving targeted Anubis protection available.
 
 Setup script v1.30 repairs containers left with the deleted `/run/npmplus-initial-admin-password` bind mount and prevents fresh installs from creating that reboot dependency. The CrowdSec doctor now reports the actual stopped-container error instead of mislabeling it as a missing bouncer key. The generated auxiliary services use read-only root filesystems, drop all Linux capabilities, enable `no-new-privileges`, and expose Docker health checks; Caddy receives only `NET_BIND_SERVICE`. Existing installer-managed services adopt these profiles through the transactional updater, while manually customized security profiles are preserved.
+
+Setup script v1.31 fixes two additional host-service failures found during an RC3 reboot test. The private-LAN port-81 socket can now bind before DHCP assigns the VM address and is ordered after `network-online.target`. Installer-managed firewall bouncers receive the complete logging configuration required by current packages, validate before startup, and wait for the containerized CrowdSec LAPI. Safe update repairs both RC3 configurations automatically. The reboot report and CrowdSec doctor now include these host services directly.
 
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 

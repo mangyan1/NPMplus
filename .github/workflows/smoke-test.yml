@@ -141,10 +141,22 @@ jobs:
           if [[ "${{ matrix.name }}" == "alternate" ]]; then
             sudo grep -Fq '127.0.0.1:81:81/tcp' /opt/npmplus/compose.yaml
             sudo systemctl is-active --quiet npmplus-admin-lan.socket
+            sudo grep -qx 'Wants=network-online.target' /etc/systemd/system/npmplus-admin-lan.socket
+            sudo grep -qx 'After=network-online.target' /etc/systemd/system/npmplus-admin-lan.socket
+            sudo grep -qx 'FreeBind=true' /etc/systemd/system/npmplus-admin-lan.socket
             lan_ip="$(ip -o -4 route get 1.1.1.1 | awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')"
             test -n "$lan_ip"
             curl -ksSf --max-time 10 "https://$lan_ip:81/api" >/dev/null
             sudo grep -Eq "allow from .+ to $lan_ip port 81 proto tcp comment npmplus-admin-lan" /tmp/npmplus-smoke-ufw.log
+          fi
+          if [[ "${{ matrix.name }}" == "defaults" ]]; then
+            sudo grep -qx 'log_mode: file' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+            sudo crowdsec-firewall-bouncer \
+              -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t
+            sudo test -x /usr/local/sbin/npmplus-wait-for-crowdsec-lapi
+            sudo grep -qx 'ExecStartPre=/usr/local/sbin/npmplus-wait-for-crowdsec-lapi' \
+              /etc/systemd/system/crowdsec-firewall-bouncer.service.d/10-npmplus-container-lapi.conf
+            sudo systemctl is-active --quiet crowdsec-firewall-bouncer
           fi
           if sudo docker logs npmplus-anubis 2>&1 | grep -q "can't init honeypot subsystem"; then
             echo "Anubis failed to initialize its honeypot" >&2
@@ -244,6 +256,10 @@ jobs:
             sudo docker compose -f /opt/npmplus/compose.yaml logs --no-color --tail 100
             exit 1
           fi
+          if [[ "${{ matrix.name }}" == "defaults" ]]; then
+            sudo systemctl restart crowdsec-firewall-bouncer
+            sudo systemctl is-active --quiet crowdsec-firewall-bouncer
+          fi
       - name: safe update snapshots state and passes strict health checks
         if: matrix.name == 'defaults'
         run: |
@@ -291,6 +307,14 @@ jobs:
           # Also reproduce the deprecated singular acquisition key from v1.19.
           sudo sed -i 's|^APPSEC_URL=.*|APPSEC_URL=|' /opt/npmplus/crowdsec/crowdsec.conf
           sudo sed -i '/^appsec_configs:$/ { N; s|^appsec_configs:\n  - |appsec_config: |; }' /opt/crowdsec/conf/acquis.d/npmplus.yaml
+          # Reproduce RC3's firewall-bouncer config and boot unit: its missing
+          # log_mode failed validation, and it had no LAPI readiness ordering.
+          sudo sed -i '/^log_mode:/d;/^log_dir:/d;/^log_level:/d;/^log_compression:/d;/^log_max_size:/d;/^log_max_backups:/d;/^log_max_age:/d' \
+            /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+          sudo rm -f /usr/local/sbin/npmplus-wait-for-crowdsec-lapi \
+            /etc/systemd/system/crowdsec-firewall-bouncer.service.d/10-npmplus-container-lapi.conf
+          sudo systemctl daemon-reload
+          sudo systemctl stop crowdsec-firewall-bouncer
           if sudo docker exec npmplus awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' /etc/resolv.conf; then
             echo "resolver failure fixture is not empty" >&2
             exit 1
@@ -317,6 +341,11 @@ jobs:
             echo "deprecated singular AppSec acquisition key was generated" >&2
             exit 1
           fi
+          sudo grep -qx 'log_mode: file' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+          sudo crowdsec-firewall-bouncer \
+            -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t
+          sudo test -x /usr/local/sbin/npmplus-wait-for-crowdsec-lapi
+          sudo systemctl is-active --quiet crowdsec-firewall-bouncer
       - name: failed update restores the complete last-good state
         if: matrix.name == 'defaults'
         run: |

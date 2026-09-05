@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.30"
+SCRIPT_VERSION="1.31"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -142,10 +142,13 @@ configure_admin_lan_proxy() { # configure_admin_lan_proxy PRIVATE_IP
 	write_root_file /etc/systemd/system/npmplus-admin-lan.socket 0644 <<EOF
 [Unit]
 Description=NPMplus private-LAN admin listener
+Wants=network-online.target
+After=network-online.target
 
 [Socket]
 ListenStream=$listen_ip:81
 NoDelay=true
+FreeBind=true
 
 [Install]
 WantedBy=sockets.target
@@ -153,7 +156,7 @@ EOF
 	write_root_file /etc/systemd/system/npmplus-admin-lan.service 0644 <<EOF
 [Unit]
 Description=NPMplus private-LAN admin relay
-Requires=npmplus-admin-lan.socket
+Requires=docker.service npmplus-admin-lan.socket
 After=docker.service npmplus-admin-lan.socket
 
 [Service]
@@ -166,6 +169,108 @@ NoNewPrivileges=true
 EOF
 	systemctl daemon-reload
 	systemctl enable --now npmplus-admin-lan.socket >/dev/null
+}
+
+repair_admin_lan_proxy() {
+	local socket_file=/etc/systemd/system/npmplus-admin-lan.socket listen_ip
+	[[ -s "$socket_file" ]] || return 0
+	listen_ip=$(sed -n 's/^ListenStream=\([0-9][0-9.]*\):81$/\1/p' "$socket_file" | head -1)
+	if ! private_ipv4 "$listen_ip"; then
+		echo "existing private-LAN admin listener has an invalid address; leaving it unchanged" >&2
+		return 1
+	fi
+	configure_admin_lan_proxy "$listen_ip"
+}
+
+install_firewall_bouncer_boot_gate() {
+	command -v systemctl >/dev/null || return 0
+	write_root_file /usr/local/sbin/npmplus-wait-for-crowdsec-lapi 0755 <<'EOF'
+#!/bin/sh
+# The host firewall bouncer depends on the containerized CrowdSec LAPI. Docker
+# being active does not mean that the LAPI is ready yet, so use a bounded gate.
+for attempt in $(seq 1 180); do
+	code=$(curl -sS --connect-timeout 1 --max-time 2 -o /dev/null -w '%{http_code}' \
+		http://127.0.0.1:8080/v1/decisions?limit=1 2>/dev/null || true)
+	case "$code" in
+		200|401|403) exit 0 ;;
+	esac
+	[ "$attempt" -eq 180 ] || sleep 1
+done
+echo "npmplus: CrowdSec LAPI did not become ready within 180 seconds" >&2
+exit 1
+EOF
+	mkdir -p /etc/systemd/system/crowdsec-firewall-bouncer.service.d
+	write_root_file /etc/systemd/system/crowdsec-firewall-bouncer.service.d/10-npmplus-container-lapi.conf 0644 <<'EOF'
+[Unit]
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStartPre=/usr/local/sbin/npmplus-wait-for-crowdsec-lapi
+Restart=on-failure
+RestartSec=5s
+EOF
+	systemctl daemon-reload
+}
+
+normalize_firewall_bouncer_config() {
+	local config=/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml tmp
+	[[ -s "$config" ]] || return 1
+	tmp=$(mktemp "${config}.tmp.XXXXXX")
+	if ! awk '
+		/^log_mode:/ { log_mode=1 }
+		/^log_dir:/ { log_dir=1 }
+		/^log_level:/ { log_level=1 }
+		/^log_compression:/ { log_compression=1 }
+		/^log_max_size:/ { log_max_size=1 }
+		/^log_max_backups:/ { log_max_backups=1 }
+		/^log_max_age:/ { log_max_age=1 }
+		{ print }
+		END {
+			if (!log_mode) print "log_mode: file"
+			if (!log_dir) print "log_dir: /var/log/"
+			if (!log_level) print "log_level: info"
+			if (!log_compression) print "log_compression: true"
+			if (!log_max_size) print "log_max_size: 100"
+			if (!log_max_backups) print "log_max_backups: 3"
+			if (!log_max_age) print "log_max_age: 30"
+		}
+	' "$config" >"$tmp"; then
+		rm -f -- "$tmp"
+		return 1
+	fi
+	chown root:root "$tmp"
+	chmod 0600 "$tmp"
+	mv -f -- "$tmp" "$config"
+}
+
+repair_installer_firewall_bouncer() {
+	[[ -f /var/lib/npmplus/installed-firewall-bouncer ]] || return 0
+	command -v crowdsec-firewall-bouncer >/dev/null || return 0
+	normalize_firewall_bouncer_config
+	install_firewall_bouncer_boot_gate
+	if ! crowdsec-firewall-bouncer -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t; then
+		echo "the installer-managed CrowdSec firewall bouncer config is invalid" >&2
+		return 1
+	fi
+	systemctl enable crowdsec-firewall-bouncer >/dev/null
+	# Do not spend three minutes waiting during preflight when CrowdSec itself is
+	# down. The post-deployment call will start the bouncer once its LAPI answers.
+	if curl -sS --connect-timeout 1 --max-time 2 -o /dev/null \
+		http://127.0.0.1:8080/v1/decisions?limit=1 2>/dev/null; then
+		systemctl restart crowdsec-firewall-bouncer
+	fi
+}
+
+activate_installer_firewall_bouncer() {
+	[[ -f /var/lib/npmplus/installed-firewall-bouncer ]] || return 0
+	repair_installer_firewall_bouncer
+	systemctl restart crowdsec-firewall-bouncer
+	systemctl is-active --quiet crowdsec-firewall-bouncer || {
+		systemctl status crowdsec-firewall-bouncer --no-pager -l >&2 || true
+		return 1
+	}
 }
 
 run_crowdsec_doctor() (
@@ -319,6 +424,25 @@ run_crowdsec_doctor() (
 		tail -5 /var/log/npmplus-crowdsec-heal.log | sed 's/^/        /'
 	fi
 
+	doctor_header "8b. host firewall bouncer"
+	if [[ -f /var/lib/npmplus/installed-firewall-bouncer ]]; then
+		if ! command -v crowdsec-firewall-bouncer >/dev/null; then
+			doctor_bad "installer marker exists, but the firewall bouncer binary is missing"
+			fail=1
+		elif ! crowdsec-firewall-bouncer -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t >/dev/null 2>&1; then
+			doctor_bad "configuration is invalid - run Safe update to repair it"
+			fail=1
+		elif systemctl is-active --quiet crowdsec-firewall-bouncer; then
+			doctor_ok "firewall bouncer config is valid and its service is active"
+		else
+			doctor_bad "firewall bouncer service is not active"
+			doctor_note "run Safe update to repair its boot ordering and restart it"
+			fail=1
+		fi
+	else
+		doctor_note "not installed by setup-npmplus.sh"
+	fi
+
 	doctor_header "9. recent crowdsec auth errors (2h)"
 	auth_errors=$(docker logs crowdsec --since 2h 2>&1 | grep -iE "api key|bouncer|403" | tail -8)
 	if [[ -n $auth_errors ]]; then
@@ -429,6 +553,12 @@ run_boot_trace() (
 	trace_run systemctl cat docker.service
 	trace_run systemctl list-dependencies --all docker.service
 
+	trace_section "NPMPLUS HOST SERVICES"
+	for unit in npmplus-admin-lan.socket npmplus-admin-lan.service crowdsec-firewall-bouncer.service; do
+		trace_run systemctl status "$unit" --no-pager -l
+		trace_run systemctl cat "$unit"
+	done
+
 	trace_section "NETWORK AND DNS"
 	for unit in \
 		network-online.target \
@@ -453,6 +583,9 @@ run_boot_trace() (
 	trace_run journalctl -b --no-pager -n 500 \
 		-u docker.service \
 		-u containerd.service \
+		-u npmplus-admin-lan.socket \
+		-u npmplus-admin-lan.service \
+		-u crowdsec-firewall-bouncer.service \
 		-u systemd-networkd-wait-online.service \
 		-u NetworkManager-wait-online.service \
 		-u systemd-resolved.service
@@ -661,7 +794,7 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 		/etc/cron.d/npmplus-crowdsec-heal /etc/cron.d/anubis-honeypot
 	rm -f /usr/local/bin/npmplus-safe-update /usr/local/bin/npmplus-backup \
 		/usr/local/bin/npmplus-crowdsec-heal /usr/local/bin/anubis-honeypot-ban \
-		/usr/local/sbin/npmplus-wait-for-dns
+		/usr/local/sbin/npmplus-wait-for-dns /usr/local/sbin/npmplus-wait-for-crowdsec-lapi
 	rm -f /var/log/npmplus-update.log /var/log/npmplus-backup.log /var/log/npmplus-crowdsec-heal.log
 	remove_admin_lan_proxy
 
@@ -669,6 +802,8 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 	# to the operator and must survive an NPMplus uninstall.
 	rm -f /etc/systemd/system/docker.service.d/10-wait-for-dns.conf
 	rmdir /etc/systemd/system/docker.service.d >/dev/null 2>&1 || true
+	rm -f /etc/systemd/system/crowdsec-firewall-bouncer.service.d/10-npmplus-container-lapi.conf
+	rmdir /etc/systemd/system/crowdsec-firewall-bouncer.service.d >/dev/null 2>&1 || true
 	command -v systemctl >/dev/null && systemctl daemon-reload >/dev/null 2>&1 || true
 
 	# Only remove a firewall bouncer that this script recorded as installed by it.
@@ -891,7 +1026,7 @@ harden_auxiliary_service() { # harden_auxiliary_service <service> <crowdsec|anub
 				print "      - NET_BIND_SERVICE"
 			}
 			print "    security_opt:"
-			print "      - no-new-privileges:true"
+			print "      - no-new-privileges=true"
 			print "    tmpfs:"
 			if (kind == "crowdsec") print "      - /tmp:rw,noexec,nosuid,nodev,size=64m"
 			else if (kind == "anubis") print "      - /tmp:rw,noexec,nosuid,nodev,size=32m"
@@ -1694,6 +1829,11 @@ if [[ "${1:-}" == "--update" ]]; then
 	# Make manual updates use the same transactional snapshot/health/revert path
 	# as cron. The environment flag is set only by that wrapper to avoid recursion.
 	if [[ "${NPMPLUS_SAFE_UPDATE_ACTIVE:-false}" != "true" ]]; then
+		# Repair host services before the safe updater judges the current install.
+		# Older LAN sockets raced DHCP, while v1.30 wrote an incomplete firewall
+		# bouncer config that current packages reject.
+		repair_admin_lan_proxy
+		repair_installer_firewall_bouncer
 		# Older wrappers either cannot hand off a freshly downloaded candidate or
 		# overwrite themselves in place during a nested tooling refresh. Replace
 		# them before delegation; this also repairs a missing execute bit.
@@ -1787,6 +1927,7 @@ if [[ "${1:-}" == "--update" ]]; then
 	# refresh the generated host tooling (safe-update, backup, key heal) so
 	# improvements reach existing installs, not just fresh ones
 	install_host_tooling
+	repair_admin_lan_proxy
 	# anubis is release-pinned in the compose; move it to the latest release together
 	# with its policy file so the two can never disagree
 	if grep -q "npmplus-anubis" "$COMPOSE_FILE"; then
@@ -1802,6 +1943,7 @@ if [[ "${1:-}" == "--update" ]]; then
 	grep -q "container_name: crowdsec" "$COMPOSE_FILE" && harden_auxiliary_service crowdsec crowdsec
 	grep -q "container_name: npmplus-anubis" "$COMPOSE_FILE" && harden_auxiliary_service anubis anubis
 	grep -q "container_name: npmplus-caddy" "$COMPOSE_FILE" && harden_auxiliary_service npmplus-caddy caddy
+	sed -i 's/no-new-privileges:true/no-new-privileges=true/g' "$COMPOSE_FILE"
 	# installs made before the crowdsec UI page existed have no bouncer
 	# key for it - backfill instead of showing "not wired" in the admin UI.
 	# a present but rejected key means crowdsec's db lost the registration
@@ -1858,6 +2000,7 @@ if [[ "${1:-}" == "--update" ]]; then
 		sleep 3
 		docker compose -f "$COMPOSE_FILE" up -d
 	fi
+	activate_installer_firewall_bouncer
 	say "update done - check: docker compose -f $COMPOSE_FILE ps"
 	exit 0
 fi
@@ -2040,7 +2183,7 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
     cap_drop:
       - ALL
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m
     healthcheck:
@@ -2085,7 +2228,7 @@ if [[ "$USE_ANUBIS" == "y" ]]; then
     cap_drop:
       - ALL
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=32m
     healthcheck:
@@ -2129,7 +2272,7 @@ if [[ "$USE_CADDY" == "y" ]]; then
     cap_add:
       - NET_BIND_SERVICE
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m
     healthcheck:
@@ -2168,7 +2311,7 @@ $NPMPLUS_NETWORK_BLOCK
 #      - PERFMON # required if you set NGINX_QUIC_BPF to true
 #      - NET_ADMIN # required if you set NGINX_QUIC_BPF to true
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
 $ADMIN_SECRET_MOUNT
     volumes:
       - "$DATA_DIR:/data"
@@ -2371,6 +2514,13 @@ api_url: http://127.0.0.1:8080
 api_key: $FWKEY
 update_frequency: 10s
 mode: nftables
+log_mode: file
+log_dir: /var/log/
+log_level: info
+log_compression: true
+log_max_size: 100
+log_max_backups: 3
+log_max_age: 30
 nftables:
   ipv4:
     enabled: true
@@ -2378,7 +2528,11 @@ nftables:
     enabled: $FW_IPV6_ENABLED
 EOF
 			chmod 600 /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
-			systemctl enable --now crowdsec-firewall-bouncer >/dev/null 2>&1 || systemctl restart crowdsec-firewall-bouncer >/dev/null 2>&1 || true
+			install_firewall_bouncer_boot_gate
+			crowdsec-firewall-bouncer -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t
+			systemctl enable crowdsec-firewall-bouncer >/dev/null
+			systemctl restart crowdsec-firewall-bouncer
+			systemctl is-active --quiet crowdsec-firewall-bouncer
 			echo "firewall bouncer: native nftables bans, service crowdsec-firewall-bouncer"
 		fi
 	fi

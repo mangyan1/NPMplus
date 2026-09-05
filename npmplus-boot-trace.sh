@@ -46,6 +46,12 @@ run systemctl show docker.service \
 run systemctl cat docker.service
 run systemctl list-dependencies --all docker.service
 
+section "NPMPLUS HOST SERVICES"
+for unit in npmplus-admin-lan.socket npmplus-admin-lan.service crowdsec-firewall-bouncer.service; do
+	run systemctl status "$unit" --no-pager -l
+	run systemctl cat "$unit"
+done
+
 section "NETWORK AND DNS"
 for unit in \
 	network-online.target \
@@ -70,6 +76,9 @@ section "CURRENT-BOOT JOURNAL"
 run journalctl -b --no-pager -n 500 \
 	-u docker.service \
 	-u containerd.service \
+	-u npmplus-admin-lan.socket \
+	-u npmplus-admin-lan.service \
+	-u crowdsec-firewall-bouncer.service \
 	-u systemd-networkd-wait-online.service \
 	-u NetworkManager-wait-online.service \
 	-u systemd-resolved.service

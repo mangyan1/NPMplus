@@ -160,6 +160,25 @@ if [[ -s /var/log/npmplus-crowdsec-heal.log ]]; then
 	tail -5 /var/log/npmplus-crowdsec-heal.log | sed 's/^/        /'
 fi
 
+hdr "8b. host firewall bouncer"
+if [[ -f /var/lib/npmplus/installed-firewall-bouncer ]]; then
+	if ! command -v crowdsec-firewall-bouncer >/dev/null; then
+		bad "installer marker exists, but the firewall bouncer binary is missing"
+		fail=1
+	elif ! crowdsec-firewall-bouncer -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t >/dev/null 2>&1; then
+		bad "configuration is invalid - run Safe update to repair it"
+		fail=1
+	elif systemctl is-active --quiet crowdsec-firewall-bouncer; then
+		ok "firewall bouncer config is valid and its service is active"
+	else
+		bad "firewall bouncer service is not active"
+		note "run Safe update to repair its boot ordering and restart it"
+		fail=1
+	fi
+else
+	note "not installed by setup-npmplus.sh"
+fi
+
 hdr "9. recent crowdsec auth errors (2h)"
 auth_errors=$(docker logs crowdsec --since 2h 2>&1 | grep -iE "api key|bouncer|403" | tail -8)
 if [[ -n $auth_errors ]]; then
