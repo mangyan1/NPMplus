@@ -153,6 +153,8 @@ Setup script v1.32 fixes two additional host-service failures found during an RC
 
 Setup script v1.33 closes the Docker forwarding gap by migrating installer-managed firewall bouncers to iptables/ipset rules on both `INPUT` and `FORWARD`. Its recommended protected-startup mode prevents public containers from bypassing those rules after a reboot, fails closed if enforcement is unavailable, and is covered by a CI daemon-restart test that continuously probes the HTTPS port during an intentionally failed bouncer start. An optional Cloudflare origin lock uses validated, last-known-good Cloudflare network lists and preserves private-LAN sources. The CrowdSec doctor and reboot report now verify these rules, units, markers, and restart policies. Safe-update wrapper v5 snapshots and restores the installer-owned host-security state. RC4 is intentionally not retagged or replaced with these changes.
 
+Setup script v1.34 removes Ubuntu's package-generated `crowdsec-firewall-bouncer.yaml.local` overlay from installer-managed bouncers. Without that cleanup, the overlay silently forced the old nftables backend over v1.33's generated iptables configuration and could crash Ubuntu's 0.0.25 bouncer parser. The main generated config remains the single installer-owned source of truth.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.
