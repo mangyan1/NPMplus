@@ -6,7 +6,7 @@
   <title>NPMplus Security Fork — maintained by mangyan1</title>
   <meta name="description" content="A practical NPMplus fork focused on secure setup, CrowdSec and Anubis visibility, recoverable updates, backups, and reliable restarts.">
   <meta name="robots" content="index, follow">
-  <meta name="theme-color" content="#f5f6f3">
+  <meta name="theme-color" content="#ffffff">
   <link rel="canonical" href="https://mangyan1.github.io/NPMplus/">
   <link rel="icon" href="https://raw.githubusercontent.com/mangyan1/NPMplus/develop/frontend/public/images/logo-no-text.svg" type="image/svg+xml">
   <meta property="og:type" content="website">
@@ -46,35 +46,36 @@
   <style>
     :root {
       color-scheme: light;
-      --paper: #f5f6f3;
+      --paper: #ffffff;
       --white: #ffffff;
-      --ink: #192c3a;
-      --muted: #5d6d78;
-      --line: #d7dddc;
-      --soft: #e8eeeb;
+      --ink: #1b1b1f;
+      --muted: #3c3c43;
+      --line: #e2e2e3;
+      --soft: #f6f6f7;
       --mint: #168f79;
       --mint-dark: #0b5e50;
-      --warm: #fff5e6;
-      --warm-text: #5c554d;
-      --code: #0d202a;
-      --header: rgba(255, 255, 255, .88);
-      --shadow: rgba(25, 44, 58, .12);
+      --warm: #f6f6f7;
+      --warm-text: #3c3c43;
+      --code: #1b1b1f;
+      --header: rgba(255, 255, 255, .92);
+      --shadow: rgba(0, 0, 0, .08);
       --content: 1120px;
     }
 
     :root[data-theme="dark"] {
       color-scheme: dark;
-      --paper: #0b171f;
-      --white: #101f29;
-      --ink: #edf4f4;
-      --muted: #a5b4ba;
-      --line: #2b414c;
-      --soft: #142630;
+      --paper: #1b1b1f;
+      --white: #202127;
+      --ink: #f2f2f3;
+      --muted: #a8a8b0;
+      --line: #3c3f44;
+      --soft: #202127;
       --mint: #62dfc7;
       --mint-dark: #75e4cf;
-      --warm: #251e19;
-      --warm-text: #cdbfb3;
-      --header: rgba(16, 31, 41, .9);
+      --warm: #202127;
+      --warm-text: #b8b8bf;
+      --code: #101014;
+      --header: rgba(27, 27, 31, .92);
       --shadow: rgba(0, 0, 0, .32);
     }
 
@@ -131,9 +132,9 @@
 
     .nav {
       min-height: 72px;
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
       align-items: center;
-      justify-content: space-between;
       gap: 2rem;
     }
 
@@ -163,7 +164,12 @@
 
     .brand-logo .static-logo { display: none; }
 
-    nav { display: flex; align-items: center; gap: 1.4rem; }
+    nav {
+      display: flex;
+      align-items: center;
+      justify-self: center;
+      gap: 1.4rem;
+    }
 
     nav a {
       color: var(--muted);
@@ -175,10 +181,12 @@
     nav a:hover { color: var(--ink); }
 
     .theme-toggle {
-      width: 42px;
-      height: 42px;
+      position: relative;
+      width: 34px;
+      height: 34px;
       display: inline-grid;
       place-items: center;
+      justify-self: end;
       padding: 0;
       border: 1px solid var(--line);
       border-radius: 50%;
@@ -187,8 +195,9 @@
       cursor: pointer;
     }
 
+    .theme-toggle::before { content: ""; position: absolute; inset: -5px; }
     .theme-toggle:hover { border-color: var(--mint); }
-    .theme-toggle svg { width: 19px; height: 19px; }
+    .theme-toggle svg { width: 16px; height: 16px; }
     .theme-toggle .sun { display: none; }
     :root[data-theme="dark"] .theme-toggle .sun { display: block; }
     :root[data-theme="dark"] .theme-toggle .moon { display: none; }
@@ -236,16 +245,18 @@
       justify-content: center;
       padding: .62rem 1rem;
       border: 1px solid var(--ink);
+      border-radius: 999px;
       font-weight: 720;
       text-decoration: none;
     }
 
-    .button.primary { color: var(--white); background: var(--ink); }
+    .button.primary { color: var(--paper); background: var(--mint-dark); border-color: var(--mint-dark); }
     .button:hover { color: var(--paper); background: var(--mint-dark); border-color: var(--mint-dark); }
 
     .why {
       padding: 1.5rem;
-      border-top: 4px solid #f08a35;
+      border: 1px solid var(--line);
+      border-radius: 12px;
       background: var(--warm);
     }
 
@@ -259,7 +270,8 @@
     .preview-frame {
       margin: 0;
       padding: .55rem;
-      border: 1px solid #c9d0ce;
+      border: 1px solid var(--line);
+      border-radius: 12px;
       background: var(--white);
       box-shadow: 0 20px 55px var(--shadow);
     }
@@ -268,7 +280,8 @@
       display: block;
       width: 100%;
       height: auto;
-      border: 1px solid #e1e5e4;
+      border: 1px solid var(--line);
+      border-radius: 8px;
     }
 
     .preview-frame figcaption {
@@ -286,18 +299,18 @@
     .facts {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      border-top: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
+      gap: 1rem;
     }
 
     .facts p {
       margin: 0;
       padding: 1rem 1.2rem;
+      border-radius: 12px;
       color: var(--muted);
+      background: var(--soft);
       font-size: .9rem;
     }
 
-    .facts p + p { border-left: 1px solid var(--line); }
     .facts strong { display: block; color: var(--ink); font-size: .96rem; }
 
     section.work { padding-block: clamp(4.5rem, 9vw, 7rem); }
@@ -357,6 +370,7 @@
       min-width: 0;
       padding: 1.25rem;
       border: 1px solid #37505c;
+      border-radius: 12px;
       background: #09171e;
     }
 
@@ -386,21 +400,26 @@
     footer a:hover { color: var(--mint-dark); }
 
     @media (max-width: 780px) {
+      html { scroll-padding-top: 9rem; }
+      .nav {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: .65rem 1rem;
+        padding-block: .65rem;
+      }
+      nav { grid-column: 1 / -1; grid-row: 2; }
+      .theme-toggle { grid-column: 2; grid-row: 1; }
       .hero, .section-head, .install-grid { grid-template-columns: 1fr; }
       .hero { align-items: start; gap: 2rem; }
       .why { max-width: 620px; }
       .facts { grid-template-columns: 1fr 1fr; }
-      .facts p:nth-child(3) { border-left: 0; border-top: 1px solid var(--line); }
-      .facts p:nth-child(4) { border-top: 1px solid var(--line); }
       .work-list article { grid-template-columns: 140px 1fr; }
       .work-list article p:last-child { grid-column: 2; }
     }
 
     @media (max-width: 560px) {
-      html { scroll-padding-top: 9rem; }
       .wrap { width: min(calc(100% - 1.5rem), var(--content)); }
-      .nav { min-height: auto; align-items: flex-start; flex-direction: column; padding-block: 1rem; gap: .8rem; }
-      nav { width: 100%; justify-content: space-between; gap: .7rem; }
+      .nav { min-height: auto; }
+      nav { width: 100%; justify-content: center; gap: clamp(.7rem, 5vw, 1.4rem); }
       .brand-logo { width: 48px; height: 48px; flex-basis: 48px; }
       .hero { padding-block: 2.8rem 2.4rem; }
       h1 { font-size: clamp(2.15rem, 11vw, 2.75rem); }
@@ -409,7 +428,6 @@
       .preview-frame figcaption { display: block; }
       .preview-frame figcaption a { display: block; margin-top: .3rem; }
       .facts { grid-template-columns: 1fr; }
-      .facts p + p { border-left: 0; border-top: 1px solid var(--line); }
       .work-list article { grid-template-columns: 1fr; gap: .45rem; }
       .work-list article p:last-child { grid-column: auto; }
       .command { padding: 1rem; }
@@ -437,16 +455,16 @@
         <a href="#work">What changed</a>
         <a href="#install">Install</a>
         <a href="https://github.com/mangyan1/NPMplus">Source</a>
-        <button class="theme-toggle" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
-          <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-            <path d="M20.2 15.2A8.5 8.5 0 0 1 8.8 3.8 8.5 8.5 0 1 0 20.2 15.2Z" />
-          </svg>
-          <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-            <circle cx="12" cy="12" r="3.5" />
-            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-          </svg>
-        </button>
       </nav>
+      <button class="theme-toggle" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M20.2 15.2A8.5 8.5 0 0 1 8.8 3.8 8.5 8.5 0 1 0 20.2 15.2Z" />
+        </svg>
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.5" />
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -542,11 +560,13 @@ sudo bash setup-npmplus.sh</code></pre>
       const key = "npmplus-site-theme";
       const root = document.documentElement;
       const button = document.querySelector(".theme-toggle");
+      const themeColor = document.querySelector('meta[name="theme-color"]');
       const updateButton = () => {
         const next = root.dataset.theme === "dark" ? "light" : "dark";
         const label = `Switch to ${next} theme`;
         button.setAttribute("aria-label", label);
         button.setAttribute("title", label);
+        themeColor.setAttribute("content", root.dataset.theme === "dark" ? "#1b1b1f" : "#ffffff");
       };
       button.addEventListener("click", () => {
         root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
