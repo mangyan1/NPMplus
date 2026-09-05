@@ -1,8 +1,10 @@
-# NPMplus
+# NPMplus Security Fork — maintained by mangyan1
 
-NPMplus gives you a web dashboard for publishing services securely through Nginx. This fork adds a guided server installer, CrowdSec protection, automatic backups, safe updates with rollback, and additional security fixes.
+NPMplus gives you a web dashboard for publishing services securely through Nginx. This security-focused fork is maintained by [mangyan1](https://github.com/mangyan1) and adds a guided server installer, CrowdSec protection, automatic backups, safe updates with rollback, and additional security fixes.
 
 It is based on [ZoeyVid/NPMplus](https://github.com/ZoeyVid/NPMplus) and the original [Nginx Proxy Manager](https://github.com/NginxProxyManager/nginx-proxy-manager).
+
+[Project website](https://mangyan1.github.io/NPMplus/) · [Install NPMplus](#new-installation) · [See the main features](#main-features)
 
 ## Before you start
 

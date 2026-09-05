@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NPMplus Security Fork — maintained by mangyan1</title>
+  <meta name="description" content="A security-focused NPMplus fork with one-command Docker setup, CrowdSec, Anubis, safe updates, rollback, and automatic backups.">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#07131c">
+  <link rel="canonical" href="https://mangyan1.github.io/NPMplus/">
+  <link rel="icon" href="https://raw.githubusercontent.com/mangyan1/NPMplus/develop/frontend/public/images/logo-no-text.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="NPMplus Security Fork — maintained by mangyan1">
+  <meta property="og:description" content="Publish services through Nginx with a guided setup, CrowdSec, Anubis, safe updates, rollback, and backups.">
+  <meta property="og:url" content="https://mangyan1.github.io/NPMplus/">
+  <meta property="og:image" content="https://raw.githubusercontent.com/mangyan1/NPMplus/develop/frontend/public/images/logo-256.png">
+  <meta name="twitter:card" content="summary">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareSourceCode",
+    "name": "NPMplus Security Fork",
+    "description": "A security-focused NPMplus fork with one-command Docker setup, CrowdSec, Anubis, safe updates, rollback, and automatic backups.",
+    "codeRepository": "https://github.com/mangyan1/NPMplus",
+    "url": "https://mangyan1.github.io/NPMplus/",
+    "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+    "programmingLanguage": ["TypeScript", "JavaScript", "Shell"],
+    "maintainer": {
+      "@type": "Person",
+      "name": "mangyan1",
+      "url": "https://github.com/mangyan1"
+    }
+  }
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07131c;
+      --panel: #0c1b26;
+      --line: #1d3744;
+      --text: #eef7f7;
+      --muted: #9db1b9;
+      --guard: #55e0c6;
+      --signal: #ff7180;
+      --max: 1120px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--text);
+      background:
+        linear-gradient(rgba(85, 224, 198, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(85, 224, 198, .035) 1px, transparent 1px),
+        var(--bg);
+      background-size: 44px 44px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+    }
+
+    a { color: inherit; }
+
+    a:focus-visible {
+      outline: 3px solid var(--guard);
+      outline-offset: 4px;
+    }
+
+    .skip-link {
+      position: fixed;
+      left: 1rem;
+      top: -5rem;
+      z-index: 10;
+      padding: .7rem 1rem;
+      color: var(--bg);
+      background: var(--guard);
+      border-radius: .35rem;
+      font-weight: 800;
+    }
+
+    .skip-link:focus { top: 1rem; }
+
+    .shell {
+      width: min(calc(100% - 2.5rem), var(--max));
+      margin-inline: auto;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      background: rgba(7, 19, 28, .92);
+    }
+
+    .nav {
+      min-height: 76px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: .75rem;
+      text-decoration: none;
+      font-weight: 850;
+      letter-spacing: -.02em;
+    }
+
+    .brand img { width: 36px; height: 36px; }
+
+    nav { display: flex; gap: 1.2rem; }
+
+    nav a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: .94rem;
+      font-weight: 700;
+    }
+
+    nav a:hover { color: var(--guard); }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: clamp(2.5rem, 7vw, 6rem);
+      align-items: center;
+      padding-block: clamp(5rem, 11vw, 9rem);
+    }
+
+    .eyebrow {
+      margin: 0 0 1rem;
+      color: var(--guard);
+      font-size: .78rem;
+      font-weight: 850;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 720px;
+      margin: 0;
+      font-size: clamp(3rem, 7vw, 6rem);
+      line-height: .94;
+      letter-spacing: -.065em;
+    }
+
+    .lede {
+      max-width: 670px;
+      margin: 1.6rem 0 0;
+      color: var(--muted);
+      font-size: clamp(1.05rem, 2vw, 1.28rem);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .8rem;
+      margin-top: 2rem;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: .65rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: .45rem;
+      text-decoration: none;
+      font-weight: 800;
+    }
+
+    .button.primary {
+      color: #041714;
+      background: var(--guard);
+      border-color: var(--guard);
+    }
+
+    .button:hover { border-color: var(--guard); }
+
+    .route {
+      padding: 1.25rem;
+      border: 1px solid var(--line);
+      border-radius: .8rem;
+      background: rgba(12, 27, 38, .88);
+      box-shadow: 16px 16px 0 rgba(85, 224, 198, .06);
+    }
+
+    .route-title {
+      margin: 0 0 1rem;
+      color: var(--muted);
+      font-size: .76rem;
+      font-weight: 800;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    .route ol {
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+
+    .route li {
+      position: relative;
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: .8rem .9rem;
+      border: 1px solid var(--line);
+      border-radius: .4rem;
+      font-weight: 780;
+    }
+
+    .route li + li { margin-top: 1.45rem; }
+
+    .route li + li::before {
+      content: "↓";
+      position: absolute;
+      left: 50%;
+      top: -1.55rem;
+      color: var(--guard);
+      transform: translateX(-50%);
+    }
+
+    .route span { color: var(--muted); font-weight: 600; }
+
+    section { padding-block: clamp(4rem, 8vw, 7rem); }
+
+    .section-heading {
+      max-width: 720px;
+      margin-bottom: 2.4rem;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(2rem, 4.5vw, 3.6rem);
+      line-height: 1.04;
+      letter-spacing: -.045em;
+    }
+
+    .section-heading p { margin: 1rem 0 0; color: var(--muted); }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid var(--line);
+      border-left: 1px solid var(--line);
+    }
+
+    .feature {
+      min-height: 190px;
+      padding: 1.45rem;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: rgba(12, 27, 38, .54);
+    }
+
+    .feature strong { display: block; margin-bottom: .55rem; font-size: 1.05rem; }
+    .feature p { margin: 0; color: var(--muted); font-size: .94rem; }
+    .feature b { color: var(--signal); font-size: .72rem; letter-spacing: .12em; }
+
+    .install {
+      display: grid;
+      grid-template-columns: .85fr 1.15fr;
+      gap: clamp(2rem, 7vw, 6rem);
+      align-items: start;
+      border-top: 1px solid var(--line);
+    }
+
+    .install p { color: var(--muted); }
+
+    pre {
+      margin: 0;
+      padding: 1.35rem;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--guard);
+      border-radius: .4rem;
+      background: #041018;
+      color: #d8fff7;
+      font: 600 .88rem/1.7 ui-monospace, SFMono-Regular, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .note { margin-top: 1rem; font-size: .88rem; }
+
+    footer {
+      padding-block: 2.4rem;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: .88rem;
+    }
+
+    footer p { max-width: 850px; margin: .35rem 0; }
+    footer a:hover { color: var(--guard); }
+
+    @media (max-width: 800px) {
+      .hero, .install { grid-template-columns: 1fr; }
+      .hero { padding-top: 4rem; }
+      .features { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 560px) {
+      .shell { width: min(calc(100% - 1.5rem), var(--max)); }
+      .nav { align-items: flex-start; flex-direction: column; padding-block: 1rem; }
+      nav { width: 100%; justify-content: space-between; }
+      h1 { font-size: clamp(2.75rem, 16vw, 4.5rem); }
+      .features { grid-template-columns: 1fr; }
+      .feature { min-height: auto; }
+      .button { flex: 1 1 auto; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header>
+    <div class="shell nav">
+      <a class="brand" href="https://mangyan1.github.io/NPMplus/" aria-label="NPMplus Security Fork home">
+        <img src="https://raw.githubusercontent.com/mangyan1/NPMplus/develop/frontend/public/images/logo-no-text.svg" alt="">
+        <span>NPMplus Security Fork</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#security">Security</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/mangyan1/NPMplus">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="shell hero">
+      <div>
+        <p class="eyebrow">Maintained by mangyan1</p>
+        <h1>Reverse proxy.<br>Security first.</h1>
+        <p class="lede">Publish services through Nginx with a guided Docker setup, CrowdSec threat protection, Anubis bot defense, and updates that can roll back safely.</p>
+        <div class="actions">
+          <a class="button primary" href="#install">Install NPMplus</a>
+          <a class="button" href="https://github.com/mangyan1/NPMplus">View source on GitHub</a>
+        </div>
+      </div>
+
+      <aside class="route" aria-label="Protected request path">
+        <p class="route-title">Protected request path</p>
+        <ol>
+          <li>Internet traffic <span>incoming</span></li>
+          <li>CrowdSec + Anubis <span>inspect</span></li>
+          <li>NPMplus <span>route</span></li>
+          <li>Your applications <span>serve</span></li>
+        </ol>
+      </aside>
+    </div>
+
+    <section id="security" class="shell">
+      <div class="section-heading">
+        <p class="eyebrow">Built for self-hosters</p>
+        <h2>A safer path from setup to daily operation.</h2>
+        <p>The fork keeps the familiar NPMplus proxy workflow while making secure installation, monitoring, recovery, and maintenance easier.</p>
+      </div>
+      <div class="features">
+        <article class="feature"><b>01</b><strong>Guided setup</strong><p>A one-command installer checks the host and asks before important changes.</p></article>
+        <article class="feature"><b>02</b><strong>CrowdSec protection</strong><p>Local threats stay visible without filling the dashboard with CAPI noise.</p></article>
+        <article class="feature"><b>03</b><strong>Anubis defense</strong><p>Bot protection and health are presented with the wider security posture.</p></article>
+        <article class="feature"><b>04</b><strong>Safe updates</strong><p>Updates use health checks and preserve a last-good state for automatic rollback.</p></article>
+        <article class="feature"><b>05</b><strong>Automatic backups</strong><p>Daily backups keep recovery close without turning routine operation into a chore.</p></article>
+        <article class="feature"><b>06</b><strong>Boot diagnostics</strong><p>Startup checks and trace tooling make DNS or container delays easier to diagnose.</p></article>
+      </div>
+    </section>
+
+    <section id="install" class="install shell">
+      <div>
+        <p class="eyebrow">One paste installation</p>
+        <h2>Start from a clean server.</h2>
+        <p>Use Debian 12/13 or Ubuntu 22.04+, with ports 80 and 443 available. Read the script before running it if you prefer.</p>
+        <p><a href="https://github.com/mangyan1/NPMplus/blob/develop/README.md#before-you-start">See requirements and the beginner guide →</a></p>
+      </div>
+      <div>
+        <pre><code>wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &amp;&amp;
+sudo bash setup-npmplus.sh</code></pre>
+        <p class="note">The installer explains its choices and asks before making important system changes.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell">
+      <p><strong>NPMplus Security Fork</strong> is maintained by <a href="https://github.com/mangyan1">mangyan1</a>.</p>
+      <p>Based on <a href="https://github.com/ZoeyVid/NPMplus">ZoeyVid/NPMplus</a> and the original <a href="https://github.com/NginxProxyManager/nginx-proxy-manager">Nginx Proxy Manager</a>. Distributed under the repository’s open-source licenses, including the GNU AGPL.</p>
+    </div>
+  </footer>
+</body>
+</html>

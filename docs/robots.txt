@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://mangyan1.github.io/NPMplus/sitemap.xml
