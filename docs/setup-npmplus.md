@@ -119,6 +119,8 @@ Setup script v1.27 locates `systemd-socket-proxyd` in both Debian/Ubuntu systemd
 
 Setup script v1.28 makes private-LAN administration a single yes/no choice. After `y`, the installer uses the detected private VM address and connected subnet automatically and prints them for reference instead of asking beginners to re-enter or approve raw networking values.
 
+Setup script v1.29 changes Anubis's global unmatched-request challenge to an explicit opt-in. Its default is now `n`, preserving API, licensing, webhook, monitoring, RSS, and other non-browser clients while leaving targeted Anubis protection available.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.

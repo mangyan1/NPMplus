@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.28"
+SCRIPT_VERSION="1.29"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -1743,8 +1743,8 @@ USE_ANUBIS="n"; confirm "Enable anubis (anti-bot proof-of-work)?" "y" && USE_ANU
 CHALLENGE_ALL="n"
 if [[ "$USE_ANUBIS" == "y" ]]; then
 	# strongest anti-bot, but breaks non-browser clients (APIs, RSS, uptime
-	# monitors) - answer n if a protected host serves those
-	confirm "Challenge everything not matched by any rule?" "y" && CHALLENGE_ALL="y"
+	# monitors). Safe for general reverse-proxy use only as an explicit opt-in.
+	confirm "Challenge everything not matched by any rule?" "n" && CHALLENGE_ALL="y"
 fi
 USE_CADDY="n"; confirm "Enable caddy (port 80 -> https redirect, so NPMplus only serves https)?" "n" && USE_CADDY="y"
 # orange cloud only: with plain dns the visitor ips arrive directly and must NOT be

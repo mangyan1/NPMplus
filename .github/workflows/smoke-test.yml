@@ -29,7 +29,7 @@ jobs:
       matrix:
         include:
           # recommended security defaults: crowdsec + appsec + firewall bouncer
-          # + anubis challenge-all + cloudflare trust (UFW is disabled below)
+          # + anubis with API-safe catch-all off + cloudflare trust (UFW is disabled below)
           - name: defaults
           # explicit admin credentials with firewall bouncer + challenge-all off,
           # caddy on, cloudflare trust off, private-LAN admin, and unattended upgrades
@@ -134,6 +134,10 @@ jobs:
           sudo grep -Fq '/opt/anubis-data/anubis:/run/npmplus-anubis:ro' /opt/npmplus/compose.yaml
           sudo grep -Fq 'ANUBIS_HONEYPOT_LOG_FILE=/run/npmplus-anubis/honeypot.addrs' /opt/npmplus/compose.yaml
           sudo docker exec npmplus test -f /run/npmplus-anubis/honeypot.addrs
+          if sudo grep -q 'name: everything-else' /opt/anubis.yaml; then
+            echo "Anubis challenge-all unexpectedly enabled despite the safe default/explicit no" >&2
+            exit 1
+          fi
           if [[ "${{ matrix.name }}" == "alternate" ]]; then
             sudo grep -Fq '127.0.0.1:81:81/tcp' /opt/npmplus/compose.yaml
             sudo systemctl is-active --quiet npmplus-admin-lan.socket
