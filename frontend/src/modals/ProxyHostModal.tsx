@@ -653,11 +653,14 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 															</label>
 														</div>
 														<div>
-															<label className="row" htmlFor="npmplusAuthRequest">
-																<span className="col">
+															<label className="row gy-2" htmlFor="npmplusAuthRequest">
+																<span className="col-12 col-sm">
 																	<T id="host.auth-request" />
+																	<span className="d-block text-secondary small mt-1">
+																		<T id="host.auth-request-help" />
+																	</span>
 																</span>
-																<span className="col-auto">
+																<span className="col-12 col-sm-auto">
 																	<Field name="npmplusAuthRequest">
 																		{({ field }: any) => (
 																			<select
@@ -666,8 +669,8 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 																				required
 																				{...field}
 																			>
-																				<option value="none">none</option>
-																				<option value="anubis">anubis</option>
+																				<option value="none">None</option>
+																				<option value="anubis">Anubis</option>
 																				<option value="tinyauth">
 																					tinyauth
 																				</option>
@@ -695,13 +698,13 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 														{values.npmplusAuthRequest !== "none" && (
 															<div>
 																<label
-																	className="row"
+																	className="row gy-2"
 																	htmlFor="npmplusAuthRequestUpstream"
 																>
-																	<span className="col">
+																	<span className="col-12 col-sm">
 																		<T id="host.auth-request-upstream" />
 																	</span>
-																	<span className="col-auto">
+																	<span className="col-12 col-sm-auto">
 																		<Field
 																			name="npmplusAuthRequestUpstream"
 																			validate={validateUpstreamUrl()}

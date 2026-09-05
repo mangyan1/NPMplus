@@ -112,6 +112,24 @@ const user = {
 	roles: ["admin"],
 	permissions: { visibility: "enabled", roles: ["admin"] },
 };
+const proxyHosts = [
+	{
+		id: 7,
+		createdOn: iso(-86400 * 1000),
+		owner: user,
+		domainNames: ["browser.example.test"],
+		forwardScheme: "http",
+		forwardHost: "browser-app",
+		forwardPort: 8080,
+		certificate: null,
+		accessLists: [],
+		npmplusAccessListType: "public",
+		npmplusAuthRequest: "anubis",
+		locations: [],
+		enabled: true,
+		meta: { nginxOnline: true, nginxErr: null },
+	},
+];
 
 let failures = 0;
 let appsecConfigured = true;
@@ -133,6 +151,7 @@ const api = async (route) => {
 	if (apiPath === "/tokens") return respond({ expires: iso(86400 * 1000) });
 	if (apiPath === "/users/me") return respond(user);
 	if (apiPath === "/users") return respond([user]);
+	if (apiPath === "/nginx/proxy-hosts") return respond(proxyHosts);
 	if (apiPath === "/crowdsec/decisions/delete" && request.method() === "POST") {
 		const id = request.postDataJSON()?.id;
 		const index = decisions.findIndex((decision) => decision.id === id);
@@ -470,11 +489,30 @@ await page.screenshot({ path: ".smoke/ui-security-dashboard-320.png", fullPage: 
 await page.setViewportSize({ width: 1280, height: 900 });
 await page.goto("http://localhost:5173/nginx/proxy", { waitUntil: "networkidle" });
 await page.getByRole("heading", { name: "Proxy Hosts", exact: true }).waitFor();
+check("proxy-host list shows when Anubis is enabled", (await page.getByText("Anubis enabled").count()) === 1);
 await page.getByRole("button", { name: "Add Proxy Host" }).click();
 const proxyModal = page.getByRole("dialog");
 const appsecToggle = proxyModal.getByRole("checkbox", { name: /CrowdSec AppSec protection/i });
 check("new proxy hosts enable their AppSec preference by default", await appsecToggle.isChecked());
-await page.screenshot({ path: ".smoke/ui-proxy-host-appsec-toggle.png", fullPage: true });
+const authRequest = proxyModal.getByLabel(/Authentication \/ Bot Protection/i);
+check("new proxy hosts leave Anubis off by default", (await authRequest.inputValue()) === "none");
+await authRequest.selectOption("anubis");
+check("Anubis can be selected per proxy host", (await authRequest.inputValue()) === "anubis");
+check(
+	"Anubis guidance distinguishes browser sites from APIs",
+	(await proxyModal.getByText(/Leave it off for APIs, webhooks, and licensing services/).count()) === 1,
+);
+await page.screenshot({ path: ".smoke/ui-proxy-host-protection.png", fullPage: true });
+await page.setViewportSize({ width: 390, height: 844 });
+await authRequest.scrollIntoViewIfNeeded();
+check(
+	"proxy-host protection control fits a narrow viewport",
+	await proxyModal.evaluate((dialog) => {
+		const box = dialog.getBoundingClientRect();
+		return box.left >= 0 && box.right <= window.innerWidth && dialog.scrollWidth <= dialog.clientWidth;
+	}),
+);
+await page.screenshot({ path: ".smoke/ui-proxy-host-protection-mobile.png", fullPage: true });
 await appsecToggle.uncheck();
 check("proxy-host AppSec protection can be turned off", !(await appsecToggle.isChecked()));
 await proxyModal.getByRole("button", { name: /close/i }).click();

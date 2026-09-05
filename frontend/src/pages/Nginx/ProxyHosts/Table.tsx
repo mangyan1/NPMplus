@@ -1,4 +1,4 @@
-import { IconCopy, IconDotsVertical, IconEdit, IconPower, IconTrash } from "@tabler/icons-react";
+import { IconCopy, IconDotsVertical, IconEdit, IconPower, IconShieldCheck, IconTrash } from "@tabler/icons-react";
 import {
 	createColumnHelper,
 	createSortedRowModel,
@@ -80,7 +80,23 @@ export default function Table({
 				header: intl.formatMessage({ id: "column.source" }),
 				cell: (info: any) => {
 					const value = info.row.original;
-					return <DomainsFormatter domains={value.domainNames} createdOn={value.createdOn} />;
+					const usesAnubis =
+						value.npmplusAuthRequest === "anubis" ||
+						value.locations?.some((location: any) => location.npmplusAuthRequest === "anubis");
+					return (
+						<div className="d-flex flex-column align-items-start gap-1">
+							<DomainsFormatter domains={value.domainNames} createdOn={value.createdOn} />
+							{usesAnubis ? (
+								<span
+									className="badge bg-lime-lt"
+									title={intl.formatMessage({ id: "host.anubis-enabled-help" })}
+								>
+									<IconShieldCheck size={14} className="me-1" aria-hidden="true" />
+									<T id="host.anubis-enabled" />
+								</span>
+							) : null}
+						</div>
+					);
 				},
 			}),
 			columnHelper.accessor(

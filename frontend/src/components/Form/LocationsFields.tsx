@@ -554,11 +554,14 @@ export function LocationsFields({ initialValues, name = "locations" }: Props) {
 										</label>
 									</div>
 									<div>
-										<label className="row" htmlFor={`npmplusAuthRequest-${item.uiKey}`}>
-											<span className="col">
+										<label className="row gy-2" htmlFor={`npmplusAuthRequest-${item.uiKey}`}>
+											<span className="col-12 col-sm">
 												<T id="host.auth-request" />
+												<span className="d-block text-secondary small mt-1">
+													<T id="host.auth-request-help" />
+												</span>
 											</span>
-											<span className="col-auto">
+											<span className="col-12 col-sm-auto">
 												<select
 													id={`npmplusAuthRequest-${item.uiKey}`}
 													className="form-select"
@@ -567,8 +570,8 @@ export function LocationsFields({ initialValues, name = "locations" }: Props) {
 														handleChange(idx, "npmplusAuthRequest", e.target.value)
 													}
 												>
-													<option value="none">none</option>
-													<option value="anubis">anubis</option>
+													<option value="none">None</option>
+													<option value="anubis">Anubis</option>
 													<option value="tinyauth">tinyauth</option>
 													<option value="oauth2proxy">oauth2proxy</option>
 													<option value="voidauth">voidauth</option>
@@ -583,11 +586,14 @@ export function LocationsFields({ initialValues, name = "locations" }: Props) {
 									</div>
 									{item?.npmplusAuthRequest?.length > 0 && item.npmplusAuthRequest !== "none" && (
 										<div>
-											<label className="row" htmlFor={`npmplusAuthRequestUpstream-${item.uiKey}`}>
-												<span className="col">
+											<label
+												className="row gy-2"
+												htmlFor={`npmplusAuthRequestUpstream-${item.uiKey}`}
+											>
+												<span className="col-12 col-sm">
 													<T id="host.auth-request-upstream" />
 												</span>
-												<span className="col-auto">
+												<span className="col-12 col-sm-auto">
 													<input
 														id={`npmplusAuthRequestUpstream-${item.uiKey}`}
 														type="text"
