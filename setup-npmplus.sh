@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.24"
+SCRIPT_VERSION="1.25"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -51,6 +51,54 @@ package_is_installed() { # package_is_installed PACKAGE
 	[[ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null || true)" == "install ok installed" ]]
 }
 
+default_ipv4_interface() {
+	ip -o -4 route show to default 2>/dev/null |
+		awk '{ for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit } }'
+}
+
+detect_private_lan_ipv4() {
+	local interface
+	interface=$(default_ipv4_interface)
+	[[ -n "$interface" ]] || return 1
+	ip -o -4 addr show dev "$interface" scope global 2>/dev/null |
+		awk '{ split($4, address, "/"); ip = address[1]
+			if (ip ~ /^10\./ || ip ~ /^192\.168\./ || ip ~ /^172\.(1[6-9]|2[0-9]|3[01])\./) { print ip; exit } }'
+}
+
+detect_private_lan_cidr() {
+	local interface
+	interface=$(default_ipv4_interface)
+	[[ -n "$interface" ]] || return 1
+	ip -o -4 route show dev "$interface" scope link 2>/dev/null |
+		awk '{ network = $1
+			if (network ~ /^10\./ || network ~ /^192\.168\./ || network ~ /^172\.(1[6-9]|2[0-9]|3[01])\./) { print network; exit } }'
+}
+
+valid_ipv4() {
+	local address="$1" octet
+	local -a octets
+	[[ "$address" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+	IFS=. read -r -a octets <<<"$address"
+	for octet in "${octets[@]}"; do
+		[[ "$octet" =~ ^[0-9]+$ ]] && ((10#$octet <= 255)) || return 1
+	done
+}
+
+private_ipv4() {
+	local address="$1" first second _rest
+	valid_ipv4 "$address" || return 1
+	IFS=. read -r first second _rest <<<"$address"
+	((10#$first == 10 || (10#$first == 172 && 10#$second >= 16 && 10#$second <= 31) || (10#$first == 192 && 10#$second == 168)))
+}
+
+valid_private_ipv4_cidr() {
+	local value="$1" address prefix
+	[[ "$value" == */* ]] || return 1
+	address=${value%/*}
+	prefix=${value##*/}
+	private_ipv4 "$address" && [[ "$prefix" =~ ^[0-9]+$ ]] && ((10#$prefix >= 8 && 10#$prefix <= 32))
+}
+
 [[ $EUID -eq 0 ]] || { echo "run as root (sudo)" >&2; exit 1; }
 
 # Generated host helpers may be refreshed by an update while an older copy is
@@ -66,6 +114,50 @@ write_root_file() { # write_root_file target mode < content
 	chown root:root "$tmp"
 	chmod "$mode" "$tmp"
 	mv -f -- "$tmp" "$target"
+}
+
+remove_admin_lan_proxy() {
+	command -v systemctl >/dev/null || return 0
+	systemctl disable --now npmplus-admin-lan.socket npmplus-admin-lan.service >/dev/null 2>&1 || true
+	rm -f /etc/systemd/system/npmplus-admin-lan.socket /etc/systemd/system/npmplus-admin-lan.service
+	systemctl daemon-reload >/dev/null 2>&1 || true
+}
+
+configure_admin_lan_proxy() { # configure_admin_lan_proxy PRIVATE_IP
+	local listen_ip="$1" proxy_binary
+	proxy_binary=$(command -v systemd-socket-proxyd || true)
+	[[ -n "$proxy_binary" ]] || {
+		echo "systemd-socket-proxyd is unavailable; refusing to expose the admin UI" >&2
+		return 1
+	}
+	remove_admin_lan_proxy
+	write_root_file /etc/systemd/system/npmplus-admin-lan.socket 0644 <<EOF
+[Unit]
+Description=NPMplus private-LAN admin listener
+
+[Socket]
+ListenStream=$listen_ip:81
+NoDelay=true
+
+[Install]
+WantedBy=sockets.target
+EOF
+	write_root_file /etc/systemd/system/npmplus-admin-lan.service 0644 <<EOF
+[Unit]
+Description=NPMplus private-LAN admin relay
+Requires=npmplus-admin-lan.socket
+After=docker.service npmplus-admin-lan.socket
+
+[Service]
+Type=notify
+ExecStart=$proxy_binary 127.0.0.1:81
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+NoNewPrivileges=true
+EOF
+	systemctl daemon-reload
+	systemctl enable --now npmplus-admin-lan.socket >/dev/null
 }
 
 run_crowdsec_doctor() (
@@ -546,6 +638,7 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 		/usr/local/bin/npmplus-crowdsec-heal /usr/local/bin/anubis-honeypot-ban \
 		/usr/local/sbin/npmplus-wait-for-dns
 	rm -f /var/log/npmplus-update.log /var/log/npmplus-backup.log /var/log/npmplus-crowdsec-heal.log
+	remove_admin_lan_proxy
 
 	# Remove only the drop-in owned by this script. Other Docker overrides belong
 	# to the operator and must survive an NPMplus uninstall.
@@ -1655,6 +1748,8 @@ confirm "Use host networking (only needed when proxy targets use host localhost/
 # HTTP/3 is always available in NPMplus (enable per host in the UI); it needs 443/udp.
 USE_UFW="n"
 EXPOSE_ADMIN="n"
+ADMIN_BIND_IP=""
+ADMIN_LAN_CIDR=""
 if ! command -v ufw >/dev/null; then
 	if confirm "ufw is not installed - install it via apt?" "y"; then
 		apt-get update -qq && apt-get install -y -qq ufw
@@ -1665,7 +1760,25 @@ fi
 if command -v ufw >/dev/null; then
 	confirm "Configure UFW firewall (allow SSH, 80, 443/tcp+udp)?" "y" && USE_UFW="y"
 	if [[ "$USE_UFW" == "y" ]]; then
-		confirm "Open the admin UI port 81 to the internet?" "n" && EXPOSE_ADMIN="y"
+		if confirm "Allow the admin UI on port 81 from your private LAN?" "n"; then
+			DETECTED_LAN_IP=$(detect_private_lan_ipv4 || true)
+			DETECTED_LAN_CIDR=$(detect_private_lan_cidr || true)
+			if [[ -z "$DETECTED_LAN_IP" || -z "$DETECTED_LAN_CIDR" ]]; then
+				echo "could not detect a private IPv4 LAN; keeping the admin UI on localhost" >&2
+			else
+				ADMIN_BIND_IP=$(ask "VM private LAN address for the admin UI" "$DETECTED_LAN_IP")
+				ADMIN_LAN_CIDR=$(ask "Private LAN subnet allowed to use the admin UI" "$DETECTED_LAN_CIDR")
+				private_ipv4 "$ADMIN_BIND_IP" || {
+					echo "invalid or non-private LAN address; refusing to expose the admin UI" >&2
+					exit 1
+				}
+				valid_private_ipv4_cidr "$ADMIN_LAN_CIDR" || {
+					echo "invalid private IPv4 CIDR; refusing to expose the admin UI" >&2
+					exit 1
+				}
+				EXPOSE_ADMIN="y"
+			fi
+		fi
 	fi
 fi
 # OS security patches; docker engine updates still need a manual apt upgrade
@@ -1746,19 +1859,14 @@ $BRIDGE_HTTP_PORT
     extra_hosts:
       - "host.docker.internal:host-gateway"
 EOF
-if [[ "$EXPOSE_ADMIN" == "y" ]]; then
-	NPMPLUS_NETWORK_BLOCK=${NPMPLUS_NETWORK_BLOCK/127.0.0.1:81:81\/tcp/81:81\/tcp}
-fi
 ENV_ADMIN_BINDING='      - "NPM_LISTEN_LOCALHOST=false"'
 if [[ "$USE_HOST_NETWORK" == "y" ]]; then
 	CROWDSEC_SERVICE_HOST="127.0.0.1"
 	ANUBIS_SERVICE_HOST="127.0.0.1"
 	NPMPLUS_NETWORK_BLOCK='    network_mode: host'
-	if [[ "$EXPOSE_ADMIN" == "y" ]]; then
-		ENV_ADMIN_BINDING='      - "NPM_LISTEN_LOCALHOST=false"'
-	else
-		ENV_ADMIN_BINDING='      - "NPM_LISTEN_LOCALHOST=true"'
-	fi
+	# Keep the host listener private even in host-network mode. Optional LAN
+	# access is relayed through a UFW-governed systemd socket below.
+	ENV_ADMIN_BINDING='      - "NPM_LISTEN_LOCALHOST=true"'
 fi
 ENV_ANUBIS=""
 if [[ "$USE_ANUBIS" == "y" ]]; then
@@ -2117,8 +2225,20 @@ if [[ "$USE_UFW" == "y" ]]; then
 	ufw allow 80/tcp comment 'http' >/dev/null
 	ufw allow 443/tcp comment 'https' >/dev/null
 	ufw allow 443/udp comment 'http3-quic' >/dev/null  # required for HTTP/3
+	# Remove only rules carrying the comment used by older versions of this
+	# installer. Delete from highest to lowest because UFW renumbers after each
+	# deletion; unrelated operator-owned port 81 rules are left untouched.
+	while read -r ADMIN_RULE_NUMBER; do
+		[[ -n "$ADMIN_RULE_NUMBER" ]] || continue
+		ufw --force delete "$ADMIN_RULE_NUMBER" >/dev/null
+	done < <(
+		ufw status numbered 2>/dev/null |
+			awk '/81\/tcp/ && /npmplus-admin/ { line=$0; sub(/^[^[]*\[/, "", line); sub(/\].*/, "", line); gsub(/[[:space:]]/, "", line); if (line ~ /^[0-9]+$/) print line }' |
+			sort -rn
+	)
 	if [[ "$EXPOSE_ADMIN" == "y" ]]; then
-		ufw allow 81/tcp comment 'npmplus-admin' >/dev/null
+		ufw allow from "$ADMIN_LAN_CIDR" to "$ADMIN_BIND_IP" port 81 proto tcp comment 'npmplus-admin-lan' >/dev/null
+		echo "admin UI LAN rule: $ADMIN_LAN_CIDR -> $ADMIN_BIND_IP:81"
 	else
 		echo "admin UI stays on localhost - reach it via ssh tunnel: ssh -L 8081:localhost:81 <host>"
 	fi
@@ -2134,6 +2254,16 @@ fi
 
 say "deploying"
 docker compose -f "$COMPOSE_FILE" up -d
+
+# Docker-published ports traverse its forwarding rules before ordinary UFW
+# INPUT filtering. Keep the container on 127.0.0.1 and expose LAN access through
+# systemd-socket-proxyd, whose host socket is governed by the UFW rule above.
+if [[ "$EXPOSE_ADMIN" == "y" ]]; then
+	configure_admin_lan_proxy "$ADMIN_BIND_IP"
+	echo "admin UI: https://$ADMIN_BIND_IP:81 (private LAN $ADMIN_LAN_CIDR only)"
+else
+	remove_admin_lan_proxy
+fi
 
 if [[ "$ADMIN_BOOTSTRAP_ENABLED" == "true" ]]; then
 	finalize_admin_bootstrap

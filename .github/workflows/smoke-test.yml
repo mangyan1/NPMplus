@@ -32,7 +32,7 @@ jobs:
           # + anubis challenge-all + cloudflare trust (UFW is disabled below)
           - name: defaults
           # explicit admin credentials with firewall bouncer + challenge-all off,
-          # caddy on, cloudflare trust + ufw off, and unattended upgrades on
+          # caddy on, cloudflare trust off, private-LAN admin, and unattended upgrades
           - name: alternate
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -47,6 +47,18 @@ jobs:
         env:
           TEST_ADMIN_PASSWORD: 'Smoke${NOT_SET}-Password-1'
         run: |
+          if [[ "${{ matrix.name }}" == "alternate" ]]; then
+            # Exercise LAN-only admin mode without changing the hosted runner's
+            # real firewall. The real systemd socket relay is still installed,
+            # started, reached over the runner's private IP, and uninstalled.
+            sudo tee /usr/local/bin/ufw >/dev/null <<'UFW'
+          #!/bin/bash
+          printf '%s\n' "$*" >>/tmp/npmplus-smoke-ufw.log
+          [[ "$*" == "status" ]] && printf '%s\n' 'Status: active'
+          exit 0
+          UFW
+            sudo chmod 0755 /usr/local/bin/ufw
+          fi
           if [[ "${{ matrix.name }}" == "defaults" ]]; then
             # Keep every default except UFW: enabling it severs the hosted
             # runner's control connection before the remaining checks run.
@@ -80,8 +92,13 @@ jobs:
               y # caddy
               n # cloudflare
               n # host networking
-              n # ufw
+              y # configure ufw (stubbed above)
+              y # allow admin UI from the private LAN
+              '' # detected private VM address
+              '' # detected private LAN subnet
               y # unattended upgrades
+              '' # detected SSH port
+              n # do not restrict SSH in this disposable test
             )
           fi
           printf '%s\n' "${answers[@]}" | sudo bash setup-npmplus.sh
@@ -119,6 +136,14 @@ jobs:
           sudo grep -Fq '/opt/anubis-data/anubis:/run/npmplus-anubis:ro' /opt/npmplus/compose.yaml
           sudo grep -Fq 'ANUBIS_HONEYPOT_LOG_FILE=/run/npmplus-anubis/honeypot.addrs' /opt/npmplus/compose.yaml
           sudo docker exec npmplus test -f /run/npmplus-anubis/honeypot.addrs
+          if [[ "${{ matrix.name }}" == "alternate" ]]; then
+            sudo grep -Fq '127.0.0.1:81:81/tcp' /opt/npmplus/compose.yaml
+            sudo systemctl is-active --quiet npmplus-admin-lan.socket
+            lan_ip="$(ip -o -4 route get 1.1.1.1 | awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')"
+            test -n "$lan_ip"
+            curl -ksSf --max-time 10 "https://$lan_ip:81/api" >/dev/null
+            sudo grep -Eq "allow from .+ to $lan_ip port 81 proto tcp comment npmplus-admin-lan" /tmp/npmplus-smoke-ufw.log
+          fi
           if sudo docker logs npmplus-anubis 2>&1 | grep -q "can't init honeypot subsystem"; then
             echo "Anubis failed to initialize its honeypot" >&2
             exit 1
@@ -249,3 +274,5 @@ jobs:
           printf 'uninstall\n' | sudo /opt/npmplus/setup-npmplus.sh --uninstall
           test ! -e /opt/npmplus
           test -f /etc/systemd/system/docker.service.d/99-operator-owned.conf
+          test ! -e /etc/systemd/system/npmplus-admin-lan.socket
+          test ! -e /etc/systemd/system/npmplus-admin-lan.service

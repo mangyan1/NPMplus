@@ -111,6 +111,8 @@ Setup script v1.23 creates the Anubis honeypot log before deployment and mounts 
 
 Setup script v1.24 distinguishes an installed native CrowdSec daemon from Debian's harmless `config-files` record. A successful `apt remove crowdsec` can leave that record behind; it no longer blocks the Dockerized CrowdSec service or causes an interrupted fresh installation.
 
+Setup script v1.25 replaces the ambiguous public-admin prompt with an optional private-LAN mode. It detects and confirms the VM's RFC1918 address and subnet, keeps Docker port 81 on loopback, and exposes the private address through a systemd socket relay governed by a source-subnet-limited UFW rule. This avoids Docker's ordinary UFW-bypass behavior. It also removes installer-owned legacy global port-81 UFW rules. The default remains loopback-only access through an SSH tunnel. Router port forwarding can still make the private address reachable externally, so port 81 must not be forwarded.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.

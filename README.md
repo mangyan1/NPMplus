@@ -59,7 +59,7 @@ ssh -L 8181:127.0.0.1:81 YOUR_USER@YOUR_SERVER_IP
 
 Your browser may show a certificate warning because the local dashboard certificate is self-signed.
 
-If you answered `y` when the installer asked to open the admin port to the internet, skip the tunnel and visit `https://YOUR_SERVER_IP:81` directly.
+If you allow private-LAN dashboard access, the installer detects and confirms both the VM's private address and the permitted private subnet. Docker's port remains private on loopback; a small host listener makes it available at the private address through a subnet-limited UFW rule. You can then visit `https://VM_LAN_IP:81` from that LAN. Do not forward port 81 on your router.
 
 If you did not provide an administrator email and password during installation, get the one-time setup token from the server:
 
