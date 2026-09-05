@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.25"
+SCRIPT_VERSION="1.26"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -2201,7 +2201,10 @@ if [[ "$USE_UFW" == "y" ]]; then
 		if [[ -n "${SSH_CONNECTION:-}" ]]; then
 			SSH_PORT=${SSH_CONNECTION##* }
 		elif command -v sshd >/dev/null; then
-			SSH_PORT=$(sshd -T 2>/dev/null | awk '$1 == "port" {print $2; exit}')
+			# sshd -T can fail when a disposable/new host has incomplete SSH
+			# host configuration. Keep the safe port-22 fallback instead of
+			# letting pipefail abort firewall configuration.
+			SSH_PORT=$(sshd -T 2>/dev/null | awk '$1 == "port" {print $2; exit}' || true)
 			SSH_PORT=${SSH_PORT:-22}
 		fi
 		SSH_PORT=$(ask "SSH port to keep open" "$SSH_PORT")
