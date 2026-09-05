@@ -155,6 +155,7 @@ jobs:
             sudo grep -qx 'log_mode: file' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
             sudo grep -qx 'daemonize: true' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
             sudo grep -qx 'mode: iptables' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+            sudo test ! -e /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml.local
             sudo grep -A2 '^iptables_chains:$' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml | grep -qx '  - FORWARD'
             sudo crowdsec-firewall-bouncer \
               -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t
@@ -360,6 +361,7 @@ jobs:
           sudo grep -qx 'log_mode: file' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
           sudo grep -qx 'daemonize: true' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
           sudo grep -qx 'mode: iptables' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+          sudo test ! -e /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml.local
           sudo grep -A2 '^iptables_chains:$' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml | grep -qx '  - FORWARD'
           sudo crowdsec-firewall-bouncer \
             -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t
