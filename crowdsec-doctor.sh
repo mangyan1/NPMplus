@@ -169,7 +169,15 @@ if [[ -f /var/lib/npmplus/installed-firewall-bouncer ]]; then
 		bad "configuration is invalid - run Safe update to repair it"
 		fail=1
 	elif systemctl is-active --quiet crowdsec-firewall-bouncer; then
-		ok "firewall bouncer config is valid and its service is active"
+		rules=$(iptables-save 2>/dev/null || true)
+		if grep -Eq '^-A INPUT .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules" && \
+			grep -Eq '^-A FORWARD .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules"; then
+			ok "firewall bouncer protects host INPUT and Docker FORWARD traffic"
+		else
+			bad "firewall bouncer is active but Docker FORWARD protection is missing"
+			note "run Safe update to migrate the installer-managed rules"
+			fail=1
+		fi
 	else
 		bad "firewall bouncer service is not active"
 		note "run Safe update to repair its boot ordering and restart it"
@@ -177,6 +185,38 @@ if [[ -f /var/lib/npmplus/installed-firewall-bouncer ]]; then
 	fi
 else
 	note "not installed by setup-npmplus.sh"
+fi
+
+hdr "8c. protected startup"
+if [[ -f /var/lib/npmplus/strict-boot-protection ]]; then
+	if systemctl is-enabled --quiet npmplus-public.service && systemctl is-active --quiet npmplus-public.service; then
+		ok "public listeners are gated behind CrowdSec at boot"
+	else
+		bad "strict boot marker exists but npmplus-public.service is not enabled and active"
+		fail=1
+	fi
+	for container in npmplus npmplus-anubis npmplus-caddy; do
+		docker inspect "$container" >/dev/null 2>&1 || continue
+		if [[ "$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$container")" == "on-failure" ]]; then
+			ok "$container cannot bypass the boot gate after Docker restarts"
+		else
+			bad "$container has a restart policy that can bypass the boot gate"
+			fail=1
+		fi
+	done
+else
+	note "not enabled; public containers may start before the host bouncer after reboot"
+fi
+if [[ -f /var/lib/npmplus/cloudflare-origin-lock ]]; then
+	if systemctl is-active --quiet npmplus-cloudflare-origin-lock.service && \
+		/usr/local/sbin/npmplus-cloudflare-origin-lock status >/dev/null 2>&1; then
+		ok "Cloudflare origin lock filters host and Docker traffic before routing"
+	else
+		bad "Cloudflare origin lock is configured but its packet rules are missing"
+		fail=1
+	fi
+else
+	note "Cloudflare origin lock is not enabled"
 fi
 
 hdr "9. recent crowdsec auth errors (2h)"

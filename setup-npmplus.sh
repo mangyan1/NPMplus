@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.32"
+SCRIPT_VERSION="1.33"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -188,6 +188,10 @@ install_firewall_bouncer_boot_gate() {
 #!/bin/sh
 # The host firewall bouncer depends on the containerized CrowdSec LAPI. Docker
 # being active does not mean that the LAPI is ready yet, so use a bounded gate.
+if [ -s /opt/npmplus/compose.yaml ] && \
+	docker compose -f /opt/npmplus/compose.yaml config --services 2>/dev/null | grep -qx crowdsec; then
+	docker compose -f /opt/npmplus/compose.yaml up -d crowdsec
+fi
 for attempt in $(seq 1 180); do
 	code=$(curl -sS --connect-timeout 1 --max-time 2 -o /dev/null -w '%{http_code}' \
 		http://127.0.0.1:8080/v1/decisions?limit=1 2>/dev/null || true)
@@ -205,6 +209,8 @@ EOF
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
+PartOf=docker.service
+Before=npmplus-public.service
 
 [Service]
 ExecStartPre=/usr/local/sbin/npmplus-wait-for-crowdsec-lapi
@@ -214,11 +220,33 @@ EOF
 	systemctl daemon-reload
 }
 
+firewall_bouncer_covers_public_paths() {
+	local rules
+	rules=$(iptables-save 2>/dev/null || true)
+	grep -Eq '^-A INPUT .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules" &&
+		grep -Eq '^-A FORWARD .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules"
+}
+
 normalize_firewall_bouncer_config() {
-	local config=/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml tmp
+	local config=/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml tmp disable_ipv6=true
 	[[ -s "$config" ]] || return 1
+	if command -v ip >/dev/null && ip -6 address show scope global | grep -q 'inet6 '; then
+		disable_ipv6=false
+	fi
 	tmp=$(mktemp "${config}.tmp.XXXXXX")
-	if ! awk '
+	if ! awk -v disable_ipv6="$disable_ipv6" '
+		/^mode:/ { print "mode: iptables"; mode=1; next }
+		/^disable_ipv6:/ { print "disable_ipv6: " disable_ipv6; disable_ipv6_seen=1; next }
+		/^iptables_chains:/ {
+			in_chains_seen=1
+			print "iptables_chains:"
+			print "  - INPUT"
+			print "  - FORWARD"
+			in_chains=1
+			next
+		}
+		in_chains && /^  - / { next }
+		in_chains { in_chains=0 }
 		/^pid_dir:/ { pid_dir=1 }
 		/^daemonize:/ { daemonize=1 }
 		/^log_mode:/ { log_mode=1 }
@@ -230,6 +258,13 @@ normalize_firewall_bouncer_config() {
 		/^log_max_age:/ { log_max_age=1 }
 		{ print }
 		END {
+			if (!mode) print "mode: iptables"
+			if (!disable_ipv6_seen) print "disable_ipv6: " disable_ipv6
+			if (!in_chains_seen) {
+				print "iptables_chains:"
+				print "  - INPUT"
+				print "  - FORWARD"
+			}
 			if (!pid_dir) print "pid_dir: /var/run/"
 			if (!daemonize) print "daemonize: true"
 			if (!log_mode) print "log_mode: file"
@@ -252,6 +287,7 @@ normalize_firewall_bouncer_config() {
 repair_installer_firewall_bouncer() {
 	[[ -f /var/lib/npmplus/installed-firewall-bouncer ]] || return 0
 	command -v crowdsec-firewall-bouncer >/dev/null || return 0
+	DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ipset iptables
 	normalize_firewall_bouncer_config
 	install_firewall_bouncer_boot_gate
 	if ! crowdsec-firewall-bouncer -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t; then
@@ -264,6 +300,10 @@ repair_installer_firewall_bouncer() {
 	if curl -sS --connect-timeout 1 --max-time 2 -o /dev/null \
 		http://127.0.0.1:8080/v1/decisions?limit=1 2>/dev/null; then
 		systemctl restart crowdsec-firewall-bouncer
+		firewall_bouncer_covers_public_paths || {
+			echo "CrowdSec firewall bouncer is not protecting both INPUT and FORWARD" >&2
+			return 1
+		}
 	fi
 }
 
@@ -275,6 +315,266 @@ activate_installer_firewall_bouncer() {
 		systemctl status crowdsec-firewall-bouncer --no-pager -l >&2 || true
 		return 1
 	}
+	firewall_bouncer_covers_public_paths || {
+		echo "CrowdSec firewall bouncer started without INPUT + FORWARD enforcement" >&2
+		return 1
+	}
+}
+
+set_public_restart_policy() { # set_public_restart_policy POLICY
+	local policy="$1" tmp
+	[[ -s "$COMPOSE_FILE" ]] || return 1
+	tmp=$(mktemp "${COMPOSE_FILE}.tmp.XXXXXX")
+	awk -v policy="$policy" '
+		/^  [A-Za-z0-9_-]+:$/ {
+			service=$1
+			sub(/:$/, "", service)
+			managed=(service == "npmplus" || service == "anubis" || service == "npmplus-caddy")
+		}
+		managed && /^    restart:/ { print "    restart: " policy; next }
+		{ print }
+	' "$COMPOSE_FILE" >"$tmp"
+	chown root:root "$tmp"
+	chmod 0600 "$tmp"
+	mv -f -- "$tmp" "$COMPOSE_FILE"
+}
+
+remove_strict_boot_protection() {
+	command -v systemctl >/dev/null || return 0
+	systemctl disable --now npmplus-public.service >/dev/null 2>&1 || true
+	rm -f /etc/systemd/system/npmplus-public.service /usr/local/sbin/npmplus-start-protected \
+		/var/lib/npmplus/strict-boot-protection
+	systemctl daemon-reload >/dev/null 2>&1 || true
+}
+
+configure_strict_boot_protection() {
+	[[ -f /var/lib/npmplus/installed-firewall-bouncer ]] || {
+		echo "strict boot protection requires the installer-managed firewall bouncer" >&2
+		return 1
+	}
+	set_public_restart_policy "on-failure"
+	mkdir -p /var/lib/npmplus
+	touch /var/lib/npmplus/strict-boot-protection
+	write_root_file /usr/local/sbin/npmplus-start-protected 0755 <<'EOF'
+#!/bin/bash
+# Starts public listeners only after the containerized LAPI and host packet
+# bouncer are ready. Public services use on-failure, so Docker cannot race this
+# gate when the daemon starts after a reboot.
+set -euo pipefail
+COMPOSE=/opt/npmplus/compose.yaml
+
+docker compose -f "$COMPOSE" up -d crowdsec
+/usr/local/sbin/npmplus-wait-for-crowdsec-lapi
+systemctl is-active --quiet crowdsec-firewall-bouncer.service
+
+rules=$(iptables-save)
+grep -Eq '^-A INPUT .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules"
+grep -Eq '^-A FORWARD .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules"
+# The v0.0.25 bouncer reports READY after starting its decision-stream goroutine.
+# Keep listeners closed for a short initial-stream grace period, then prove the
+# rules remain installed.
+sleep 2
+rules=$(iptables-save)
+grep -Eq '^-A INPUT .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules"
+grep -Eq '^-A FORWARD .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules"
+
+if [[ -f /var/lib/npmplus/cloudflare-origin-lock ]]; then
+	systemctl start npmplus-cloudflare-origin-lock.service
+	systemctl is-active --quiet npmplus-cloudflare-origin-lock.service
+fi
+
+services=()
+for service in anubis npmplus-caddy npmplus; do
+	docker compose -f "$COMPOSE" config --services | grep -qx "$service" && services+=("$service")
+done
+docker compose -f "$COMPOSE" up -d --no-deps "${services[@]}"
+EOF
+	write_root_file /etc/systemd/system/npmplus-public.service 0644 <<'EOF'
+[Unit]
+Description=Start NPMplus public listeners after CrowdSec enforcement
+Requires=docker.service crowdsec-firewall-bouncer.service
+After=docker.service crowdsec-firewall-bouncer.service npmplus-cloudflare-origin-lock.service network-online.target
+Wants=network-online.target
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/npmplus-start-protected
+
+[Install]
+WantedBy=docker.service
+EOF
+	systemctl daemon-reload
+	systemctl enable npmplus-public.service >/dev/null
+}
+
+remove_cloudflare_origin_lock() {
+	command -v systemctl >/dev/null || return 0
+	systemctl disable --now npmplus-cloudflare-origin-lock.service >/dev/null 2>&1 || true
+	[[ ! -x /usr/local/sbin/npmplus-cloudflare-origin-lock ]] || \
+		/usr/local/sbin/npmplus-cloudflare-origin-lock stop >/dev/null 2>&1 || true
+	rm -f /etc/systemd/system/npmplus-cloudflare-origin-lock.service \
+		/etc/cron.d/npmplus-cloudflare-origin-lock \
+		/usr/local/sbin/npmplus-cloudflare-origin-lock \
+		/var/lib/npmplus/cloudflare-origin-lock
+	rm -f /var/lib/npmplus/cloudflare-ips-v4 /var/lib/npmplus/cloudflare-ips-v6
+	systemctl daemon-reload >/dev/null 2>&1 || true
+}
+
+configure_cloudflare_origin_lock() {
+	DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ipset iptables
+	mkdir -p /var/lib/npmplus
+	touch /var/lib/npmplus/cloudflare-origin-lock
+	write_root_file /usr/local/sbin/npmplus-cloudflare-origin-lock 0755 <<'EOF'
+#!/bin/bash
+# Allows public web traffic from Cloudflare and private/local networks only.
+# The owned raw-table pre-routing chain runs before host INPUT, Docker FORWARD,
+# UFW, and destination NAT. CrowdSec rules still run after an allowed source.
+set -euo pipefail
+STATE=/var/lib/npmplus
+exec 9>/run/lock/npmplus-cloudflare-origin-lock.lock
+flock 9
+
+valid_list() { # valid_list 4|6 FILE
+	local family="$1" file="$2" validation="npcf-check-${1}-$$" network rc=0
+	[[ -s "$file" ]] || return 1
+	if [[ "$family" == 4 ]]; then
+		awk -F'[./]' '
+			NF != 5 { bad=1 }
+			$1 > 255 || $2 > 255 || $3 > 255 || $4 > 255 || $5 > 32 { bad=1 }
+			END { exit bad || NR < 10 || NR > 100 }
+		' "$file" || return 1
+		grep -qx '0.0.0.0/0' "$file" && return 1
+	else
+		awk -F/ '
+			NF != 2 || $1 !~ /^[0-9A-Fa-f:]+$/ || $2 !~ /^[0-9]+$/ || $2 > 128 { bad=1 }
+			END { exit bad || NR < 5 || NR > 100 }
+		' "$file" || return 1
+		grep -qx '::/0' "$file" && return 1
+	fi
+	ipset destroy "$validation" >/dev/null 2>&1 || true
+	ipset create "$validation" hash:net family "$([[ "$family" == 4 ]] && echo inet || echo inet6)" maxelem 100
+	while IFS= read -r network; do
+		ipset add "$validation" "$network" || { rc=1; break; }
+	done <"$file"
+	ipset destroy "$validation" >/dev/null 2>&1 || true
+	return "$rc"
+}
+
+refresh() {
+	local v4tmp v6tmp
+	v4tmp=$(mktemp "$STATE/cloudflare-ips-v4.tmp.XXXXXX")
+	v6tmp=$(mktemp "$STATE/cloudflare-ips-v6.tmp.XXXXXX")
+	trap 'rm -f -- "$v4tmp" "$v6tmp"' RETURN
+	curl -fsSL --retry 4 --connect-timeout 10 --max-time 60 https://www.cloudflare.com/ips-v4 -o "$v4tmp"
+	curl -fsSL --retry 4 --connect-timeout 10 --max-time 60 https://www.cloudflare.com/ips-v6 -o "$v6tmp"
+	valid_list 4 "$v4tmp"
+	valid_list 6 "$v6tmp"
+	chmod 0644 "$v4tmp" "$v6tmp"
+	mv -f -- "$v4tmp" "$STATE/cloudflare-ips-v4"
+	mv -f -- "$v6tmp" "$STATE/cloudflare-ips-v6"
+	trap - RETURN
+}
+
+load_set() { # load_set NAME FAMILY FILE
+	local name="$1" family="$2" file="$3" tmp
+	tmp="${name}-new"
+	ipset destroy "$tmp" >/dev/null 2>&1 || true
+	ipset create "$tmp" hash:net family "$family" maxelem 100000
+	while IFS= read -r network; do
+		[[ -n "$network" ]] && ipset add "$tmp" "$network"
+	done <"$file"
+	if ipset list "$name" >/dev/null 2>&1; then
+		ipset swap "$tmp" "$name"
+		ipset destroy "$tmp"
+	else
+		ipset rename "$tmp" "$name"
+	fi
+}
+
+remove_jump() { # remove_jump BINARY PROTOCOL PORTS
+	local binary="$1" protocol="$2" ports="$3"
+	while "$binary" -t raw -C PREROUTING -p "$protocol" -m multiport --dports "$ports" -j NPMPLUS-CF >/dev/null 2>&1; do
+		"$binary" -t raw -D PREROUTING -p "$protocol" -m multiport --dports "$ports" -j NPMPLUS-CF
+	done
+}
+
+apply_family() { # apply_family BINARY SET PRIVATE_CIDRS...
+	local binary="$1" set_name="$2"; shift 2
+	local cidr
+	"$binary" -t raw -N NPMPLUS-CF >/dev/null 2>&1 || true
+	"$binary" -t raw -F NPMPLUS-CF
+	"$binary" -t raw -A NPMPLUS-CF -m set --match-set "$set_name" src -j RETURN
+	for cidr in "$@"; do
+		"$binary" -t raw -A NPMPLUS-CF -s "$cidr" -j RETURN
+	done
+	"$binary" -t raw -A NPMPLUS-CF -j DROP
+	remove_jump "$binary" tcp 80,443
+	remove_jump "$binary" udp 443
+	"$binary" -t raw -I PREROUTING 1 -p udp -m multiport --dports 443 -j NPMPLUS-CF
+	"$binary" -t raw -I PREROUTING 1 -p tcp -m multiport --dports 80,443 -j NPMPLUS-CF
+}
+
+stop_rules() {
+	local binary
+	for binary in iptables ip6tables; do
+		command -v "$binary" >/dev/null || continue
+		remove_jump "$binary" tcp 80,443
+		remove_jump "$binary" udp 443
+		"$binary" -t raw -F NPMPLUS-CF >/dev/null 2>&1 || true
+		"$binary" -t raw -X NPMPLUS-CF >/dev/null 2>&1 || true
+	done
+	ipset destroy npcf4 >/dev/null 2>&1 || true
+	ipset destroy npcf6 >/dev/null 2>&1 || true
+}
+
+start_rules() {
+	if ! refresh; then
+		echo "Cloudflare list refresh failed; using the last validated copy" >&2
+	fi
+	valid_list 4 "$STATE/cloudflare-ips-v4"
+	valid_list 6 "$STATE/cloudflare-ips-v6"
+	load_set npcf4 inet "$STATE/cloudflare-ips-v4"
+	load_set npcf6 inet6 "$STATE/cloudflare-ips-v6"
+	apply_family iptables npcf4 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+	apply_family ip6tables npcf6 ::1/128 fc00::/7 fe80::/10
+}
+
+case "${1:-start}" in
+	start) start_rules ;;
+	refresh) start_rules ;;
+	stop) stop_rules ;;
+	status)
+		iptables -t raw -C PREROUTING -p tcp -m multiport --dports 80,443 -j NPMPLUS-CF
+		ip6tables -t raw -C PREROUTING -p tcp -m multiport --dports 80,443 -j NPMPLUS-CF
+		;;
+	*) echo "usage: $0 {start|refresh|stop|status}" >&2; exit 2 ;;
+esac
+EOF
+	write_root_file /etc/systemd/system/npmplus-cloudflare-origin-lock.service 0644 <<'EOF'
+[Unit]
+Description=Restrict NPMplus public web ports to Cloudflare and private LANs
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+PartOf=docker.service
+Before=npmplus-public.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/npmplus-cloudflare-origin-lock start
+ExecStop=/usr/local/sbin/npmplus-cloudflare-origin-lock stop
+
+[Install]
+WantedBy=docker.service
+EOF
+	printf '19 3 * * * root /usr/local/sbin/npmplus-cloudflare-origin-lock refresh >>/var/log/npmplus-cloudflare-origin-lock.log 2>&1\n' \
+		>/etc/cron.d/npmplus-cloudflare-origin-lock
+	chmod 0644 /etc/cron.d/npmplus-cloudflare-origin-lock
+	systemctl daemon-reload
+	systemctl enable npmplus-cloudflare-origin-lock.service >/dev/null
 }
 
 run_crowdsec_doctor() (
@@ -437,7 +737,13 @@ run_crowdsec_doctor() (
 			doctor_bad "configuration is invalid - run Safe update to repair it"
 			fail=1
 		elif systemctl is-active --quiet crowdsec-firewall-bouncer; then
-			doctor_ok "firewall bouncer config is valid and its service is active"
+			if firewall_bouncer_covers_public_paths; then
+				doctor_ok "firewall bouncer protects host INPUT and Docker FORWARD traffic"
+			else
+				doctor_bad "firewall bouncer is active but Docker FORWARD protection is missing"
+				doctor_note "run Safe update to migrate the installer-managed rules"
+				fail=1
+			fi
 		else
 			doctor_bad "firewall bouncer service is not active"
 			doctor_note "run Safe update to repair its boot ordering and restart it"
@@ -445,6 +751,38 @@ run_crowdsec_doctor() (
 		fi
 	else
 		doctor_note "not installed by setup-npmplus.sh"
+	fi
+
+	doctor_header "8c. protected startup"
+	if [[ -f /var/lib/npmplus/strict-boot-protection ]]; then
+		if systemctl is-enabled --quiet npmplus-public.service && systemctl is-active --quiet npmplus-public.service; then
+			doctor_ok "public listeners are gated behind CrowdSec at boot"
+		else
+			doctor_bad "strict boot marker exists but npmplus-public.service is not enabled and active"
+			fail=1
+		fi
+		for container in npmplus npmplus-anubis npmplus-caddy; do
+			docker inspect "$container" >/dev/null 2>&1 || continue
+			if [[ "$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$container")" == "on-failure" ]]; then
+				doctor_ok "$container cannot bypass the boot gate after Docker restarts"
+			else
+				doctor_bad "$container has a restart policy that can bypass the boot gate"
+				fail=1
+			fi
+		done
+	else
+		doctor_note "not enabled; public containers may start before the host bouncer after reboot"
+	fi
+	if [[ -f /var/lib/npmplus/cloudflare-origin-lock ]]; then
+		if systemctl is-active --quiet npmplus-cloudflare-origin-lock.service && \
+			/usr/local/sbin/npmplus-cloudflare-origin-lock status >/dev/null 2>&1; then
+			doctor_ok "Cloudflare origin lock filters host and Docker traffic before routing"
+		else
+			doctor_bad "Cloudflare origin lock is configured but its packet rules are missing"
+			fail=1
+		fi
+	else
+		doctor_note "Cloudflare origin lock is not enabled"
 	fi
 
 	doctor_header "9. recent crowdsec auth errors (2h)"
@@ -558,10 +896,14 @@ run_boot_trace() (
 	trace_run systemctl list-dependencies --all docker.service
 
 	trace_section "NPMPLUS HOST SERVICES"
-	for unit in npmplus-admin-lan.socket npmplus-admin-lan.service crowdsec-firewall-bouncer.service; do
+	for unit in npmplus-admin-lan.socket npmplus-admin-lan.service crowdsec-firewall-bouncer.service \
+		npmplus-public.service npmplus-cloudflare-origin-lock.service; do
 		trace_run systemctl status "$unit" --no-pager -l
 		trace_run systemctl cat "$unit"
 	done
+	trace_run iptables-save
+	trace_run ip6tables-save
+	trace_run ipset list
 
 	trace_section "NETWORK AND DNS"
 	for unit in \
@@ -590,6 +932,8 @@ run_boot_trace() (
 		-u npmplus-admin-lan.socket \
 		-u npmplus-admin-lan.service \
 		-u crowdsec-firewall-bouncer.service \
+		-u npmplus-public.service \
+		-u npmplus-cloudflare-origin-lock.service \
 		-u systemd-networkd-wait-online.service \
 		-u NetworkManager-wait-online.service \
 		-u systemd-resolved.service
@@ -660,6 +1004,10 @@ Options:
   --install                 install or reconfigure NPMplus
   --update                  safely update with snapshot and rollback
   --update --enable-appsec  enable AppSec during a safe update
+  --update --enable-strict-boot
+                            keep public ports closed until CrowdSec is enforcing
+  --update --enable-cloudflare-origin-lock
+                            accept public web traffic only from Cloudflare/LANs
   --doctor                  check and optionally repair CrowdSec
   --boot-trace [FILE]       save a read-only startup diagnostic report
   --uninstall               back up and uninstall NPMplus
@@ -748,15 +1096,23 @@ case "${1:-}" in
 		;;
 esac
 
-# Existing installs preserve their AppSec choice during an ordinary update.
+# Existing installs preserve these security choices during an ordinary update.
 # Operators can opt in explicitly without rebuilding the stack interactively;
-# the flag is carried through the transactional safe-update wrapper via env.
+# flags are carried through the transactional safe-update wrapper via env.
 ENABLE_APPSEC_ON_UPDATE="${NPMPLUS_ENABLE_APPSEC_ON_UPDATE:-false}"
-if [[ "${2:-}" == "--enable-appsec" ]]; then
-	[[ "${1:-}" == "--update" ]] || { echo "--enable-appsec must be used with --update" >&2; exit 1; }
-	ENABLE_APPSEC_ON_UPDATE="true"
-elif [[ -n "${2:-}" && "${1:-}" == "--update" ]]; then
-	echo "unknown update option: ${2}" >&2
+ENABLE_STRICT_BOOT_ON_UPDATE="${NPMPLUS_ENABLE_STRICT_BOOT_ON_UPDATE:-false}"
+ENABLE_CF_ORIGIN_LOCK_ON_UPDATE="${NPMPLUS_ENABLE_CF_ORIGIN_LOCK_ON_UPDATE:-false}"
+if [[ "${1:-}" == "--update" ]]; then
+	for update_option in "${@:2}"; do
+		case "$update_option" in
+			--enable-appsec) ENABLE_APPSEC_ON_UPDATE="true" ;;
+			--enable-strict-boot) ENABLE_STRICT_BOOT_ON_UPDATE="true" ;;
+			--enable-cloudflare-origin-lock) ENABLE_CF_ORIGIN_LOCK_ON_UPDATE="true" ;;
+			*) echo "unknown update option: $update_option" >&2; exit 1 ;;
+		esac
+	done
+elif [[ -n "${2:-}" ]]; then
+	echo "${2} is only valid with --update" >&2
 	exit 1
 fi
 
@@ -781,6 +1137,8 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 	echo "unrelated Docker/system packages are left alone."
 	read -r -p "type 'uninstall' to confirm: " answer || true
 	[[ "${answer:-}" == "uninstall" ]] || { echo "aborted - nothing removed" >&2; exit 1; }
+	remove_strict_boot_protection
+	remove_cloudflare_origin_lock
 
 	if [[ -s "$COMPOSE_FILE" ]] && command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
 		say "stopping and removing containers"
@@ -798,7 +1156,8 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 		/etc/cron.d/npmplus-crowdsec-heal /etc/cron.d/anubis-honeypot
 	rm -f /usr/local/bin/npmplus-safe-update /usr/local/bin/npmplus-backup \
 		/usr/local/bin/npmplus-crowdsec-heal /usr/local/bin/anubis-honeypot-ban \
-		/usr/local/sbin/npmplus-wait-for-dns /usr/local/sbin/npmplus-wait-for-crowdsec-lapi
+		/usr/local/sbin/npmplus-wait-for-dns /usr/local/sbin/npmplus-wait-for-crowdsec-lapi \
+		/usr/local/sbin/npmplus-start-protected /usr/local/sbin/npmplus-cloudflare-origin-lock
 	rm -f /var/log/npmplus-update.log /var/log/npmplus-backup.log /var/log/npmplus-crowdsec-heal.log
 	remove_admin_lan_proxy
 
@@ -816,6 +1175,8 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 		rm -f /var/lib/npmplus/installed-firewall-bouncer
 		rmdir /var/lib/npmplus >/dev/null 2>&1 || true
 	fi
+	rm -f /var/lib/npmplus/strict-boot-protection /var/lib/npmplus/cloudflare-origin-lock \
+		/var/lib/npmplus/cloudflare-ips-v4 /var/lib/npmplus/cloudflare-ips-v6
 
 	if [[ -d /var/backups/npmplus ]]; then
 		say "uninstalled - backups kept in /var/backups/npmplus (delete manually if unwanted)"
@@ -1339,7 +1700,7 @@ if [[ -s "$DATA_DIR/setup-npmplus.sh" ]]; then
 	chmod 700 "$DATA_DIR/setup-npmplus.sh"
 	write_root_file /usr/local/bin/npmplus-safe-update 700 <<'EOF'
 #!/bin/bash
-# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=4
+# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=5
 # monthly npmplus update with a safety net: snapshots the running state,
 # runs the update, health-checks it, and reverts to the snapshot on failure
 set -euo pipefail
@@ -1359,6 +1720,9 @@ revert() {
 	log "health check FAILED - reverting to the last good state"
 	docker compose -f "$COMPOSE_FILE" ps -a >"$BACKUP/failed-ps.txt" 2>&1 || true
 	docker compose -f "$COMPOSE_FILE" logs --no-color --tail 200 >"$BACKUP/failed-logs.txt" 2>&1 || true
+	[[ ! -x /usr/local/sbin/npmplus-cloudflare-origin-lock ]] || \
+		/usr/local/sbin/npmplus-cloudflare-origin-lock stop >/dev/null 2>&1 || true
+	systemctl disable --now npmplus-public.service npmplus-cloudflare-origin-lock.service >/dev/null 2>&1 || true
 	docker compose -f "$COMPOSE_FILE" down >/dev/null 2>&1 || true
 	cp -a "$BACKUP/compose.yaml" "$COMPOSE_FILE"
 	if [[ -s "$BACKUP/anubis.yaml" ]]; then
@@ -1391,7 +1755,25 @@ revert() {
 	for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal; do
 		[[ -s "$BACKUP/cron-$f" ]] && cp -a "$BACKUP/cron-$f" "/etc/cron.d/$f"
 	done
-	if [[ -s "$BACKUP/override.yaml" ]]; then
+	rm -f /etc/systemd/system/npmplus-public.service \
+		/etc/systemd/system/npmplus-cloudflare-origin-lock.service \
+		/usr/local/sbin/npmplus-start-protected \
+		/usr/local/sbin/npmplus-cloudflare-origin-lock \
+		/etc/cron.d/npmplus-cloudflare-origin-lock \
+		/var/lib/npmplus/strict-boot-protection \
+		/var/lib/npmplus/cloudflare-origin-lock \
+		/var/lib/npmplus/cloudflare-ips-v4 \
+		/var/lib/npmplus/cloudflare-ips-v6
+	[[ ! -s "$BACKUP/host-security.tar.gz" ]] || tar -xzf "$BACKUP/host-security.tar.gz" -C /
+	systemctl daemon-reload >/dev/null 2>&1 || true
+	if [[ -f /var/lib/npmplus/cloudflare-origin-lock ]]; then
+		systemctl enable --now npmplus-cloudflare-origin-lock.service >/dev/null || true
+	fi
+	if [[ -f /var/lib/npmplus/strict-boot-protection ]]; then
+		# The restored Compose file is already digest-pinned. Use the protected
+		# starter so rollback does not create a public pre-enforcement window.
+		systemctl enable --now npmplus-public.service >/dev/null || true
+	elif [[ -s "$BACKUP/override.yaml" ]]; then
 		# pin every service back to its exact pre-update image; --pull never keeps
 		# a bad :latest from sneaking back in
 		docker compose -f "$COMPOSE_FILE" -f "$BACKUP/override.yaml" up -d --pull never
@@ -1413,6 +1795,25 @@ for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal; do
 	cp -a "/usr/local/bin/$f" "$BACKUP/$f" 2>/dev/null || true
 	cp -a "/etc/cron.d/$f" "$BACKUP/cron-$f" 2>/dev/null || true
 done
+host_security_paths=(
+	etc/systemd/system/npmplus-public.service
+	etc/systemd/system/npmplus-cloudflare-origin-lock.service
+	usr/local/sbin/npmplus-start-protected
+	usr/local/sbin/npmplus-cloudflare-origin-lock
+	etc/cron.d/npmplus-cloudflare-origin-lock
+	var/lib/npmplus/strict-boot-protection
+	var/lib/npmplus/cloudflare-origin-lock
+	var/lib/npmplus/cloudflare-ips-v4
+	var/lib/npmplus/cloudflare-ips-v6
+)
+host_security_existing=()
+for path in "${host_security_paths[@]}"; do
+	[[ -e "/$path" ]] && host_security_existing+=("$path")
+done
+rm -f "$BACKUP/host-security.tar.gz"
+if [[ ${#host_security_existing[@]} -gt 0 ]]; then
+	tar -czf "$BACKUP/host-security.tar.gz" -C / "${host_security_existing[@]}"
+fi
 
 # Never update a stack that is already incomplete; it would produce an unsafe
 # rollback baseline and could bring an intentionally stopped service online.
@@ -1816,6 +2217,20 @@ if [[ "${1:-}" == "--update" ]]; then
 		echo "cannot enable AppSec because this installation has no CrowdSec service" >&2
 		exit 1
 	fi
+	if [[ "$ENABLE_STRICT_BOOT_ON_UPDATE" == "true" ]] && [[ ! -f /var/lib/npmplus/installed-firewall-bouncer ]]; then
+		echo "cannot enable strict boot protection without the installer-managed firewall bouncer" >&2
+		exit 1
+	fi
+	if [[ "$ENABLE_CF_ORIGIN_LOCK_ON_UPDATE" == "true" ]] && ! grep -q 'TRUST_CLOUDFLARE=true' "$COMPOSE_FILE"; then
+		echo "cannot enable the Cloudflare origin lock: this install does not trust Cloudflare proxy headers" >&2
+		echo "reconfigure first and answer yes only when every public hostname is orange-clouded" >&2
+		exit 1
+	fi
+	if [[ "$ENABLE_CF_ORIGIN_LOCK_ON_UPDATE" == "true" && \
+		! -f /var/lib/npmplus/strict-boot-protection && "$ENABLE_STRICT_BOOT_ON_UPDATE" != "true" ]]; then
+		echo "the Cloudflare origin lock requires strict boot protection to avoid an unfiltered startup window" >&2
+		exit 1
+	fi
 	# Initial credentials are one-time bootstrap inputs. Remove legacy inline
 	# values before the safe-update wrapper snapshots compose.yaml, so neither
 	# the live file nor the new last-good backup retains the password. Older
@@ -1842,7 +2257,7 @@ if [[ "${1:-}" == "--update" ]]; then
 		# overwrite themselves in place during a nested tooling refresh. Replace
 		# them before delegation; this also repairs a missing execute bit.
 		if [[ ! -x /usr/local/bin/npmplus-safe-update ]] || \
-			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=4' /usr/local/bin/npmplus-safe-update; then
+			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=5' /usr/local/bin/npmplus-safe-update; then
 			install_host_tooling
 		fi
 		# Repair the v1.6 root-owned Anubis bind mount before the wrapper checks
@@ -1910,6 +2325,8 @@ if [[ "${1:-}" == "--update" ]]; then
 		candidate=$(readlink -f "$0")
 		chmod 700 "$candidate"
 		NPMPLUS_ENABLE_APPSEC_ON_UPDATE="$ENABLE_APPSEC_ON_UPDATE" \
+			NPMPLUS_ENABLE_STRICT_BOOT_ON_UPDATE="$ENABLE_STRICT_BOOT_ON_UPDATE" \
+			NPMPLUS_ENABLE_CF_ORIGIN_LOCK_ON_UPDATE="$ENABLE_CF_ORIGIN_LOCK_ON_UPDATE" \
 			NPMPLUS_SETUP_CANDIDATE="$candidate" exec /usr/local/bin/npmplus-safe-update
 	fi
 	say "updating"
@@ -1948,6 +2365,12 @@ if [[ "${1:-}" == "--update" ]]; then
 	grep -q "container_name: npmplus-anubis" "$COMPOSE_FILE" && harden_auxiliary_service anubis anubis
 	grep -q "container_name: npmplus-caddy" "$COMPOSE_FILE" && harden_auxiliary_service npmplus-caddy caddy
 	sed -i 's/no-new-privileges:true/no-new-privileges=true/g' "$COMPOSE_FILE"
+	if [[ -f /var/lib/npmplus/strict-boot-protection || "$ENABLE_STRICT_BOOT_ON_UPDATE" == "true" ]]; then
+		configure_strict_boot_protection
+	fi
+	if [[ -f /var/lib/npmplus/cloudflare-origin-lock || "$ENABLE_CF_ORIGIN_LOCK_ON_UPDATE" == "true" ]]; then
+		configure_cloudflare_origin_lock
+	fi
 	# installs made before the crowdsec UI page existed have no bouncer
 	# key for it - backfill instead of showing "not wired" in the admin UI.
 	# a present but rejected key means crowdsec's db lost the registration
@@ -2005,6 +2428,18 @@ if [[ "${1:-}" == "--update" ]]; then
 		docker compose -f "$COMPOSE_FILE" up -d
 	fi
 	activate_installer_firewall_bouncer
+	if [[ -f /var/lib/npmplus/cloudflare-origin-lock ]]; then
+		if systemctl is-active --quiet npmplus-cloudflare-origin-lock.service; then
+			/usr/local/sbin/npmplus-cloudflare-origin-lock refresh
+		else
+			systemctl start npmplus-cloudflare-origin-lock.service
+		fi
+		systemctl is-active --quiet npmplus-cloudflare-origin-lock.service
+	fi
+	if [[ -f /var/lib/npmplus/strict-boot-protection ]]; then
+		systemctl restart npmplus-public.service
+		systemctl is-active --quiet npmplus-public.service
+	fi
 	say "update done - check: docker compose -f $COMPOSE_FILE ps"
 	exit 0
 fi
@@ -2020,9 +2455,13 @@ fi
 USE_CROWDSEC="n"; confirm "Enable crowdsec?" "y" && USE_CROWDSEC="y"
 USE_APPSEC="n"
 USE_FWBOUNCER="n"
+USE_STRICT_BOOT="n"
 if [[ "$USE_CROWDSEC" == "y" ]]; then
 	confirm "Enable crowdsec appsec (recommended WAF protection; disable per host if incompatible)?" "y" && USE_APPSEC="y"
-	confirm "Enable the crowdsec firewall bouncer (kernel-level IP bans via nftables)?" "y" && USE_FWBOUNCER="y"
+	confirm "Enable the crowdsec firewall bouncer (kernel-level IP bans)?" "y" && USE_FWBOUNCER="y"
+	if [[ "$USE_FWBOUNCER" == "y" ]]; then
+		confirm "Keep public ports closed during boot until CrowdSec is enforcing bans?" "y" && USE_STRICT_BOOT="y"
+	fi
 fi
 USE_ANUBIS="n"; confirm "Enable anubis (anti-bot proof-of-work)?" "y" && USE_ANUBIS="y"
 CHALLENGE_ALL="n"
@@ -2035,6 +2474,11 @@ USE_CADDY="n"; confirm "Enable caddy (port 80 -> https redirect, so NPMplus only
 # orange cloud only: with plain dns the visitor ips arrive directly and must NOT be
 # taken from cloudflare headers (spoofable by anyone then)
 USE_CF="n"; confirm "Are your sites proxied through Cloudflare (orange cloud)?" "y" && USE_CF="y"
+USE_CF_ORIGIN_LOCK="n"
+if [[ "$USE_CF" == "y" && "$USE_STRICT_BOOT" == "y" ]]; then
+	echo "  Optional: direct public access will be blocked; every public DNS record must stay orange-clouded."
+	confirm "Lock ports 80/443 to Cloudflare and your private LAN?" "n" && USE_CF_ORIGIN_LOCK="y"
+fi
 USE_HOST_NETWORK="n"
 confirm "Use host networking (only needed when proxy targets use host localhost/127.0.0.1)?" "n" && USE_HOST_NETWORK="y"
 
@@ -2173,6 +2617,9 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
       - \"CROWDSEC_METRICS_URL=http://$CROWDSEC_SERVICE_HOST:6060/metrics\""
 fi
 
+PUBLIC_RESTART_POLICY="unless-stopped"
+[[ "$USE_STRICT_BOOT" == "y" ]] && PUBLIC_RESTART_POLICY="on-failure"
+
 CROWDSEC_BLOCK=""
 if [[ "$USE_CROWDSEC" == "y" ]]; then
 	IFS= read -r -d '' CROWDSEC_BLOCK <<EOF || true
@@ -2213,8 +2660,8 @@ $ENV_TZ
 EOF
 fi
 
-# the firewall bouncer has no docker image, it is a native package that programs
-# the host nftables directly - installed in the crowdsec block below
+# The firewall bouncer has no Docker image. Its native package programs host
+# iptables/ipset INPUT and FORWARD rules; installation is in the block below.
 
 ANUBIS_BLOCK=""
 if [[ "$USE_ANUBIS" == "y" ]]; then
@@ -2224,7 +2671,7 @@ if [[ "$USE_ANUBIS" == "y" ]]; then
 
   anubis:
     container_name: npmplus-anubis
-    restart: unless-stopped
+    restart: $PUBLIC_RESTART_POLICY
     image: $ANUBIS_IMAGE
     pull_policy: missing
     # NPMPLUS_AUX_HARDENING_BEGIN
@@ -2266,7 +2713,7 @@ if [[ "$USE_CADDY" == "y" ]]; then
 
   npmplus-caddy:
     container_name: npmplus-caddy
-    restart: unless-stopped
+    restart: $PUBLIC_RESTART_POLICY
     image: $CADDY_IMAGE
     pull_policy: missing
     # NPMPLUS_AUX_HARDENING_BEGIN
@@ -2298,7 +2745,7 @@ name: npmplus
 services:
   npmplus:
     container_name: npmplus
-    restart: unless-stopped
+    restart: $PUBLIC_RESTART_POLICY
     image: $NPMPLUS_IMAGE
     pull_policy: missing
 $NPMPLUS_NETWORK_BLOCK
@@ -2490,7 +2937,7 @@ EOF
 	fi
 
 	if [[ "$USE_FWBOUNCER" == "y" ]]; then
-		say "installing the firewall bouncer (native package, programs the host nftables)"
+		say "installing the firewall bouncer (protects host and Docker-forwarded traffic)"
 		# crowdsec publishes no docker image for this bouncer, the deb is the
 		# supported install; noninteractive keeps its debconf wizard silent
 		if ! command -v crowdsec-firewall-bouncer >/dev/null; then
@@ -2499,7 +2946,8 @@ EOF
 			# bouncer Recommends a native crowdsec daemon, and a native
 			# crowdsec binds 127.0.0.1:8080 before the container can - every
 			# auth then hits an lapi that knows none of our keys (silent 403s)
-			DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends crowdsec-firewall-bouncer
+			DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+				crowdsec-firewall-bouncer ipset iptables
 			mkdir -p /var/lib/npmplus
 			touch /var/lib/npmplus/installed-firewall-bouncer
 			# belt and suspenders for installs predating the flag (and for
@@ -2517,7 +2965,7 @@ EOF
 api_url: http://127.0.0.1:8080/
 api_key: $FWKEY
 update_frequency: 10s
-mode: nftables
+mode: iptables
 pid_dir: /var/run/
 # Required by Ubuntu's supported 0.0.25 systemd package. Newer bouncers ignore
 # this deprecated setting, so retaining it is safe across supported hosts.
@@ -2529,11 +2977,10 @@ log_compression: true
 log_max_size: 100
 log_max_backups: 3
 log_max_age: 30
-nftables:
-  ipv4:
-    enabled: true
-  ipv6:
-    enabled: $FW_IPV6_ENABLED
+disable_ipv6: $([[ "$FW_IPV6_ENABLED" == "true" ]] && echo false || echo true)
+iptables_chains:
+  - INPUT
+  - FORWARD
 EOF
 			chmod 600 /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
 			install_firewall_bouncer_boot_gate
@@ -2541,9 +2988,20 @@ EOF
 			systemctl enable crowdsec-firewall-bouncer >/dev/null
 			systemctl restart crowdsec-firewall-bouncer
 			systemctl is-active --quiet crowdsec-firewall-bouncer
-			echo "firewall bouncer: native nftables bans, service crowdsec-firewall-bouncer"
+			firewall_bouncer_covers_public_paths
+			echo "firewall bouncer: host INPUT + Docker FORWARD bans, service crowdsec-firewall-bouncer"
+		fi
+		if [[ "$USE_STRICT_BOOT" == "y" ]]; then
+			configure_strict_boot_protection
 		fi
 	fi
+fi
+
+if [[ "$USE_STRICT_BOOT" != "y" ]]; then
+	remove_strict_boot_protection
+fi
+if [[ "$USE_CF_ORIGIN_LOCK" != "y" ]]; then
+	remove_cloudflare_origin_lock
 fi
 
 if [[ "$USE_UFW" == "y" ]]; then
@@ -2611,8 +3069,20 @@ if [[ "$USE_UNATTENDED" == "y" ]]; then
 	printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' >/etc/apt/apt.conf.d/20auto-upgrades
 fi
 
+if [[ "$USE_CF_ORIGIN_LOCK" == "y" ]]; then
+	say "enabling the Cloudflare origin lock"
+	configure_cloudflare_origin_lock
+	systemctl start npmplus-cloudflare-origin-lock.service
+	systemctl is-active --quiet npmplus-cloudflare-origin-lock.service
+fi
+
 say "deploying"
-docker compose -f "$COMPOSE_FILE" up -d
+if [[ "$USE_STRICT_BOOT" == "y" ]]; then
+	systemctl start npmplus-public.service
+	systemctl is-active --quiet npmplus-public.service
+else
+	docker compose -f "$COMPOSE_FILE" up -d
+fi
 
 # Docker-published ports traverse its forwarding rules before ordinary UFW
 # INPUT filtering. Keep the container on 127.0.0.1 and expose LAN access through
@@ -2653,6 +3123,12 @@ if [[ "$USE_ANUBIS" == "y" ]]; then
 fi
 if [[ "$USE_APPSEC" == "y" ]]; then
 	echo "appsec: WAF protection is on; use each proxy host's AppSec protection switch for compatibility exceptions"
+fi
+if [[ "$USE_STRICT_BOOT" == "y" ]]; then
+	echo "protected startup: ports 80/443 open only after CrowdSec INPUT + FORWARD rules are active"
+fi
+if [[ "$USE_CF_ORIGIN_LOCK" == "y" ]]; then
+	echo "cloudflare origin lock: public 80/443 accepts Cloudflare and private/local sources only"
 fi
 if [[ "$USE_CROWDSEC" == "y" && -z "${KEY:-}" ]]; then
 	echo "crowdsec: finish manually, see messages above"

@@ -22,6 +22,8 @@ The versioned installer keeps its own release URL and image tag. To move to a ne
 
 On a new server, select **Install NPMplus**. On an existing installation, the same command offers safe update, CrowdSec doctor, startup/reboot diagnostics, advanced reconfiguration, and uninstall. The interactive installation prompts cover the initial administrator, CrowdSec and AppSec, the firewall bouncer, Anubis, Caddy, Cloudflare trust, UFW, and unattended security upgrades. The recommended defaults enable CrowdSec, AppSec, the firewall bouncer, and Anubis. Existing UFW rules are preserved unless a reset is explicitly approved. Before a reset, the script detects the active SSH port and asks for confirmation so it does not assume port 22.
 
+RC4 stays frozen while it is tested against real traffic. The rolling `develop` installer contains the post-RC4 protected-startup work described below; it has not been published as another release candidate.
+
 The generated Compose file is `/opt/npmplus/compose.yaml`. Registry channels are pulled and resolved to immutable `sha256` image digests before that file is written. An explicitly supplied initial administrator password is passed through a root-only, one-time Docker secret under `/run`, never embedded in Compose. After the API confirms that the account exists, the script removes its Compose references, recreates NPMplus without the secret mount, confirms health, and only then erases the file. Setup script v1.16 also scrubs legacy inline `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` entries before an update snapshot is created.
 
 Fresh v1.19 and later installations use a Compose bridge network, publish the admin listener on host loopback only, and run NPMplus services under UID/GID 1000 after privileged startup. Choose host networking only when an existing proxy target depends on host `127.0.0.1`; with bridge networking, use `host.docker.internal` for a service running directly on the Docker host. Port 81 should remain loopback-only and be reached through an SSH tunnel when remote administration is needed.
@@ -40,6 +42,8 @@ The script installs these root-owned helpers:
 - `/usr/local/bin/npmplus-backup`: daily data backup, retaining seven archives.
 - `/usr/local/bin/npmplus-crowdsec-heal`: daily validation and repair of CrowdSec credentials.
 - `/usr/local/bin/anubis-honeypot-ban`: optional five-minute Anubis-to-CrowdSec bridge.
+- `/usr/local/sbin/npmplus-start-protected`: optional fail-closed startup gate for the public containers.
+- `/usr/local/sbin/npmplus-cloudflare-origin-lock`: optional Cloudflare address-list refresh and host/Docker packet filter.
 
 ## GitHub and download integrity
 
@@ -68,9 +72,31 @@ sudo bash setup-npmplus.sh --update --enable-appsec
 
 The opt-in is included in the same snapshot, health-check, and automatic-rollback transaction as a normal update. It does not disable CrowdSec decisions or the firewall bouncer.
 
+Fresh rolling-`develop` installs default protected startup to on when the installer-managed firewall bouncer is selected. Existing installations preserve their current behavior unless this explicit opt-in is used:
+
+```bash
+wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
+sudo bash setup-npmplus.sh --update --enable-strict-boot
+```
+
+Protected startup changes the public NPMplus, Anubis, and Caddy restart policies to `on-failure`. Docker therefore cannot independently reopen their published ports during daemon startup. The firewall-bouncer unit is restarted with Docker after its packet chains are restored; `npmplus-public.service` then waits for the containerized CrowdSec LAPI, verifies CrowdSec rules in both `INPUT` and `FORWARD`, allows a short initial decision-stream grace period, and only then starts the public containers. A failed check leaves ports 80/443 without a listener. CrowdSec itself retains `unless-stopped` so the LAPI can become ready.
+
+The firewall bouncer uses its supported iptables/ipset backend with both `INPUT` and `FORWARD` chains. `INPUT` protects host-networked listeners; `FORWARD` protects ordinary Docker-published ports that bypass UFW's usual input path. The bouncer is coupled to Docker so its rules are reinstalled after a daemon restart.
+
+If every public hostname sharing the origin IP is Cloudflare orange-clouded, the optional origin lock can be enabled in the fresh-install prompt or during the same safe update:
+
+```bash
+wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
+sudo bash setup-npmplus.sh --update --enable-strict-boot --enable-cloudflare-origin-lock
+```
+
+The lock downloads Cloudflare's [published IPv4 and IPv6 ranges](https://www.cloudflare.com/ips/), validates them, atomically keeps a last-known-good copy, and permits those ranges plus loopback/RFC1918/ULA networks on public web ports. It rejects other sources in an iptables raw-table pre-routing chain, before host `INPUT`, Docker `FORWARD`, UFW, and destination NAT. Its list refresh runs daily. This does not disable CrowdSec: allowed Cloudflare requests continue to pass through CrowdSec and AppSec. Because rejected direct-origin probes never reach Nginx, they are blocked rather than recorded as CrowdSec attack activity. Leave this opt-in off while specifically evaluating how RC4 observes direct scans. It also does not replace upstream DDoS protection; a router/hypervisor allowlist or Cloudflare Tunnel remains stronger because unwanted traffic is discarded before reaching the VM.
+
+Do not enable the origin lock while any website, licensing API, webhook, or other public hostname on ports 80/443 is DNS-only. Such traffic correctly stops reaching the origin. Multiple orange-clouded websites and APIs may share the same public IP. Keep Anubis disabled per API host even when Cloudflare and CrowdSec remain enabled.
+
 Manual and scheduled updates use the same maintenance lock and safe-update wrapper. The update refuses to use an unhealthy or incomplete running stack as its rollback baseline. It then:
 
-1. Saves the Compose file, exact running image IDs, setup/helper scripts, and cron definitions.
+1. Saves the Compose file, exact running image IDs, setup/helper scripts, cron definitions, and installer-owned boot/firewall helpers.
 2. Creates an online SQLite backup before a new application image can perform migrations.
 3. Briefly stops CrowdSec and Anubis while copying their database-backed state, then restarts them. An exit trap attempts to restart a service if this snapshot is interrupted.
 4. Resolves the configured image channels to immutable digests, refreshes optional Anubis policy and CrowdSec credentials, and redeploys. A transient Docker port-release failure during container replacement is retried once before rollback.
@@ -124,6 +150,8 @@ Setup script v1.29 changes Anubis's global unmatched-request challenge to an exp
 Setup script v1.30 repairs containers left with the deleted `/run/npmplus-initial-admin-password` bind mount and prevents fresh installs from creating that reboot dependency. The CrowdSec doctor now reports the actual stopped-container error instead of mislabeling it as a missing bouncer key. The generated auxiliary services use read-only root filesystems, drop all Linux capabilities, enable `no-new-privileges`, and expose Docker health checks; Caddy receives only `NET_BIND_SERVICE`. Existing installer-managed services adopt these profiles through the transactional updater, while manually customized security profiles are preserved.
 
 Setup script v1.32 fixes two additional host-service failures found during an RC3 reboot test. The private-LAN port-81 socket can now bind before DHCP assigns the VM address and is ordered after `network-online.target`. Installer-managed firewall bouncers receive the complete logging configuration plus the daemon compatibility setting required by supported Ubuntu packages, validate before startup, and wait for the containerized CrowdSec LAPI. Safe update repairs both RC3 configurations automatically. The reboot report and CrowdSec doctor now include these host services directly.
+
+Setup script v1.33 closes the Docker forwarding gap by migrating installer-managed firewall bouncers to iptables/ipset rules on both `INPUT` and `FORWARD`. Its recommended protected-startup mode prevents public containers from bypassing those rules after a reboot, fails closed if enforcement is unavailable, and is covered by a CI daemon-restart test that continuously probes the HTTPS port during an intentionally failed bouncer start. An optional Cloudflare origin lock uses validated, last-known-good Cloudflare network lists and preserves private-LAN sources. The CrowdSec doctor and reboot report now verify these rules, units, markers, and restart policies. Safe-update wrapper v5 snapshots and restores the installer-owned host-security state. RC4 is intentionally not retagged or replaced with these changes.
 
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
@@ -204,7 +232,7 @@ If the backup helper is unavailable or fails, the uninstall stops without deleti
 sudo /opt/npmplus/setup-npmplus.sh --uninstall --no-backup
 ```
 
-Uninstall removes NPMplus containers, `/opt/npmplus`, optional CrowdSec and Anubis state, and the cron/helper files owned by this script. It retains `/var/backups/npmplus`, container images, unrelated Docker systemd drop-ins, unrelated packages, and all UFW rules. A CrowdSec firewall bouncer is removed only when an ownership marker proves this script installed it.
+Uninstall removes NPMplus containers, `/opt/npmplus`, optional CrowdSec and Anubis state, the protected-start/origin-lock packet rules, and the cron/helper files owned by this script. It retains `/var/backups/npmplus`, container images, unrelated Docker systemd drop-ins, unrelated packages, and all UFW rules. A CrowdSec firewall bouncer is removed only when an ownership marker proves this script installed it.
 
 ## Diagnostics
 

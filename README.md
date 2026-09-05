@@ -35,6 +35,8 @@ This command installs the named version instead of silently following later chan
 
 Select **Install NPMplus**, then answer the questions shown by the installer. If you are unsure, press Enter to accept the displayed default. The recommended defaults enable CrowdSec, CrowdSec AppSec web-application protection, the firewall bouncer, and Anubis. Anubis's global catch-all challenge defaults off so APIs, licensing servers, webhooks, monitors, and other non-browser clients continue to work. AppSec can still be turned off for an individual proxy host if an application has a confirmed compatibility problem.
 
+RC4 remains unchanged while it is tested on real websites. The rolling `develop` installer adds post-RC4 boot hardening: when the firewall bouncer is selected, public containers wait for verified CrowdSec host and Docker-forwarding rules before ports 80/443 start. A deliberately optional Cloudflare origin lock can also reject direct public traffic while preserving private-LAN access.
+
 After installation, one short local command opens the maintenance menu for safe updates, CrowdSec checks, reboot diagnostics, reconfiguration, and uninstalling. You do not need to memorize a different command for each task.
 
 For the easiest first login, provide an administrator email and password when the installer asks. The password is handled as a temporary secret and is not saved in `compose.yaml`.
@@ -94,6 +96,22 @@ wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/dev
 sudo bash setup-npmplus.sh --update --enable-appsec
 ```
 
+For an existing rolling-`develop` installation with the installer-managed firewall bouncer, enable protected startup with:
+
+```bash
+wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
+sudo bash setup-npmplus.sh --update --enable-strict-boot
+```
+
+If every public hostname on this IP is Cloudflare orange-clouded, you may also add the origin lock. DNS-only records on ports 80/443 will stop working, so this remains explicit rather than automatic:
+
+```bash
+wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
+sudo bash setup-npmplus.sh --update --enable-strict-boot --enable-cloudflare-origin-lock
+```
+
+The origin lock blocks direct probes before Nginx, so those packets will not appear as CrowdSec dashboard attacks. Leave it off while evaluating RC4's direct-scan visibility; RC4 itself is unchanged.
+
 ## Check that it is running
 
 ```bash
@@ -102,13 +120,15 @@ sudo docker compose -f /opt/npmplus/compose.yaml ps
 
 Every listed service should say `Up`. The `npmplus` service should become `healthy` after startup.
 
-The installer enables Docker and configures the containers to return automatically after a server restart. A supplied initial administrator password is removed after first use, and NPMplus is recreated without the temporary secret mount before that file is deleted. This prevents the container from depending on a `/run` file that disappears during reboot.
+The installer enables Docker and configures the stack to return automatically after a server restart. With protected startup enabled, CrowdSec starts first, the host bouncer must prove that both host and Docker-forwarded traffic are covered, and only then do the public listeners start. A supplied initial administrator password is removed after first use, and NPMplus is recreated without the temporary secret mount before that file is deleted. This prevents the container from depending on a `/run` file that disappears during reboot.
 
 ## What the installer handles
 
 - One interactive menu for installation, updates, diagnostics, and uninstalling.
 - NPMplus and its web dashboard.
 - Recommended CrowdSec, AppSec WAF, and firewall-bouncer protection, with AppSec compatibility exceptions per proxy host.
+- Protected startup that fails closed before opening public listeners when CrowdSec enforcement is unavailable.
+- Optional Cloudflare-only origin filtering for ports 80/443, with private/local networks retained for administration and testing.
 - Optional Anubis bot protection and honeypot bans.
 - Optional Caddy HTTP-to-HTTPS redirect service.
 - Safe monthly updates with automatic rollback.

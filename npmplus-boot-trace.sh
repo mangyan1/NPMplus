@@ -47,10 +47,14 @@ run systemctl cat docker.service
 run systemctl list-dependencies --all docker.service
 
 section "NPMPLUS HOST SERVICES"
-for unit in npmplus-admin-lan.socket npmplus-admin-lan.service crowdsec-firewall-bouncer.service; do
+for unit in npmplus-admin-lan.socket npmplus-admin-lan.service crowdsec-firewall-bouncer.service \
+	npmplus-public.service npmplus-cloudflare-origin-lock.service; do
 	run systemctl status "$unit" --no-pager -l
 	run systemctl cat "$unit"
 done
+run iptables-save
+run ip6tables-save
+run ipset list
 
 section "NETWORK AND DNS"
 for unit in \
@@ -79,6 +83,8 @@ run journalctl -b --no-pager -n 500 \
 	-u npmplus-admin-lan.socket \
 	-u npmplus-admin-lan.service \
 	-u crowdsec-firewall-bouncer.service \
+	-u npmplus-public.service \
+	-u npmplus-cloudflare-origin-lock.service \
 	-u systemd-networkd-wait-online.service \
 	-u NetworkManager-wait-online.service \
 	-u systemd-resolved.service

@@ -71,10 +71,12 @@ jobs:
               '' # crowdsec
               '' # appsec
               '' # firewall bouncer
+              '' # strict boot protection
               '' # anubis
               '' # challenge all
               y  # caddy
               '' # cloudflare
+              n  # optional Cloudflare-only origin lock
               n  # host networking
               n  # ufw
               '' # unattended upgrades
@@ -152,12 +154,24 @@ jobs:
           if [[ "${{ matrix.name }}" == "defaults" ]]; then
             sudo grep -qx 'log_mode: file' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
             sudo grep -qx 'daemonize: true' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+            sudo grep -qx 'mode: iptables' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+            sudo grep -A2 '^iptables_chains:$' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml | grep -qx '  - FORWARD'
             sudo crowdsec-firewall-bouncer \
               -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t
             sudo test -x /usr/local/sbin/npmplus-wait-for-crowdsec-lapi
             sudo grep -qx 'ExecStartPre=/usr/local/sbin/npmplus-wait-for-crowdsec-lapi' \
               /etc/systemd/system/crowdsec-firewall-bouncer.service.d/10-npmplus-container-lapi.conf
             sudo systemctl is-active --quiet crowdsec-firewall-bouncer
+            sudo systemctl is-enabled --quiet npmplus-public.service
+            sudo systemctl is-active --quiet npmplus-public.service
+            sudo grep -qx 'PartOf=docker.service' \
+              /etc/systemd/system/crowdsec-firewall-bouncer.service.d/10-npmplus-container-lapi.conf
+            for container in npmplus npmplus-anubis npmplus-caddy; do
+              test "$(sudo docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$container")" = on-failure
+            done
+            rules="$(sudo iptables-save)"
+            grep -Eq '^-A INPUT .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules"
+            grep -Eq '^-A FORWARD .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules"
           fi
           if sudo docker logs npmplus-anubis 2>&1 | grep -q "can't init honeypot subsystem"; then
             echo "Anubis failed to initialize its honeypot" >&2
@@ -270,7 +284,7 @@ jobs:
           # failure: Docker preserved an empty resolver file in the existing
           # host-networked container. The downloaded current script must repair
           # all three before entering the transactional update.
-          sudo sed -i 's/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=4/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=3/' /usr/local/bin/npmplus-safe-update
+          sudo sed -i 's/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=5/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=3/' /usr/local/bin/npmplus-safe-update
           sudo chmod 0644 /opt/npmplus/setup-npmplus.sh
           for _ in $(seq 1 30); do
             health="$(sudo docker inspect --format '{{.State.Health.Status}}' npmplus)"
@@ -321,11 +335,12 @@ jobs:
             exit 1
           fi
           update_log="$(mktemp)"
-          sudo bash setup-npmplus.sh --update --enable-appsec 2>&1 | tee "$update_log"
+          sudo bash setup-npmplus.sh --update --enable-appsec \
+            --enable-cloudflare-origin-lock 2>&1 | tee "$update_log"
           grep -q 'update healthy - last good snapshot kept' "$update_log"
           rm -f "$update_log"
           sudo test -x /opt/npmplus/setup-npmplus.sh
-          sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=4' /usr/local/bin/npmplus-safe-update
+          sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=5' /usr/local/bin/npmplus-safe-update
           sudo test -f /var/backups/npmplus-last-good/override.yaml
           test "$(stat -c '%u:%g' /opt/anubis-data)" = '1000:1000'
           sudo test -f /opt/anubis-data/anubis/honeypot.addrs
@@ -344,10 +359,53 @@ jobs:
           fi
           sudo grep -qx 'log_mode: file' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
           sudo grep -qx 'daemonize: true' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+          sudo grep -qx 'mode: iptables' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+          sudo grep -A2 '^iptables_chains:$' /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml | grep -qx '  - FORWARD'
           sudo crowdsec-firewall-bouncer \
             -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t
           sudo test -x /usr/local/sbin/npmplus-wait-for-crowdsec-lapi
           sudo systemctl is-active --quiet crowdsec-firewall-bouncer
+          sudo systemctl is-active --quiet npmplus-public.service
+          sudo systemctl is-active --quiet npmplus-cloudflare-origin-lock.service
+          sudo /usr/local/sbin/npmplus-cloudflare-origin-lock status
+          sudo test -s /var/lib/npmplus/cloudflare-ips-v4
+          sudo test -s /var/lib/npmplus/cloudflare-ips-v6
+
+      - name: strict boot fails closed while the firewall bouncer is unavailable
+        if: matrix.name == 'defaults'
+        run: |
+          sudo systemctl stop npmplus-public.service
+          sudo docker compose -f /opt/npmplus/compose.yaml stop npmplus anubis npmplus-caddy
+          sudo systemctl stop crowdsec-firewall-bouncer.service
+          sudo systemctl mask crowdsec-firewall-bouncer.service
+
+          sudo systemctl restart docker.service
+          sleep 5
+          for service in npmplus anubis npmplus-caddy; do
+            cid="$(sudo docker compose -f /opt/npmplus/compose.yaml ps -a -q "$service")"
+            test "$(sudo docker inspect --format '{{.State.Status}}' "$cid")" != running
+          done
+          # Simulate a scripted attacker repeatedly probing during the failed
+          # security startup. No public listener may answer before enforcement.
+          for _ in $(seq 1 20); do
+            code="$(curl -ksS -o /dev/null -w '%{http_code}' --connect-timeout 1 --max-time 1 https://127.0.0.1/ || true)"
+            test "$code" = 000
+          done
+
+          sudo systemctl unmask crowdsec-firewall-bouncer.service
+          sudo systemctl start npmplus-public.service
+          sudo systemctl is-active --quiet crowdsec-firewall-bouncer.service
+          sudo systemctl is-active --quiet npmplus-public.service
+          ready=false
+          for _ in $(seq 1 120); do
+            if curl -fkSs --connect-timeout 2 --max-time 5 https://127.0.0.1:81/api |
+              grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"'; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = true
       - name: failed update restores the complete last-good state
         if: matrix.name == 'defaults'
         run: |
@@ -391,8 +449,29 @@ jobs:
           done
           test "$recovered" = true
           test "$(sudo docker exec npmplus node -e "const d=require('better-sqlite3')('/data/npmplus/database.sqlite',{readonly:true});console.log(d.pragma('integrity_check',{simple:true}));d.close()")" = ok
+          sudo systemctl is-active --quiet npmplus-public.service
+          sudo systemctl is-active --quiet npmplus-cloudflare-origin-lock.service
+          sudo /usr/local/sbin/npmplus-cloudflare-origin-lock status
           sudo test -s /var/backups/npmplus-last-good/failed-ps.txt
           sudo test -s /var/backups/npmplus-last-good/failed-logs.txt
+      - name: uninstall removes protected-start and origin-lock state
+        if: matrix.name == 'defaults'
+        run: |
+          printf 'uninstall\n' | sudo /opt/npmplus/setup-npmplus.sh --uninstall --no-backup
+          test ! -e /etc/systemd/system/npmplus-public.service
+          test ! -e /etc/systemd/system/npmplus-cloudflare-origin-lock.service
+          test ! -e /usr/local/sbin/npmplus-start-protected
+          test ! -e /usr/local/sbin/npmplus-cloudflare-origin-lock
+          test ! -e /var/lib/npmplus/strict-boot-protection
+          test ! -e /var/lib/npmplus/cloudflare-origin-lock
+          if sudo iptables-save -t raw | grep -q NPMPLUS-CF; then
+            echo "Cloudflare origin-lock rules survived uninstall" >&2
+            exit 1
+          fi
+          if sudo ipset list npcf4 >/dev/null 2>&1; then
+            echo "Cloudflare origin-lock ipset survived uninstall" >&2
+            exit 1
+          fi
       - name: uninstall, reinstall, and restart without losing operator Docker settings
         if: matrix.name == 'alternate'
         run: |

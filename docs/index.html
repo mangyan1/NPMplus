@@ -506,7 +506,7 @@
       <p><strong>Reverse proxy</strong>Nginx, TLS, HTTP/3</p>
       <p><strong>Protection</strong>CrowdSec, AppSec WAF, Anubis</p>
       <p><strong>Recovery</strong>Backups and rollback</p>
-      <p><strong>Operations</strong>Boot checks and tracing</p>
+      <p><strong>Operations</strong>Protected boot and tracing</p>
     </section>
 
     <section id="work" class="work wrap">
@@ -524,6 +524,7 @@
           <h3>Daily operation</h3>
           <p>Updates take a last-good snapshot and must pass health checks. A failed update can return to the known working state.</p>
           <p>Daily backups are bounded, CrowdSec credentials can self-heal, and boot diagnostics explain DNS or container delays.</p>
+          <p>Optional protected startup keeps ports 80/443 without a listener until CrowdSec rules cover both the host and Docker forwarding path.</p>
         </article>
         <article>
           <h3>Web application protection</h3>
