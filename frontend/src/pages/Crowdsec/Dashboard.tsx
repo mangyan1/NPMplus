@@ -27,6 +27,7 @@ import ActiveBans from "./ActiveBans";
 import AnimatedLogo from "./AnimatedLogo";
 import styles from "./Dashboard.module.css";
 import { MetricsSkeleton, OverviewSkeleton, TableSkeleton } from "./LoadingSkeleton";
+import { WORLD_LAND_PATH } from "./WorldMapLand";
 
 const NOTIFICATIONS_KEY = "npmplus.crowdsec.browser-notifications";
 const LAST_SIGNAL_KEY = "npmplus.crowdsec.last-signal";
@@ -121,7 +122,7 @@ const AttackMap = ({ items }: { items: { latitude: number; longitude: number; co
 	const duration = `${Math.max(5, plotted.length * 1.1)}s`;
 	const position = (item: (typeof plotted)[number]) => ({
 		x: Math.min(708, Math.max(12, 360 + item.longitude * 2)),
-		y: Math.min(306, Math.max(14, 160 - (item.latitude / 90) * 148)),
+		y: Math.min(348, Math.max(12, 180 - item.latitude * 2)),
 	});
 	const countryCount = new Set(plotted.map((item) => item.country).filter(Boolean)).size;
 	const largestLocationCount = Math.max(1, ...plotted.map((item) => item.count));
@@ -136,16 +137,16 @@ const AttackMap = ({ items }: { items: { latitude: number; longitude: number; co
 					<span className={styles.mapBadgeDot} />
 					<T id="crowdsec.attack-map.observed" />
 				</div>
-				<svg className={styles.worldMap} viewBox="0 0 720 320" role="img" aria-label={summary}>
+				<svg className={styles.worldMap} viewBox="0 0 720 360" role="img" aria-label={summary}>
 					<title>{summary}</title>
 					<desc>{intl.formatMessage({ id: "crowdsec.attack-map.motion-note" })}</desc>
 					{[-60, -30, 0, 30, 60].map((latitude) => (
 						<line
 							key={latitude}
 							x1="0"
-							y1={160 - (latitude / 90) * 148}
+							y1={180 - latitude * 2}
 							x2="720"
-							y2={160 - (latitude / 90) * 148}
+							y2={180 - latitude * 2}
 							className={styles.worldGrid}
 						/>
 					))}
@@ -155,20 +156,13 @@ const AttackMap = ({ items }: { items: { latitude: number; longitude: number; co
 							x1={360 + longitude * 2}
 							y1="0"
 							x2={360 + longitude * 2}
-							y2="320"
+							y2="360"
 							className={styles.worldGrid}
 						/>
 					))}
 					<line x1="0" y1="0" x2="720" y2="0" className={styles.mapScan} />
-					<g className={styles.worldLand}>
-						<path d="M40 76 72 48 128 35 178 47 205 73 188 96 158 103 140 126 108 121 90 103 58 98Z" />
-						<path d="M173 127 205 139 218 174 206 215 187 262 169 244 160 202 146 166Z" />
-						<path d="M309 62 333 49 358 56 368 76 350 91 320 87Z" />
-						<path d="M334 102 376 95 408 116 420 156 398 211 372 251 344 222 328 174 310 139Z" />
-						<path d="M373 72 430 48 512 43 584 61 650 91 675 121 637 139 594 126 558 145 512 132 474 113 430 120 397 101Z" />
-						<path d="M548 211 588 197 630 211 650 240 628 261 582 257 552 237Z" />
-						<path d="M674 173 688 168 696 181 684 192Z" />
-					</g>
+					<path d={WORLD_LAND_PATH} className={styles.worldLandShadow} />
+					<path d={WORLD_LAND_PATH} className={styles.worldLand} />
 					{plotted.map((item, index) => {
 						const { x, y } = position(item);
 						const label = `${item.country || intl.formatMessage({ id: "unknown" })}: ${intl.formatNumber(item.count)}`;

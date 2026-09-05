@@ -296,7 +296,9 @@ check(
 await overviewTab.click();
 check(
 	"attack map uses geographic land shapes",
-	(await page.locator('svg[aria-label*="plotted across"] path').count()) >= 6,
+	(await page.locator('svg[aria-label*="plotted across"] path[class*="worldLand"]').count()) === 2 &&
+		(await page.locator('svg[aria-label*="plotted across"] path[class*="worldLand"]').last().getAttribute("d"))
+			?.length > 30_000,
 );
 check("attack map renders animated origin markers", (await page.locator('[class*="meteor"]').count()) >= 3);
 check(
