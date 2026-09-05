@@ -27,7 +27,9 @@ wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/dev
 sudo bash setup-npmplus.sh
 ```
 
-Answer the questions shown by the installer. If you are unsure, press Enter to accept the displayed default. The recommended defaults enable CrowdSec, CrowdSec AppSec web-application protection, the firewall bouncer, and Anubis. AppSec can still be turned off for an individual proxy host if an application has a confirmed compatibility problem.
+Select **Install NPMplus**, then answer the questions shown by the installer. If you are unsure, press Enter to accept the displayed default. The recommended defaults enable CrowdSec, CrowdSec AppSec web-application protection, the firewall bouncer, and Anubis. AppSec can still be turned off for an individual proxy host if an application has a confirmed compatibility problem.
+
+Keep the same command. After installation it becomes a simple maintenance menu for safe updates, CrowdSec checks, reboot diagnostics, reconfiguration, and uninstalling. You do not need to memorize a different command for each task.
 
 For the easiest first login, provide an administrator email and password when the installer asks. The password is handled as a temporary secret and is not saved in `compose.yaml`.
 
@@ -61,18 +63,24 @@ sudo docker exec npmplus cat /data/npmplus/setup-token
 
 Enter that token in the setup page. It is removed after the first administrator is created.
 
-## Update NPMplus
+## Update or troubleshoot NPMplus
 
-Copy and paste this single command on the server:
+Copy and paste the same command on the server:
 
 ```bash
 wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
-sudo bash setup-npmplus.sh --update
+sudo bash setup-npmplus.sh
 ```
 
-The updater creates a snapshot, installs the new images, checks the complete stack, and automatically restores the previous working version if the update fails.
+Choose the action you need from the numbered menu:
 
-An ordinary update keeps your existing AppSec choice. To enable AppSec on an existing installer-managed server, use this one-time command instead:
+- **Safe update** creates a snapshot, installs the new images, checks the complete stack, and automatically restores the previous working version if the update fails.
+- **Check or repair CrowdSec** tests the containers, API, credentials, and registration, then offers a repair when a key is rejected.
+- **Startup/reboot diagnostic report** collects read-only service, network, Docker, container, port, and resource details into a private report under `/tmp`.
+- **Reconfigure installation** reruns the advanced installation questions.
+- **Uninstall** takes a final backup, clearly describes what will be removed, and requires typed confirmation.
+
+An ordinary menu update keeps your existing AppSec choice. Advanced users can enable AppSec on an existing installer-managed server with this one-time command:
 
 ```bash
 wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
@@ -91,6 +99,7 @@ The installer enables Docker and configures the containers to return automatical
 
 ## What the installer handles
 
+- One interactive menu for installation, updates, diagnostics, and uninstalling.
 - NPMplus and its web dashboard.
 - Recommended CrowdSec, AppSec WAF, and firewall-bouncer protection, with AppSec compatibility exceptions per proxy host.
 - Optional Anubis bot protection and honeypot bans.
@@ -113,7 +122,7 @@ sudo docker compose -f /opt/npmplus/compose.yaml logs --tail=200
 
 If an update refuses to start, it usually means a service is already stopped or unhealthy. The updater does this to avoid creating a bad rollback snapshot.
 
-For recovery, backup restoration, uninstalling, and reboot diagnostics, see the [setup and operations guide](docs/setup-npmplus.md).
+Run the same setup command and select a diagnostic option when you need help. For recovery and backup restoration, see the [setup and operations guide](docs/setup-npmplus.md).
 
 When requesting help, share the command output but remove public IP addresses, domains, email addresses, and secrets first.
 
@@ -124,6 +133,7 @@ When requesting help, share the command output but remove public IP addresses, d
 - Integrated CrowdSec and Anubis security dashboard with a compact overview, clickable KPI details, a lightweight animated geographic attack map, accessible activity charts, explicit CrowdSec/Anubis/honeypot status, paginated local alert and ban views, engine metrics, optional browser alerts while the page is open, manual bans, exact-decision unban, and audit logging. The map renders at most 12 aggregated origins with inline SVG and CSS—no WebGL, map-tile downloads, or browser-side IP lookup. CrowdSec community blocklists remain fully enforced but are summarized as metrics instead of flooding the page with remote IP entries.
 - Dedicated AppSec WAF monitoring shows whether protection is configured, inspected/passed/blocked request totals, block rate, and the active compatibility policy.
 - Security headers, strict browser policy, protected session cookies, rate limits, and safer defaults.
+- Daily container CVE monitoring, pull-request image gates, and a patched Caddy build from the stable release source.
 - Support for Let's Encrypt and other ACME certificate authorities.
 - Optional GoAccess statistics and API documentation in the dashboard.
 

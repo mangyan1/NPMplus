@@ -3,12 +3,20 @@
 # manually starting the stack so the original systemd/container state is kept.
 set -uo pipefail
 
-OUT=${1:-/tmp/npmplus-boot-trace-$(date +%Y%m%d-%H%M%S).log}
+if [[ -n ${1:-} ]]; then
+	OUT=$1
+	umask 077
+	if ! (set -o noclobber; : >"$OUT") 2>/dev/null; then
+		echo "refusing to overwrite diagnostic report: $OUT" >&2
+		exit 1
+	fi
+else
+	OUT=$(mktemp "/tmp/npmplus-boot-trace-$(date +%Y%m%d-%H%M%S).XXXXXX.log")
+fi
 COMPOSE=/opt/npmplus/compose.yaml
 BOOT_TIME=$(date -d "$(uptime -s)" --iso-8601=seconds)
 NOW=$(date --iso-8601=seconds)
 
-touch "$OUT"
 chmod 600 "$OUT"
 exec > >(tee "$OUT") 2>&1
 

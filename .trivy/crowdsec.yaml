@@ -1,0 +1,28 @@
+vulnerabilities:
+  - id: CVE-2026-14456
+    expired_at: 2026-10-04
+    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+  - id: CVE-2026-25681
+    expired_at: 2026-10-04
+    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+  - id: CVE-2026-27136
+    expired_at: 2026-10-04
+    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+  - id: CVE-2026-32286
+    expired_at: 2026-10-04
+    statement: "Optional PostgreSQL driver is inactive in the standard SQLite deployment; awaiting upstream rebuild."
+  - id: CVE-2026-33814
+    expired_at: 2026-10-04
+    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+  - id: CVE-2026-39821
+    expired_at: 2026-10-04
+    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+  - id: CVE-2026-46600
+    expired_at: 2026-10-04
+    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+  - id: CVE-2026-56852
+    expired_at: 2026-10-04
+    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+  - id: CVE-2026-84304
+    expired_at: 2026-10-04
+    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."

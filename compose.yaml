@@ -118,7 +118,6 @@ services:
 #      - "NODE_TLS_REJECT_UNAUTHORIZED=0" # if your issuer uses a self signed cert you may need to set this, but please note that this will disable cert verification for all requests done by the backend (not nginx), like to github for version checks, gravatar, reachability checks or cloudflare for IP updates
 #      - "OIDC_CLIENT_ID=..." # client id for oidc
 #      - "OIDC_CLIENT_SECRET_FILE=/run/secrets/npmplus_oidc_client_secret" # client secret for oidc from a mounted secret file
-#      - "ALLOW_RUNTIME_CERTBOT_PLUGIN_INSTALL=true" # unsafe compatibility escape hatch; prefer a custom image with required DNS plugins preinstalled
 #      - "OIDC_REQUIRE_VERIFIED_EMAIL=false" # requires the email sent by the OIDC Provider to be marked as verified, default true
 #      - "OIDC_DISABLE_PASSWORD=true" # disables plain email/password login, default false
 #      - "OIDC_SKIP_MFA=true" # skips the second factor after a successful OIDC login, default false

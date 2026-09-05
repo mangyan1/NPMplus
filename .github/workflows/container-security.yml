@@ -1,0 +1,125 @@
+name: Container Security
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+jobs:
+  resolve:
+    runs-on: ubuntu-slim
+    permissions:
+      contents: read
+    outputs:
+      anubis_image: ${{ steps.anubis.outputs.image }}
+    steps:
+      - name: Resolve latest stable Anubis release
+        id: anubis
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(curl -fsSL \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            https://api.github.com/repos/TecharoHQ/anubis/releases/latest | jq -er '.tag_name')"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unexpected Anubis release tag: $tag" >&2
+            exit 1
+          fi
+          echo "image=ghcr.io/techarohq/anubis:$tag" >> "$GITHUB_OUTPUT"
+
+  scan:
+    needs: resolve
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: npmplus
+            image: ghcr.io/${{ github.repository_owner }}/npmplus:develop
+            ignore: ""
+          - name: caddy
+            image: ghcr.io/${{ github.repository_owner }}/npmplus:caddy
+            ignore: ""
+          - name: crowdsec
+            image: docker.io/crowdsecurity/crowdsec:latest
+            ignore: .trivy/crowdsec.yaml
+          - name: anubis
+            image: ${{ needs.resolve.outputs.anubis_image }}
+            ignore: .trivy/anubis.yaml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Create reviewable report
+        env:
+          IMAGE: ${{ matrix.image }}
+          IGNORE_FILE: ${{ matrix.ignore }}
+          REPORT_NAME: ${{ matrix.name }}
+        run: |
+          ignore_args=()
+          if [ -n "$IGNORE_FILE" ]; then
+            ignore_args=(--ignorefile "/workspace/$IGNORE_FILE" --show-suppressed)
+          fi
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -v trivy-cache:/root/.cache/trivy \
+            "$TRIVY_IMAGE" image \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            --format table \
+            --output "/workspace/trivy-$REPORT_NAME.txt" \
+            "${ignore_args[@]}" \
+            "$IMAGE"
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -v trivy-cache:/root/.cache/trivy \
+            "$TRIVY_IMAGE" image \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            --format sarif \
+            --output "/workspace/trivy-$REPORT_NAME.sarif" \
+            "$IMAGE"
+      - name: Enforce reviewed baseline
+        env:
+          IMAGE: ${{ matrix.image }}
+          IGNORE_FILE: ${{ matrix.ignore }}
+        run: |
+          ignore_args=()
+          if [ -n "$IGNORE_FILE" ]; then
+            ignore_args=(--ignorefile "/workspace/$IGNORE_FILE")
+          fi
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -v trivy-cache:/root/.cache/trivy \
+            "$TRIVY_IMAGE" image \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            "${ignore_args[@]}" \
+            "$IMAGE"
+      - name: Upload report artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trivy-${{ matrix.name }}
+          path: |
+            trivy-${{ matrix.name }}.txt
+            trivy-${{ matrix.name }}.sarif
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish SARIF
+        if: ${{ always() && hashFiles(format('trivy-{0}.sarif', matrix.name)) != '' }}
+        uses: github/codeql-action/upload-sarif@f25eda876ebb741d872b63b9f2c6dfdd77f14b83 # v4.35.5
+        with:
+          sarif_file: trivy-${{ matrix.name }}.sarif
+          category: container-${{ matrix.name }}

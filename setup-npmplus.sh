@@ -1,5 +1,5 @@
 #!/bin/bash
-# Interactive NPMplus deployment script (targets Debian 12/13 and Ubuntu 22.04+)
+# Interactive NPMplus deployment and maintenance script (Debian 12/13 and Ubuntu 22.04+)
 # Generates a compose.yaml with only the extras you pick (crowdsec, appsec, firewall
 # bouncer, anubis, caddy), wires them together, optionally configures UFW, and starts
 # everything. Run as root on the Linux docker host.
@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.20"
+SCRIPT_VERSION="1.22"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -45,6 +45,447 @@ confirm() { # confirm "question" "y|n" -> 0 if yes
 }
 
 [[ $EUID -eq 0 ]] || { echo "run as root (sudo)" >&2; exit 1; }
+
+# Generated host helpers may be refreshed by an update while an older copy is
+# still executing. Replacing the directory entry atomically keeps that running
+# process on its original inode instead of truncating its script underneath it.
+write_root_file() { # write_root_file target mode < content
+	local target="$1" mode="$2" tmp
+	tmp=$(mktemp "${target}.tmp.XXXXXX")
+	if ! cat >"$tmp"; then
+		rm -f -- "$tmp"
+		return 1
+	fi
+	chown root:root "$tmp"
+	chmod "$mode" "$tmp"
+	mv -f -- "$tmp" "$target"
+}
+
+run_crowdsec_doctor() (
+	# Keep diagnostics best-effort. A failed individual probe should be reported,
+	# not terminate the entire doctor before the remaining checks have run.
+	set +e
+	set -uo pipefail
+
+	local key="$DATA_DIR/crowdsec/lapi-ui.key"
+	local machine_key="$DATA_DIR/crowdsec/lapi-ui-machine.key"
+	local lapi="http://127.0.0.1:8080"
+	local fail=0 code kcode mcode auth_errors db_files answer
+
+	doctor_header() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
+	doctor_ok() { printf ' \033[32m[ok]\033[0m %s\n' "$*"; }
+	doctor_bad() { printf ' \033[31m[FAIL]\033[0m %s\n' "$*"; }
+	doctor_note() { printf '        %s\n' "$*"; }
+	doctor_bouncer_http_code() {
+		local value
+		value=$(cat "$1" 2>/dev/null || true)
+		[[ -n $value ]] || { echo 000; return; }
+		printf 'header = "X-Api-Key: %s"\n' "$value" | \
+			curl -sS -m 5 -o /dev/null -w '%{http_code}' --config - \
+			"$lapi/v1/decisions?limit=1" 2>/dev/null || echo 000
+	}
+	doctor_machine_http_code() {
+		[[ -n $1 ]] || { echo 000; return; }
+		printf '{"machine_id":"npmplus-ui","password":"%s"}' "$1" | \
+			curl -sS -m 5 -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" \
+			--data-binary @- "$lapi/v1/watchers/login" 2>/dev/null || echo 000
+	}
+
+	doctor_header "1. containers"
+	for container in crowdsec npmplus; do
+		if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$container"; then
+			doctor_ok "$container running"
+		else
+			doctor_bad "$container NOT running"
+			fail=1
+		fi
+	done
+
+	doctor_header "2. LAPI answers on $lapi (no key - 401/403 expected)"
+	code=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "$lapi/v1/decisions?limit=1" 2>/dev/null || echo 000)
+	case $code in
+		401 | 403) doctor_ok "LAPI up (no-key answer: $code)" ;;
+		000) doctor_bad "LAPI unreachable - is the 127.0.0.1:8080 port publish up?"; fail=1 ;;
+		*) doctor_bad "unexpected no-key answer: $code"; fail=1 ;;
+	esac
+
+	doctor_header "2b. is the port the container's? (native crowdsec steals it)"
+	if dpkg -s crowdsec >/dev/null 2>&1; then
+		doctor_bad "native crowdsec package is installed on the host"
+		doctor_note "its daemon binds 127.0.0.1:8080 before the container can, and"
+		doctor_note "then rejects every key the container's cscli ever registered"
+		doctor_note "fix: sudo apt remove crowdsec; docker compose -f $COMPOSE_FILE up -d crowdsec"
+		fail=1
+	elif command -v ss >/dev/null && ss -ltnp 2>/dev/null | grep ':8080' | grep -qv docker-proxy; then
+		doctor_bad "port 8080 is owned by something other than docker:"
+		ss -ltnp 2>/dev/null | grep ':8080' | sed 's/^/        /'
+		fail=1
+	else
+		doctor_ok "no native crowdsec, docker owns the port"
+	fi
+
+	doctor_header "3. bouncer key file ($key)"
+	if [[ ! -s "$key" ]]; then
+		doctor_bad "missing or empty"
+		fail=1
+	else
+		doctor_ok "present ($(wc -c <"$key") bytes, mode $(stat -c %a "$key"))"
+		if grep -q $'\r' "$key"; then
+			doctor_bad "contains CR (crlf) - the LAPI will never accept it"
+			fail=1
+		else
+			doctor_ok "no line-ending junk"
+		fi
+	fi
+
+	doctor_header "4. the key the UI backend uses"
+	kcode=$(doctor_bouncer_http_code "$key")
+	if [[ $kcode == 200 ]]; then
+		doctor_ok "LAPI accepts the key (200)"
+	else
+		doctor_bad "LAPI rejects the key: HTTP $kcode"
+		fail=1
+	fi
+
+	doctor_header "5. registration known to crowdsec"
+	if docker exec crowdsec cscli bouncers list 2>/dev/null | grep -qi "npmplus-ui"; then
+		doctor_ok "npmplus-ui bouncer exists"
+		docker exec crowdsec cscli bouncers list 2>/dev/null | grep -iE "name|npmplus" | head -3 | sed 's/^/        /'
+	else
+		doctor_bad "npmplus-ui is NOT in the bouncer list"
+		doctor_note "the registration was lost - classic cause: crowdsec's sqlite rolled"
+		doctor_note "back on an unclean shutdown"
+		fail=1
+	fi
+
+	doctor_header "6. what the npmplus container sees (/data/crowdsec/lapi-ui.key)"
+	if docker exec npmplus sh -c '[ -s /data/crowdsec/lapi-ui.key ]' 2>/dev/null; then
+		local host_hash container_hash
+		host_hash=$(sha256sum "$key" | cut -d' ' -f1)
+		container_hash=$(docker exec npmplus sha256sum /data/crowdsec/lapi-ui.key 2>/dev/null | cut -d' ' -f1)
+		if [[ $host_hash == "$container_hash" ]]; then
+			doctor_ok "container sees the same key"
+		else
+			doctor_bad "container sees a DIFFERENT key"
+			fail=1
+		fi
+	else
+		doctor_bad "missing inside the npmplus container - check the $DATA_DIR:/data mount"
+		fail=1
+	fi
+
+	doctor_header "7. machine key (unban + alert context only)"
+	mcode=$(doctor_machine_http_code "$(cat "$machine_key" 2>/dev/null || true)")
+	if [[ $mcode == 200 ]]; then
+		doctor_ok "machine login works"
+	else
+		doctor_bad "machine login: HTTP $mcode (unban/alerts will fail; the ban list itself still works)"
+		fail=1
+	fi
+
+	doctor_header "8. self-heal"
+	if [[ -f /etc/cron.d/npmplus-crowdsec-heal ]]; then
+		doctor_ok "heal cron installed"
+	else
+		doctor_bad "heal cron NOT installed - choose Safe update from the main menu"
+		doctor_note "it installs /usr/local/bin/npmplus-crowdsec-heal and the daily cron"
+	fi
+	if [[ -s /var/log/npmplus-crowdsec-heal.log ]]; then
+		doctor_note "last heal log lines:"
+		tail -5 /var/log/npmplus-crowdsec-heal.log | sed 's/^/        /'
+	fi
+
+	doctor_header "9. recent crowdsec auth errors (2h)"
+	auth_errors=$(docker logs crowdsec --since 2h 2>&1 | grep -iE "api key|bouncer|403" | tail -8)
+	if [[ -n $auth_errors ]]; then
+		printf '        %s\n' "${auth_errors//$'\n'/$'\n        '}"
+	else
+		doctor_note "none found"
+	fi
+
+	doctor_header "10. crowdsec db files (wal rollback leaves these behind)"
+	db_files=$(find "$CROWDSEC_DIR/data" -maxdepth 1 -type f -name '*.db*' -print 2>/dev/null)
+	if [[ -n $db_files ]]; then
+		printf '        %s\n' "${db_files//$'\n'/$'\n        '}"
+	else
+		doctor_note "no db files found at $CROWDSEC_DIR/data"
+	fi
+
+	if [[ $fail -eq 0 ]]; then
+		doctor_header "everything checks out"
+		doctor_note "if the UI still shows the error: hard-refresh the page (ctrl-shift-r),"
+		doctor_note "and log out/in once - a stale browser session can also break the page"
+		exit 0
+	fi
+
+	doctor_header "fix"
+	if [[ $kcode == 200 && $mcode == 200 ]]; then
+		doctor_note "both keys are already accepted - nothing to re-register"
+		doctor_note "follow the notes above for the remaining findings"
+		exit 1
+	fi
+	read -r -p "re-register the rejected keys now? [y/N] " answer || answer=""
+	if [[ $answer != "y" ]]; then
+		exit 0
+	fi
+
+	if [[ $kcode != 200 ]]; then
+		local new_key
+		docker exec crowdsec cscli bouncers delete npmplus-ui >/dev/null 2>&1 || true
+		new_key=$(docker exec crowdsec cscli bouncers add npmplus-ui -o raw 2>/dev/null)
+		printf '%s\n' "$new_key" >"$key"
+		chmod 600 "$key"
+		code=$(doctor_bouncer_http_code "$key")
+		if [[ $code == 200 ]]; then
+			doctor_ok "bouncer re-registered, verified against the LAPI (200)"
+		else
+			doctor_bad "still rejected ($code) - run by hand and compare:"
+			doctor_note "docker exec crowdsec cscli bouncers add npmplus-ui -o raw"
+		fi
+	fi
+
+	if [[ $mcode != 200 ]]; then
+		local password
+		password=$(docker exec crowdsec cscli machines add npmplus-ui -a -f - --force 2>&1 | sed -n 's/^password:[[:space:]]*//p' | head -1)
+		if [[ -n $password ]]; then
+			printf '%s\n' "$password" >"$machine_key"
+			chmod 600 "$machine_key"
+			code=$(doctor_machine_http_code "$password")
+			if [[ $code == 200 ]]; then
+				doctor_ok "machine re-registered, verified (200)"
+			else
+				doctor_bad "machine login still rejected ($code)"
+			fi
+		fi
+	fi
+)
+
+run_boot_trace() (
+	set +e
+	set -uo pipefail
+
+	local output
+	local boot_time now service cid
+	if [[ -n ${1:-} ]]; then
+		output=$1
+		umask 077
+		if ! (set -o noclobber; : >"$output") 2>/dev/null; then
+			echo "refusing to overwrite diagnostic report: $output" >&2
+			exit 1
+		fi
+	else
+		output=$(mktemp "/tmp/npmplus-boot-trace-$(date +%Y%m%d-%H%M%S).XXXXXX.log")
+	fi
+	boot_time=$(date -d "$(uptime -s)" --iso-8601=seconds)
+	now=$(date --iso-8601=seconds)
+
+	chmod 600 "$output"
+	exec > >(tee "$output") 2>&1
+
+	trace_section() { printf '\n========== %s ==========' "$*"; printf '\n'; }
+	trace_run() {
+		printf '\n$'
+		printf ' %q' "$@"
+		printf '\n'
+		"$@" || true
+	}
+
+	trace_section "HOST AND BOOT"
+	trace_run date --iso-8601=seconds
+	trace_run uptime
+	trace_run systemd-analyze time
+	trace_run systemd-analyze critical-chain docker.service
+	trace_run bash -c 'systemd-analyze blame --no-pager | head -50'
+
+	trace_section "DOCKER SERVICE"
+	trace_run systemctl is-enabled docker.service
+	trace_run systemctl status docker.service --no-pager -l
+	trace_run systemctl show docker.service \
+		--property=ActiveState,SubState,Result,ExecMainStatus,ActiveEnterTimestamp,After,Wants
+	trace_run systemctl cat docker.service
+	trace_run systemctl list-dependencies --all docker.service
+
+	trace_section "NETWORK AND DNS"
+	for unit in \
+		network-online.target \
+		systemd-networkd.service \
+		systemd-networkd-wait-online.service \
+		NetworkManager.service \
+		NetworkManager-wait-online.service \
+		systemd-resolved.service; do
+		trace_run systemctl status "$unit" --no-pager -l
+	done
+
+	trace_run ip -brief address
+	trace_run readlink -f /etc/resolv.conf
+	trace_run cat /etc/resolv.conf
+	trace_run getent ahosts ghcr.io
+	if command -v resolvectl >/dev/null; then
+		trace_run resolvectl query ghcr.io
+		trace_run resolvectl status
+	fi
+
+	trace_section "CURRENT-BOOT JOURNAL"
+	trace_run journalctl -b --no-pager -n 500 \
+		-u docker.service \
+		-u containerd.service \
+		-u systemd-networkd-wait-online.service \
+		-u NetworkManager-wait-online.service \
+		-u systemd-resolved.service
+
+	trace_section "BOOT WARNINGS"
+	trace_run journalctl -b --no-pager -p warning..alert -n 250
+
+	trace_section "CONTAINERS"
+	trace_run docker info --format \
+		'Docker={{.ServerVersion}} started={{.SystemTime}} containers={{.Containers}} running={{.ContainersRunning}}'
+
+	if [[ -s "$COMPOSE_FILE" ]]; then
+		trace_run docker compose -f "$COMPOSE_FILE" config --services
+		trace_run docker compose -f "$COMPOSE_FILE" config --images
+		trace_run docker compose -f "$COMPOSE_FILE" ps -a
+
+		mapfile -t services < <(docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null)
+		for service in "${services[@]}"; do
+			trace_section "CONTAINER: $service"
+			cid=$(docker compose -f "$COMPOSE_FILE" ps -a -q "$service" 2>/dev/null || true)
+			if [[ -z $cid ]]; then
+				echo "No container exists for service $service."
+				continue
+			fi
+
+			trace_run docker inspect --format \
+				'name={{.Name}} state={{.State.Status}} exit={{.State.ExitCode}} error={{printf "%q" .State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} restart={{.HostConfig.RestartPolicy.Name}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+				"$cid"
+			if [[ $service == "npmplus" ]]; then
+				trace_run docker exec "$cid" cat /etc/resolv.conf
+			fi
+			trace_run docker logs --since "$boot_time" --tail 200 "$cid"
+		done
+	else
+		echo "$COMPOSE_FILE is missing."
+	fi
+
+	trace_section "CONTAINER EVENTS SINCE BOOT"
+	trace_run docker events \
+		--since "$boot_time" \
+		--until "$now" \
+		--filter type=container \
+		--format '{{.Time}} {{.Action}} {{.Actor.Attributes.name}} {{.Actor.Attributes.exitCode}}'
+
+	trace_section "PORTS AND RESOURCES"
+	trace_run bash -c "ss -lntp | grep -E ':(80|81|443|7422|8080|8923)([[:space:]]|$)' || true"
+	trace_run df -h / /var/lib/docker
+	trace_run free -h
+
+	trace_section "QUICK INTERPRETATION"
+	echo "If critical-chain stops at *-wait-online.service, networking is delaying Docker."
+	echo "If Docker is active but no container exists, compose down probably removed it."
+	echo "If restart=unless-stopped and exit=0, the container may have been manually stopped."
+	echo "Look for DNS/resolver errors in the npmplus logs."
+	echo "Look for port conflicts when a container repeatedly exits."
+	echo
+	echo "Report saved to: $output"
+	echo "Review it for hostnames and IP addresses before sharing it."
+)
+
+show_usage() {
+	cat <<'EOF'
+Usage: sudo bash setup-npmplus.sh [option]
+
+With no option in a terminal, a numbered maintenance menu is shown.
+
+Options:
+  --install                 install or reconfigure NPMplus
+  --update                  safely update with snapshot and rollback
+  --update --enable-appsec  enable AppSec during a safe update
+  --doctor                  check and optionally repair CrowdSec
+  --boot-trace [FILE]       save a read-only startup diagnostic report
+  --uninstall               back up and uninstall NPMplus
+  --uninstall --no-backup   uninstall only when no final backup is possible
+  --help                    show this help
+EOF
+}
+
+show_main_menu() {
+	local choice
+	say "NPMplus setup and maintenance"
+	if [[ -s "$COMPOSE_FILE" ]]; then
+		cat <<'EOF'
+  1) Safe update (recommended)
+  2) Check or repair CrowdSec
+  3) Create a startup/reboot diagnostic report
+  4) Reconfigure installation (advanced)
+  5) Uninstall
+  6) Exit
+EOF
+		choice=$(ask "Select an option" "1")
+		case $choice in
+			1) set -- --update ;;
+			2) set -- --doctor ;;
+			3) set -- --boot-trace ;;
+			4) set -- --install ;;
+			5) set -- --uninstall ;;
+			6) exit 0 ;;
+			*) echo "invalid selection: $choice" >&2; exit 2 ;;
+		esac
+	else
+		cat <<'EOF'
+  1) Install NPMplus (recommended)
+  2) Check CrowdSec
+  3) Create a startup/reboot diagnostic report
+  4) Exit
+EOF
+		choice=$(ask "Select an option" "1")
+		case $choice in
+			1) set -- --install ;;
+			2) set -- --doctor ;;
+			3) set -- --boot-trace ;;
+			4) exit 0 ;;
+			*) echo "invalid selection: $choice" >&2; exit 2 ;;
+		esac
+	fi
+	MENU_ACTION=("$@")
+}
+
+# Human operators get one simple menu. Piped/non-interactive installs retain the
+# historical no-argument behavior so automation and unattended tests do not
+# consume one of the installer answers as a menu choice.
+MENU_ACTION=()
+if [[ $# -eq 0 && -t 0 ]]; then
+	show_main_menu
+	set -- "${MENU_ACTION[@]}"
+fi
+
+case "${1:-}" in
+	--install)
+		shift
+		[[ $# -eq 0 ]] || { echo "--install does not accept another option" >&2; exit 2; }
+		;;
+	--doctor)
+		shift
+		[[ $# -eq 0 ]] || { echo "--doctor does not accept another option" >&2; exit 2; }
+		run_crowdsec_doctor
+		exit $?
+		;;
+	--boot-trace)
+		shift
+		[[ $# -le 1 ]] || { echo "--boot-trace accepts at most one output file" >&2; exit 2; }
+		run_boot_trace "${1:-}"
+		exit $?
+		;;
+	--help|-h)
+		show_usage
+		exit 0
+		;;
+	--update|--uninstall|"")
+		;;
+	*)
+		echo "unknown option: $1" >&2
+		show_usage >&2
+		exit 2
+		;;
+esac
 
 # Existing installs preserve their AppSec choice during an ordinary update.
 # Operators can opt in explicitly without rebuilding the stack interactively;
@@ -468,9 +909,9 @@ if [[ -f "$0" ]] && head -1 "$0" | grep -q '^#!/bin/bash'; then
 fi
 if [[ -s "$DATA_DIR/setup-npmplus.sh" ]]; then
 	chmod 700 "$DATA_DIR/setup-npmplus.sh"
-	cat >/usr/local/bin/npmplus-safe-update <<'EOF'
+	write_root_file /usr/local/bin/npmplus-safe-update 700 <<'EOF'
 #!/bin/bash
-# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=3
+# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=4
 # monthly npmplus update with a safety net: snapshots the running state,
 # runs the update, health-checks it, and reverts to the snapshot on failure
 set -euo pipefail
@@ -553,7 +994,15 @@ while read -r svc; do
 		log "pre-update check failed: $svc is not running"
 		exit 1
 	}
-	health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")
+	health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null || true)
+	if [[ "$health" == "starting" ]]; then
+		log "pre-update check: waiting up to 180 seconds for $svc health"
+		for _ in $(seq 1 90); do
+			sleep 2
+			health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null || true)
+			[[ "$health" == "starting" ]] || break
+		done
+	fi
 	[[ "$health" == "none" || "$health" == "healthy" ]] || {
 		log "pre-update check failed: $svc health is $health"
 		exit 1
@@ -680,7 +1129,6 @@ sleep 30
 check || { sleep 60; check || revert; }
 log "update healthy - last good snapshot kept in $BACKUP"
 EOF
-	chmod +x /usr/local/bin/npmplus-safe-update
 	printf '37 4 1 * * root /usr/local/bin/npmplus-safe-update >>/var/log/npmplus-update.log 2>&1\n' >/etc/cron.d/npmplus-safe-update
 	chmod 644 /etc/cron.d/npmplus-safe-update
 	touch /var/log/npmplus-update.log && chmod 640 /var/log/npmplus-update.log
@@ -689,7 +1137,7 @@ else
 fi
 
 say "installing daily data backup (keeps the last 7)"
-cat >/usr/local/bin/npmplus-backup <<'EOF'
+write_root_file /usr/local/bin/npmplus-backup 755 <<'EOF'
 #!/bin/bash
 # daily npmplus backup. the tar contains the data dir (database, certs, htpasswd
 # files), the crowdsec dir and the anubis policy. restores: untar into / and, if
@@ -732,7 +1180,6 @@ for old in "${backups[@]:$KEEP}"; do
 	rm -f -- "$BACKUP_DIR/$old"
 done
 EOF
-chmod +x /usr/local/bin/npmplus-backup
 printf '17 2 * * * root /usr/local/bin/npmplus-backup\n' >/etc/cron.d/npmplus-backup
 chmod 644 /etc/cron.d/npmplus-backup
 touch /var/log/npmplus-backup.log && chmod 640 /var/log/npmplus-backup.log
@@ -742,7 +1189,7 @@ touch /var/log/npmplus-backup.log && chmod 640 /var/log/npmplus-backup.log
 # bouncer. --update heals it, but only when someone runs it, so verify all
 # three keys against the lapi daily and re-register the rejected ones here
 say "installing crowdsec key heal (daily cron, log: /var/log/npmplus-crowdsec-heal.log)"
-cat >/usr/local/bin/npmplus-crowdsec-heal <<'EOF'
+write_root_file /usr/local/bin/npmplus-crowdsec-heal 755 <<'EOF'
 #!/bin/bash
 set -uo pipefail
 
@@ -840,7 +1287,6 @@ if [[ -s "$CONF" ]]; then
 	fi
 fi
 EOF
-chmod +x /usr/local/bin/npmplus-crowdsec-heal
 printf '42 2 * * * root /usr/local/bin/npmplus-crowdsec-heal\n' >/etc/cron.d/npmplus-crowdsec-heal
 chmod 644 /etc/cron.d/npmplus-crowdsec-heal
 touch /var/log/npmplus-crowdsec-heal.log && chmod 640 /var/log/npmplus-crowdsec-heal.log
@@ -877,7 +1323,7 @@ if command -v systemctl >/dev/null; then
 	elif systemctl is-active --quiet NetworkManager.service; then
 		systemctl enable NetworkManager-wait-online.service >/dev/null 2>&1 || true
 	fi
-	cat >/usr/local/sbin/npmplus-wait-for-dns <<'EOF'
+	write_root_file /usr/local/sbin/npmplus-wait-for-dns 755 <<'EOF'
 #!/bin/sh
 # Docker copies the host resolver file into existing containers when it starts.
 # Wait until DHCP/resolvconf has published at least one server. This intentionally
@@ -893,7 +1339,6 @@ if ! awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' 
 	done
 fi
 EOF
-	chmod 755 /usr/local/sbin/npmplus-wait-for-dns
 	mkdir -p /etc/systemd/system/docker.service.d
 	cat >/etc/systemd/system/docker.service.d/10-wait-for-dns.conf <<'UNIT'
 [Unit]
@@ -950,11 +1395,11 @@ if [[ "${1:-}" == "--update" ]]; then
 	# Make manual updates use the same transactional snapshot/health/revert path
 	# as cron. The environment flag is set only by that wrapper to avoid recursion.
 	if [[ "${NPMPLUS_SAFE_UPDATE_ACTIVE:-false}" != "true" ]]; then
-		# v1.4 and earlier wrappers called the installed setup copy directly and
-		# cannot hand off a freshly downloaded candidate. Replace them before
-		# delegation; this also repairs the old copy's missing execute bit.
+		# Older wrappers either cannot hand off a freshly downloaded candidate or
+		# overwrite themselves in place during a nested tooling refresh. Replace
+		# them before delegation; this also repairs a missing execute bit.
 		if [[ ! -x /usr/local/bin/npmplus-safe-update ]] || \
-			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=3' /usr/local/bin/npmplus-safe-update; then
+			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=4' /usr/local/bin/npmplus-safe-update; then
 			install_host_tooling
 		fi
 		# Repair the v1.6 root-owned Anubis bind mount before the wrapper checks
@@ -1363,7 +1808,7 @@ fi
 
 if [[ "$USE_CROWDSEC" == "y" && "$USE_ANUBIS" == "y" ]]; then
 	say "installing honeypot -> crowdsec auto-ban (every 5 min via cron)"
-	cat >/usr/local/bin/anubis-honeypot-ban <<'EOF'
+	write_root_file /usr/local/bin/anubis-honeypot-ban 755 <<'EOF'
 #!/bin/bash
 # bans IPs caught in anubis' honeypot - those hits are proven malicious by
 # construction, so no false positives are possible
@@ -1383,7 +1828,6 @@ tail -c +$((pos + 1)) "$LOG" | while read -r ip; do
 done
 echo "$size" >"$STATE"
 EOF
-	chmod +x /usr/local/bin/anubis-honeypot-ban
 	printf '*/5 * * * * root /usr/local/bin/anubis-honeypot-ban\n' >/etc/cron.d/anubis-honeypot
 	chmod 644 /etc/cron.d/anubis-honeypot
 fi

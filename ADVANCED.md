@@ -391,7 +391,7 @@ If you need to run scripts before NPMplus launches put them under: `/opt/npmplus
 - to this fork's GitHub commit API for an hourly cached update check while the UI is in use
 - if not disabled gravatar for profile pictures
 - if used to your OIDC
-- to PyPI only when the unsafe compatibility setting `ALLOW_RUNTIME_CERTBOT_PLUGIN_INSTALL=true` is explicitly enabled; the secure default requires DNS plugins to be included in the image
+- no runtime connection to PyPI; Certbot DNS plugins must be included in a reviewed custom image with pinned dependencies
 - if used to your dns provider for acme dns challenges
 - if used to www.site24x7.com for the reachability check
 - if enabled to cloudflare to download their IPs

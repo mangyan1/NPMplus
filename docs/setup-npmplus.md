@@ -1,6 +1,6 @@
 # NPMplus host setup and operations
 
-`setup-npmplus.sh` installs and operates this fork on a Debian or Ubuntu host. Run it as root, normally through `sudo`. It manages files under `/opt/npmplus`, optional CrowdSec and Anubis state, and only the host helpers described below.
+`setup-npmplus.sh` is the single interactive entry point for installing and operating this fork on a Debian or Ubuntu host. Run it as root, normally through `sudo`. It manages files under `/opt/npmplus`, optional CrowdSec and Anubis state, and only the host helpers described below.
 
 The installer intentionally does not deploy PHP-FPM. This fork treats NPMplus as a reverse proxy and security boundary; every proxied application remains responsible for its own runtime, application files, updates, and health checks. Keep the `PHP83`, `PHP84`, and `PHP85` options disabled unless you deliberately leave this recommended deployment model and accept the advanced compatibility tradeoffs documented in `ADVANCED.md`.
 
@@ -14,7 +14,7 @@ less setup-npmplus.sh
 sudo bash setup-npmplus.sh
 ```
 
-The interactive prompts cover the initial administrator, CrowdSec and AppSec, the firewall bouncer, Anubis, Caddy, Cloudflare trust, UFW, and unattended security upgrades. The recommended defaults enable CrowdSec, AppSec, the firewall bouncer, and Anubis. Existing UFW rules are preserved unless a reset is explicitly approved. Before a reset, the script detects the active SSH port and asks for confirmation so it does not assume port 22.
+On a new server, select **Install NPMplus**. On an existing installation, the same command offers safe update, CrowdSec doctor, startup/reboot diagnostics, advanced reconfiguration, and uninstall. The interactive installation prompts cover the initial administrator, CrowdSec and AppSec, the firewall bouncer, Anubis, Caddy, Cloudflare trust, UFW, and unattended security upgrades. The recommended defaults enable CrowdSec, AppSec, the firewall bouncer, and Anubis. Existing UFW rules are preserved unless a reset is explicitly approved. Before a reset, the script detects the active SSH port and asks for confirmation so it does not assume port 22.
 
 The generated Compose file is `/opt/npmplus/compose.yaml`. Registry channels are pulled and resolved to immutable `sha256` image digests before that file is written. An explicitly supplied initial administrator password is passed through a root-only, one-time Docker secret under `/run`, never embedded in Compose. After the API confirms that the account exists, the script truncates and removes the secret and removes its Compose references. Setup script v1.16 also scrubs legacy inline `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` entries before an update snapshot is created.
 
@@ -45,13 +45,15 @@ The Docker and CrowdSec PackageCloud bootstrap scripts are downloaded to tempora
 
 ## Updating
 
-Download and review the current script before a manual update:
+Download and review the current script, run it, and select **Safe update**:
 
 ```bash
 wget -O setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh
 less setup-npmplus.sh
-sudo bash setup-npmplus.sh --update
+sudo bash setup-npmplus.sh
 ```
+
+The explicit `sudo bash setup-npmplus.sh --update` form remains available for automation.
 
 An ordinary update preserves the existing AppSec setting. To opt an existing installer-managed CrowdSec deployment into AppSec, run the safe update once with the explicit flag:
 
@@ -97,6 +99,10 @@ Setup script v1.19 makes CrowdSec AppSec the recommended default for fresh insta
 
 Setup script v1.20 writes CrowdSec's current `appsec_configs` list syntax for new and explicitly enabled AppSec acquisitions. Updates also migrate the deprecated singular `appsec_config` key in installer-managed acquisition files.
 
+Setup script v1.21 installs generated host helpers by atomic replacement. An update can therefore refresh `/usr/local/bin/npmplus-safe-update` without truncating the copy that is currently executing. Existing version-3 wrappers are replaced before delegation. The preflight also waits up to three minutes when a recently recreated NPMplus container is still in Docker's `starting` health state; an unhealthy or missing service still fails closed.
+
+Setup script v1.22 adds a terminal-aware maintenance menu to the same standalone script. A new server defaults to installation; an existing server defaults to safe update and also offers the integrated CrowdSec doctor, read-only startup/reboot report, advanced reconfiguration, and guarded uninstall. Explicit command-line options remain available for automation, and piped installations keep their previous no-menu behavior.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.
@@ -123,7 +129,15 @@ The activity chart includes readable time labels and a screen-reader summary. Da
 
 Use mounted secret files instead of literal secret values in Compose. NPMplus supports `_FILE` variants for `COOKIE_SECRET`, `OIDC_CLIENT_SECRET`, `INITIAL_ADMIN_PASSWORD`, `INITIAL_SETUP_TOKEN`, `ACME_EAB_HMAC_KEY`, `DB_MYSQL_PASSWORD`, and `DB_POSTGRES_PASSWORD`. The sample `compose.yaml` contains commented Compose-secret examples. Do not set both a value and its `_FILE` variant. A custom `INITIAL_SETUP_TOKEN` must contain at least 32 characters; operator-supplied secret files are not deleted by NPMplus.
 
-NPMplus no longer installs missing Certbot DNS plugins into the running application container by default. Build every required provider plugin into a reviewed custom image with pinned dependencies. A missing plugin is logged without keeping the API offline, but certificate requests and renewals that need it will fail until it is provided. `ALLOW_RUNTIME_CERTBOT_PLUGIN_INSTALL=true` restores the old behavior only as an explicit compatibility escape hatch; it downloads executable code into the live container and exposes the certificate's DNS credential to that code, so it should not be a permanent configuration.
+NPMplus does not install missing Certbot DNS plugins into the running application container. Build every required provider plugin into a reviewed custom image with pinned dependencies. A missing plugin is logged without keeping the API offline, but certificate requests and renewals that need it will fail until it is provided. The final image removes pip after Certbot is installed, which keeps mutable package-management code out of the live reverse-proxy container.
+
+## Container vulnerability monitoring
+
+GitHub Actions scans the published NPMplus, Caddy, CrowdSec, and latest stable Anubis images every day with a digest-pinned Trivy release. Pull requests also scan the final Linux/AMD64 NPMplus image and any changed Caddy image before they can pass. Each scheduled run keeps a readable report and SARIF result for 30 days and publishes the SARIF data to GitHub code scanning.
+
+New high or critical findings fail the relevant job. The only exceptions are reviewed findings in upstream CrowdSec and Anubis binaries that this fork cannot safely patch without replacing those projects. Those exceptions are kept in separate files under `.trivy/`, explain the deployed mitigation, and expire after 30 days so they must be reviewed again. The scanner still includes suppressed findings in the readable report. NPMplus does not disable CrowdSec, AppSec, the firewall bouncer, or Anubis to make a scan pass.
+
+The optional Caddy image is built from the stable Caddy release with a patched Go toolchain and explicit patched versions of the affected Go modules. Its Alpine packages are upgraded during the build. The main NPMplus image removes pip after the pinned Certbot installation, so the packaging code previously reported by container scanners is absent from the runtime image.
 
 Reset a SQLite user's password without placing it in shell history or process arguments:
 
@@ -156,7 +170,7 @@ Choose the archive explicitly and retain a copy until the restored stack has bee
 
 ## Uninstalling
 
-The normal uninstall requires a successful final backup before confirmation:
+Run the current setup script and select **Uninstall**. The normal uninstall requires a successful final backup and typed confirmation. The equivalent automation command is:
 
 ```bash
 sudo /opt/npmplus/setup-npmplus.sh --uninstall
@@ -172,7 +186,9 @@ Uninstall removes NPMplus containers, `/opt/npmplus`, optional CrowdSec and Anub
 
 ## Diagnostics
 
-Useful checks and logs:
+Run the current setup script and select either **Check or repair CrowdSec** or **Create a startup/reboot diagnostic report**. Both tools are built into the setup script, so no second download is needed.
+
+Useful manual checks and logs:
 
 ```bash
 sudo docker compose -f /opt/npmplus/compose.yaml ps
@@ -180,25 +196,16 @@ sudo docker compose -f /opt/npmplus/compose.yaml logs --tail 200
 sudo tail -n 200 /var/log/npmplus-update.log
 sudo tail -n 200 /var/log/npmplus-backup.log
 sudo tail -n 200 /var/log/npmplus-crowdsec-heal.log
-sudo bash crowdsec-doctor.sh
 ```
 
-For a failure after reboot, run the read-only boot tracer before manually restarting Docker or the Compose stack. This preserves the failed state in its report:
+For automation, the integrated actions are also available as explicit options:
 
 ```bash
-sudo bash npmplus-boot-trace.sh
+sudo /opt/npmplus/setup-npmplus.sh --doctor
+sudo /opt/npmplus/setup-npmplus.sh --boot-trace
 ```
 
-If the repository is not present on the VM, install the tracer directly from this fork:
-
-```bash
-curl -fL --retry 5 -o /tmp/npmplus-boot-trace.sh \
-  https://raw.githubusercontent.com/mangyan1/NPMplus/develop/npmplus-boot-trace.sh
-sudo install -m 0755 /tmp/npmplus-boot-trace.sh /usr/local/sbin/npmplus-boot-trace
-sudo npmplus-boot-trace
-```
-
-The report is written with mode `0600` under `/tmp/npmplus-boot-trace-*.log`. It includes systemd's Docker critical chain, network-online services, host and NPMplus resolver files, the current boot journal, container state/restart policy, recent container logs, Docker events, port listeners, and basic resource checks. Review it for hostnames and IP addresses before sharing it.
+For a failure after reboot, create the read-only report before manually restarting Docker or the Compose stack. This preserves the failed state. The report is written with mode `0600` under `/tmp/npmplus-boot-trace-*.log`. It includes systemd's Docker critical chain, network-online services, host and NPMplus resolver files, the current boot journal, container state/restart policy, recent container logs, Docker events, port listeners, and basic resource checks. Review it for hostnames and IP addresses before sharing it.
 
 After a failed update, the last-good directory also contains `failed-ps.txt` and `failed-logs.txt`. The maintenance lock is `/run/lock/npmplus-maintenance.lock`; an update and a backup will not run concurrently.
 

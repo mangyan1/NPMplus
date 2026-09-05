@@ -9,11 +9,13 @@ on:
     paths:
       - setup-npmplus.sh
       - crowdsec-doctor.sh
+      - npmplus-boot-trace.sh
       - .github/workflows/smoke-test.yml
   pull_request:
     paths:
       - setup-npmplus.sh
       - crowdsec-doctor.sh
+      - npmplus-boot-trace.sh
       - .github/workflows/smoke-test.yml
 
 permissions: {}
@@ -26,11 +28,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # every prompt answered with its default: crowdsec + appsec off +
-          # firewall bouncer + anubis challenge-all + cloudflare trust + ufw
+          # recommended security defaults: crowdsec + appsec + firewall bouncer
+          # + anubis challenge-all + cloudflare trust (UFW is disabled below)
           - name: defaults
-          # flips every default: appsec on, firewall bouncer + challenge-all off,
-          # caddy on, cloudflare trust + ufw off, explicit admin credentials
+          # explicit admin credentials with firewall bouncer + challenge-all off,
+          # caddy on, cloudflare trust + ufw off, and unattended upgrades on
           - name: alternate
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -117,6 +119,15 @@ jobs:
           sudo env NPMPLUS_RESOLV_CONF="$resolver_test" /usr/local/sbin/npmplus-wait-for-dns
           test "$(( $(date +%s) - start ))" -ge 2
           rm -f "$resolver_test"
+      - name: unified maintenance menu is available
+        run: |
+          sudo /opt/npmplus/setup-npmplus.sh --help | grep -q -- '--doctor'
+          sudo /opt/npmplus/setup-npmplus.sh --help | grep -q -- '--boot-trace'
+          menu_output="$(printf '6\n' | script --quiet --return \
+            --command 'sudo /opt/npmplus/setup-npmplus.sh' /dev/null)"
+          grep -q 'Safe update (recommended)' <<<"$menu_output"
+          grep -q 'Check or repair CrowdSec' <<<"$menu_output"
+          grep -q 'Create a startup/reboot diagnostic report' <<<"$menu_output"
       # only the alternate variant sets INITIAL_ADMIN_EMAIL/PASSWORD; a working
       # login proves the env block was generated into the compose file correctly
       - name: admin login works (alternate)
@@ -149,13 +160,13 @@ jobs:
       - name: safe update snapshots state and passes strict health checks
         if: matrix.name == 'defaults'
         run: |
-          # Reproduce the legacy VM state: a version-2 wrapper plus a setup
+          # Reproduce the legacy VM state: a version-3 wrapper plus a setup
           # copy installed without its execute bit, plus the root-owned Anubis
           # data directory produced by v1.6. Also reproduce the real reboot
           # failure: Docker preserved an empty resolver file in the existing
-          # host-networked container. The downloaded v1.15 script must repair
+          # host-networked container. The downloaded current script must repair
           # all three before entering the transactional update.
-          sudo sed -i 's/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=3/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=2/' /usr/local/bin/npmplus-safe-update
+          sudo sed -i 's/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=4/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=3/' /usr/local/bin/npmplus-safe-update
           sudo chmod 0644 /opt/npmplus/setup-npmplus.sh
           for _ in $(seq 1 30); do
             health="$(sudo docker inspect --format '{{.State.Health.Status}}' npmplus)"
@@ -185,9 +196,13 @@ jobs:
             echo "resolver failure fixture is not empty" >&2
             exit 1
           fi
-          sudo bash setup-npmplus.sh --update --enable-appsec
+          update_log="$(mktemp)"
+          sudo bash setup-npmplus.sh --update --enable-appsec 2>&1 | tee "$update_log"
+          grep -q 'update healthy - last good snapshot kept' "$update_log"
+          rm -f "$update_log"
           sudo test -x /opt/npmplus/setup-npmplus.sh
-          sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=3' /usr/local/bin/npmplus-safe-update
+          sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=4' /usr/local/bin/npmplus-safe-update
+          sudo test -f /var/backups/npmplus-last-good/override.yaml
           test "$(stat -c '%u:%g' /opt/anubis-data)" = '1000:1000'
           sudo docker exec npmplus awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' /etc/resolv.conf
           test "$(sudo docker inspect --format '{{.Image}}' npmplus)" != \
