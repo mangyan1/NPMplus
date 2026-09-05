@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.36"
+SCRIPT_VERSION="1.37"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -475,10 +475,12 @@ if [[ -f /var/lib/npmplus/cloudflare-origin-lock ]]; then
 	systemctl is-active --quiet npmplus-cloudflare-origin-lock.service
 fi
 
+mapfile -t configured_services < <(docker compose -f "$COMPOSE" config --services)
 services=()
-for service in anubis npmplus-caddy npmplus; do
-	docker compose -f "$COMPOSE" config --services | grep -qx "$service" && services+=("$service")
+for service in "${configured_services[@]}"; do
+	[[ "$service" == crowdsec ]] || services+=("$service")
 done
+(( ${#services[@]} > 0 )) || { echo "npmplus: Compose has no public services" >&2; exit 1; }
 docker compose -f "$COMPOSE" up -d --no-deps "${services[@]}"
 
 for _ in $(seq 1 300); do

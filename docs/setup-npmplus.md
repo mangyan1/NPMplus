@@ -160,6 +160,8 @@ Setup script v1.35 adds the independent pre-Docker boot guard after live CI show
 
 Setup script v1.36 fixes the command-line validator so the documented emergency uninstall form, `--uninstall --no-backup`, reaches the existing confirmation and cleanup path. Unknown uninstall flags and extra arguments are still rejected.
 
+Setup script v1.37 removes a protected-start race caused by combining `grep -q` with shell `pipefail` while discovering optional Compose services. Protected startup now reads the complete Compose service list once and starts every configured public service, so Anubis or Caddy cannot be intermittently omitted by a harmless upstream SIGPIPE.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.
