@@ -1,5 +1,264 @@
 # NPMplus security remediation report
 
+## RC2 post-publication security scan — 2026-09-05
+
+### Scope and verdict
+
+This review scanned the exact published `v2.15.1-mangyan1.rc.2` source commit
+(`6ec590823bf6b9ca2ba4bbc8a2efca01a0bb6bcc`), release installer, multi-architecture
+application image, and the auxiliary images selected by that installer on the scan
+date. The published NPMplus image index is
+`sha256:50d2821958357106342191007a10fcd330c68bb63c37c6f8b4e34315ea7fc04a`.
+
+The **RC2 NPMplus application image is clean in the available vulnerability data**:
+Trivy 0.74.0 reported zero OS, Node, or Python findings at every severity for both
+the amd64 and arm64 manifests. Both complete pnpm dependency graphs also reported
+zero advisories, the CodeQL analysis for the RC2 commit passed, and no genuine
+repository secret was found. This does not make the complete installation
+vulnerability-free. The installer also deploys upstream CrowdSec and Anubis images
+with previously accepted HIGH matches, and this review found two release-hardening
+gaps plus one fixable MEDIUM match in the fork-built Caddy image.
+
+RC2 is reasonable for the intended **test-server** use with the installer defaults,
+but it should not be promoted to stable without reviewing RC2-02 through RC2-05.
+RC2-01 is upstream-blocked and already has an expiring exception process; it should
+remain visible in release notes rather than being represented as a clean full-stack
+scan.
+
+### Remediation status after the RC2 scan
+
+- **RC2-01 remains upstream-blocked and explicitly tracked.** CrowdSec and Anubis
+  protections remain enabled. Their separate, documented exceptions still expire on
+  2026-10-04, and the release workflow now scans the exact recommended-stack digests
+  before publication.
+- **RC2-02 is resolved in setup script v1.30.** Fresh and updated installer-managed
+  CrowdSec, Anubis, and Caddy services use read-only root filesystems, dropped
+  capabilities, `no-new-privileges`, bounded tmpfs mounts where needed, and service
+  health checks. CrowdSec and Anubis both initialized successfully in local hardened
+  runtime tests. Caddy runs as UID/GID 65534 with only `NET_BIND_SERVICE` restored.
+- **RC2-03 is resolved in the fork Caddy source.** The stable Caddy 2.11.4 source is
+  patched only for cel-go 0.29 API compatibility, then built with cel-go 0.29.2 and
+  x/crypto 0.56.0. The image served the expected redirect under its full sandbox and
+  Trivy 0.74.0 reported zero MEDIUM/HIGH/CRITICAL findings.
+- **RC2-04 is resolved in the release workflow.** Release publication now depends on
+  AMD64 and ARM64 scans of the exact Caddy, CrowdSec, and Anubis digests selected for
+  the installer. Those digests are written into the release notes.
+- **RC2-05 is resolved for artifact identity and Actions pinning.** The release image,
+  installer assets, and Caddy image receive GitHub artifact attestations. Repository
+  SHA-pinning enforcement is enabled and every referenced action is already pinned.
+  Active rulesets block deletion/force-push of `develop` and deletion/update of `v*`
+  tags without imposing a pull-request-only workflow on the repository owner.
+- **RC2-06 remains a documented, low-risk compatibility exception.** GoAccess 1.10.x
+  still emits three runtime `new Function` sites in its generated report client. The
+  relaxation stays limited to the authenticated, `no-store` `/goaccess` route and is
+  not present in the main application CSP. Removing it today breaks the optional
+  report; replacement remains the safe prerequisite.
+
+The lifecycle defect found after RC2 is also fixed: a fresh bootstrap now recreates
+NPMplus without its one-time `/run` secret mount before deleting the source file, and
+an update repairs affected existing containers before taking a rollback baseline.
+Smoke CI asserts the mount is absent, restarts Docker, verifies the full stack, injects
+a failed update and verifies database/config rollback, then exercises uninstall and
+clean reinstall. A Docker-daemon restart is the closest reliable reboot simulation on
+a GitHub-hosted runner because rebooting the runner would terminate the job itself.
+
+| Target | Exact artifact scanned | Result | Contextual assessment |
+| --- | --- | --- | --- |
+| NPMplus amd64 | `sha256:e33dc5ed824688c035ceae0dedde79221b4cf39aa1090ee5971744fac9f95095` | 0 findings at all severities | Clean in current Trivy data |
+| NPMplus arm64 | `sha256:e20601a532fb0473656977a7cfdbdad8dd77dd3b91f1fb35cca7e41dbc9819d8` | 0 findings at all severities | Clean in current Trivy data |
+| Fork Caddy amd64 | `sha256:1127389c820e2ee35ce525755593c201e2a918ff08478bda17d7d497241336c7` | 1 MEDIUM and 3 UNKNOWN; 0 HIGH/CRITICAL | MEDIUM path appears inactive in the fixed redirect configuration; update is available |
+| CrowdSec amd64 | `sha256:dd16bad0a1622fe1653a85e91678223d28f3bb5459d8c9604dcd0c397da06975` | 18 HIGH occurrences, 0 CRITICAL | 9 unique accepted upstream IDs; reduced but not eliminated exposure |
+| Anubis amd64 | `sha256:2babd956e4eb6daa06a41a9b3cbde394a0b2dae1872395f02a380436637c1bfa` | 11 HIGH occurrences, 0 CRITICAL | 11 unique accepted upstream IDs; indirectly processes untrusted requests |
+
+### RC2-01 — Upstream CrowdSec and Anubis HIGH matches remain in the installed stack
+
+- Severity: **Medium operational priority**, although Trivy labels the individual
+  occurrences HIGH.
+- Location: `setup-npmplus.sh:22-23`, `setup-npmplus.sh:1894-1943`,
+  `.trivy/crowdsec.yaml`, and `.trivy/anubis.yaml`.
+- Evidence: CrowdSec contains 18 HIGH occurrences representing 9 unique IDs.
+  Anubis 1.27.0 contains 11 HIGH occurrences representing 11 unique IDs. The
+  detailed IDs and affected components remain the same as CVE-R02 and CVE-R03
+  below. No CRITICAL match was reported. Each accepted ID has a documented
+  exception that expires on 2026-10-04.
+- Impact: most matches are denial-of-service or parser issues in Go libraries.
+  CrowdSec AppSec and Anubis receive information derived from Internet requests,
+  so loopback listeners do not prove that every vulnerable path is unreachable.
+- Existing mitigation: ports 6060, 7422, 8080, and 8923 are published only on host
+  loopback. The standard CrowdSec deployment uses SQLite, not the affected optional
+  PostgreSQL path, and does not enable the bundled notification plugins. Anubis is
+  enabled per proxy host rather than globally by default. A scheduled workflow
+  scans both images daily and fails when an unreviewed HIGH/CRITICAL match appears
+  or an exception expires.
+- Fix: update to upstream images rebuilt with the fixed Go modules as soon as they
+  are released, then remove the matching exception entries. Do not disable
+  CrowdSec, AppSec, the firewall bouncer, or Anubis merely to obtain a green scan.
+- False-positive note: optional PostgreSQL, notification, gRPC, and xDS paths are
+  not all enabled by this deployment. Other HTTP/parser resource-exhaustion paths
+  may still be relevant. For example, the gRPC-Go DATA-frame advisory is fixed in
+  1.83.1, while the scanned upstream binaries contain older versions.
+
+References: [CrowdSec releases](https://github.com/crowdsecurity/crowdsec/releases),
+[Anubis releases](https://github.com/TecharoHQ/anubis/releases), and
+[CVE-2026-84304](https://github.com/advisories/GHSA-vp52-pcj8-j9qc).
+
+### RC2-02 — Auxiliary services do not receive the main container's runtime sandbox
+
+- Severity: **Medium defense-in-depth risk**.
+- Location: `setup-npmplus.sh:1894-1962`.
+- Evidence: the generated NPMplus service drops all capabilities, adds only six
+  required capabilities, enables `no-new-privileges`, and drops application
+  processes to UID/GID 1000 after initialization. The generated CrowdSec, Anubis,
+  and Caddy services do not set capability, privilege, or read-only-root controls.
+  Image inspection confirms that Caddy and CrowdSec run as container root; Anubis
+  runs as UID 1000.
+- Impact: a successful exploit in an auxiliary network service would retain more
+  container privileges than necessary. Container root is not automatically host
+  root, and none of these services mounts the Docker socket, but reducing available
+  capabilities limits post-exploitation options and the impact of a container
+  runtime weakness.
+- Fix: run the redirect-only Caddy service as `65534:65534`, use a read-only root
+  filesystem, drop all capabilities, add only `NET_BIND_SERVICE`, and enable
+  `no-new-privileges`. Apply `cap_drop: [ALL]` and `no-new-privileges` to Anubis.
+  Test CrowdSec initialization and upgrades with `cap_drop: [ALL]` and
+  `no-new-privileges`, retaining only a capability demonstrated to be required.
+  Add Compose health checks for the auxiliary services.
+- Verification of the proposed Caddy control: the exact RC2 Caddy image successfully
+  served its 301 redirect as UID/GID 65534 with a read-only root filesystem, all
+  capabilities dropped except `NET_BIND_SERVICE`, and `no-new-privileges` enabled.
+- False-positive note: Trivy's generic Dockerfile rule labels a missing `USER` as
+  HIGH. The contextual severity is lower because the image has no host volume,
+  performs one static redirect, and remains container-isolated. The main NPMplus
+  image's same generic warning is mitigated differently: its trusted startup phase
+  must prepare mounted data and then explicitly drops privileges.
+
+### RC2-03 — Caddy contains one fixable MEDIUM CEL library advisory
+
+- Rule ID: `GHSA-gcjh-h69q-9w9g`
+- Severity: **Low practical risk in this configuration; MEDIUM scanner severity**.
+- Location: `caddy/Dockerfile:2-17` and `caddy/Caddyfile:1-9`.
+- Evidence: the Caddy binary contains `github.com/google/cel-go` 0.28.1; 0.29.0
+  fixes exposure of Go fields marked `json:"-"` when an application allows
+  user-supplied CEL expressions through `NativeTypes(ParseStructTag("json"))`.
+  Trivy also reports three UNKNOWN x/crypto/OpenPGP/SSH inventory matches, but the
+  redirect service does not expose SSH or OpenPGP behavior.
+- Impact: the vulnerable CEL behavior can disclose private struct fields in an
+  application that evaluates attacker-controlled CEL. The shipped Caddyfile only
+  removes the Server header and returns a fixed HTTPS redirect; it does not accept
+  CEL expressions or configure native Go types. No reachable disclosure path was
+  found in this deployment.
+- Fix: rebuild Caddy with cel-go 0.29.0 or newer, update x/crypto to 0.56.0 or newer,
+  and re-run the Caddy module/configuration smoke test. Keep the current pinned
+  Caddy release and explicit module replacements; do not track an unreviewed branch.
+- False-positive note: this is a real library advisory, not proof that the fixed
+  redirect service exposes the required API. The reduced contextual severity is
+  based on the exact Caddyfile and compiled service role.
+
+Reference: [GHSA-gcjh-h69q-9w9g](https://github.com/advisories/GHSA-gcjh-h69q-9w9g).
+
+### RC2-04 — The release gate scans only the main image, not the installed stack
+
+- Severity: **Medium release-assurance risk**.
+- Location: `.github/workflows/release.yml:133-178`.
+- Evidence: both architecture jobs correctly scan the exact NPMplus release
+  candidate and block publication on HIGH/CRITICAL findings. The released installer
+  additionally resolves Caddy, CrowdSec, and Anubis images, but the release workflow
+  does not gate on those artifacts. The independent scheduled full-stack scan most
+  recently failed on an older NPMplus image at commit `8c9f9fe0`; RC2 still
+  published because the workflows are independent.
+- Impact: a release can pass its security job while the complete default/recommended
+  deployment contains a new unreviewed auxiliary-image finding. This creates a gap
+  between “release image scanned” and “installer-selected stack scanned.”
+- Fix: add a release job that resolves the same auxiliary image digests as the
+  installer, scans all of them, applies only the existing expiring CrowdSec/Anubis
+  baselines, and makes image/release publication depend on that job. Record the
+  resolved digests and accepted-risk summary in the release notes.
+- False-positive note: the scheduled workflow still provides daily detection, and
+  the current auxiliary findings were already reviewed. This is an assurance gap,
+  not evidence that the RC2 application image bypassed its own scan.
+
+### RC2-05 — Published provenance is present but is not identity-verifiable
+
+- Severity: **Low supply-chain hardening gap**.
+- Location: `.github/workflows/release.yml:61-230` and the
+  `v2.15.1-mangyan1.rc.2` tag.
+- Evidence: both architecture manifests include BuildKit SLSA provenance and SPDX
+  SBOM attachments. However, `gh attestation verify` returns HTTP 404 for the
+  published image index, the annotated release tag has no cryptographic signature,
+  and the repository has no branch or tag ruleset. The installer checksum and
+  installer asset are published in the same release trust domain.
+- Impact: digest pinning prevents unnoticed byte drift after installation, but
+  consumers cannot independently verify through GitHub's Sigstore-backed
+  attestation service that the artifact came from this repository and release
+  workflow. An account/workflow compromise could replace release inputs and their
+  same-origin checksum.
+- Fix: use GitHub's artifact-attestation action with least-privilege
+  `id-token: write` and `attestations: write` permissions for the final image digest
+  and installer asset; document `gh attestation verify`; protect `develop` and
+  `v*` release tags with rulesets and required checks; enable repository SHA-pinning
+  enforcement for Actions after confirming every workflow action remains pinned.
+- False-positive note: this does not indicate that RC2 was tampered with. Its Git
+  commit, image labels, release digest, SBOM, provenance metadata, and installer
+  checksum are internally consistent.
+
+Reference: [GitHub artifact-attestation documentation](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations).
+
+### RC2-06 — Optional GoAccess retains isolated `unsafe-eval`
+
+- Severity: **Low residual browser-hardening risk**.
+- Location: `rootfs/usr/local/nginx/conf/conf.d/npmplus.conf:100-119`.
+- Evidence: the main NPMplus application CSP allows only same-origin element scripts
+  and does not contain `unsafe-eval`. The optional GoAccess document uses
+  `script-src 'self' 'unsafe-eval'` because GoAccess 1.10.x compiles its fixed
+  report templates at runtime. Its JavaScript and CSS are external same-origin
+  assets, every route requires administrator authorization, and every response is
+  `no-store`.
+- Impact: if an attacker first obtains script-injection ability in that isolated
+  administrator-only report, `unsafe-eval` increases the available execution
+  primitives. No injection source or authentication bypass was identified.
+- Fix: remove the directive only after GoAccess can produce a report that works
+  without runtime template compilation, or replace the generated client. Keep the
+  relaxation scoped to `/goaccess`; never add it to the main application CSP.
+- False-positive note: this is a defense-in-depth exception, not a confirmed XSS.
+
+### Checks that did not become findings
+
+- The release workflow's exact-image HIGH/CRITICAL scans passed for amd64 and arm64;
+  the independent all-severity rescan reported zero findings for both manifests.
+- Complete backend and frontend `pnpm audit` runs reported 0 advisories across 232
+  and 218 dependencies respectively. GitHub Dependabot and secret-scanning APIs
+  reported 0 open alerts.
+- The current RC2 CodeQL analyses passed and produced no source-code alert. The 49
+  open Trivy records in GitHub code scanning all reference older commit
+  `8c9f9fe0a470d14361cc5eebdffb29cede798e91`: they are seven util-linux CVEs
+  repeated across seven packages. The exact RC2 image contains the patched package
+  set and scans clean, so these are stale dashboard records expected to close after
+  the next full-stack SARIF upload.
+- Trivy secret scanning identifies the private-key-shaped value in
+  `backend/schema/paths/nginx/certificates/certID/upload/post.json:39`. It is a
+  public API example paired with example certificate data, not a runtime or
+  repository credential. A Git-history pattern scan found only standard documented
+  example AWS identifiers, and GitHub push protection is enabled.
+- No frontend dynamic-HTML/eval sink was found. Browser storage contains UI state
+  and the session-expiry timestamp, not the authentication token. Session and MFA
+  tokens stay in signed `Secure`, `HttpOnly`, `SameSite` cookies. Production source
+  maps are absent from the RC2 image.
+- The Express API disables its framework banner, limits JSON/form bodies to 1 MiB,
+  applies origin/fetch-metadata checks, rate-limits authentication and sensitive
+  downloads, keeps command execution in argument-vector `execFile` calls, and uses
+  bounded/time-limited reads for CrowdSec and other external responses.
+- Trivy's four `RUN cd` Dockerfile findings are maintainability recommendations,
+  not security-boundary defects. The build downloads are pinned by version/commit
+  and, where applicable, verified hashes.
+
+### Scan limitations
+
+This was a static source, dependency, configuration, release-provenance, and
+container inventory review. It was not a penetration test of a live VM, an OIDC
+provider, Cloudflare, CrowdSec CAPI, the host firewall, or Docker itself. A zero
+scanner count means no match in the scanner data at that time; it is not a proof
+that undisclosed vulnerabilities do not exist.
+
 ## GoAccess browser hardening — 2026-09-05
 
 The optional, administrator-only GoAccess report now uses GoAccess's supported external-assets mode. Its executable JavaScript and stylesheet are generated as separate same-origin files, both routes require the same administrator authorization as the report, and the HTML, JavaScript, and CSS responses are marked `no-store`. The former executable-inline-script allowance was removed. The container health check also verifies all three generated files and the live WebSocket socket when GoAccess is enabled.

@@ -1,0 +1,8 @@
+--- a/modules/caddyhttp/celmatcher.go
++++ b/modules/caddyhttp/celmatcher.go
+@@ -505 +505 @@
+-				[]interpreter.Interpretable{reqAttr},
++				[]interpreter.InterpretableV2{reqAttr},
+@@ -528 +528 @@
+-				[]interpreter.Interpretable{reqAttr},
++				[]interpreter.InterpretableV2{reqAttr},

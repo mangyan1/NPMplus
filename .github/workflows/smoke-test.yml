@@ -23,7 +23,7 @@ permissions: {}
 jobs:
   smoke-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -193,8 +193,55 @@ jobs:
             exit 1
           fi
           sudo test ! -e /run/npmplus-initial-admin-password
+          if sudo docker inspect npmplus --format '{{range .Mounts}}{{println .Source}}{{end}}' |
+            grep -Fxq /run/npmplus-initial-admin-password; then
+            echo "npmplus retains the deleted bootstrap-secret bind mount" >&2
+            exit 1
+          fi
           if sudo docker inspect npmplus --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -F "$TEST_ADMIN_PASSWORD"; then
             echo "bootstrap administrator password remains in the container environment" >&2
+            exit 1
+          fi
+      - name: installed stack survives a Docker daemon restart
+        run: |
+          sudo test ! -e /run/npmplus-initial-admin-password
+          if sudo docker inspect npmplus --format '{{range .Mounts}}{{println .Source}}{{end}}' |
+            grep -Fxq /run/npmplus-initial-admin-password; then
+            echo "reboot regression: npmplus still depends on the deleted /run bootstrap secret" >&2
+            exit 1
+          fi
+
+          # GitHub-hosted runners cannot reboot themselves without terminating
+          # the job. Restarting Docker exercises the persistent container objects
+          # and restart policies that caused the real VM boot failure.
+          sudo systemctl restart docker.service
+          stack_ready=false
+          for _ in $(seq 1 120); do
+            stack_ready=true
+            while read -r service; do
+              cid="$(sudo docker compose -f /opt/npmplus/compose.yaml ps -a -q "$service" 2>/dev/null || true)"
+              if [[ -z "$cid" ]] || [[ "$(sudo docker inspect --format '{{.State.Status}}' "$cid")" != running ]]; then
+                stack_ready=false
+                break
+              fi
+              health="$(sudo docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")"
+              if [[ "$health" != none && "$health" != healthy ]]; then
+                stack_ready=false
+                break
+              fi
+            done < <(sudo docker compose -f /opt/npmplus/compose.yaml config --services)
+            if [[ "$stack_ready" == true ]] && \
+              curl -fkSs --connect-timeout 2 --max-time 5 -o /dev/null https://127.0.0.1/ && \
+              curl -fkSs --connect-timeout 2 --max-time 5 https://127.0.0.1:81/api |
+                grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"'; then
+              break
+            fi
+            stack_ready=false
+            sleep 2
+          done
+          if [[ "$stack_ready" != true ]]; then
+            sudo docker compose -f /opt/npmplus/compose.yaml ps -a
+            sudo docker compose -f /opt/npmplus/compose.yaml logs --no-color --tail 100
             exit 1
           fi
       - name: safe update snapshots state and passes strict health checks
@@ -270,7 +317,52 @@ jobs:
             echo "deprecated singular AppSec acquisition key was generated" >&2
             exit 1
           fi
-      - name: uninstall preserves operator-owned Docker configuration
+      - name: failed update restores the complete last-good state
+        if: matrix.name == 'defaults'
+        run: |
+          compose_before="$(sudo sha256sum /opt/npmplus/compose.yaml | awk '{print $1}')"
+          setup_before="$(sudo sha256sum /opt/npmplus/setup-npmplus.sh | awk '{print $1}')"
+          sudo tee /tmp/npmplus-failing-update >/dev/null <<'FAIL_UPDATE'
+          #!/bin/bash
+          set -eu
+          printf '\n# rollback-fixture\n' >>/opt/npmplus/compose.yaml
+          docker stop npmplus >/dev/null
+          printf 'intentionally-corrupt-database' >/opt/npmplus/npmplus/database.sqlite
+          exit 42
+          FAIL_UPDATE
+          sudo chmod 0700 /tmp/npmplus-failing-update
+
+          set +e
+          sudo env NPMPLUS_SETUP_CANDIDATE=/tmp/npmplus-failing-update \
+            /usr/local/bin/npmplus-safe-update 2>&1 | tee /tmp/npmplus-failed-update.log
+          update_status="${PIPESTATUS[0]}"
+          set -e
+          test "$update_status" -ne 0
+          grep -q 'health check FAILED - reverting to the last good state' /tmp/npmplus-failed-update.log
+          grep -q 'reverted - failure diagnostics are in' /tmp/npmplus-failed-update.log
+          test "$(sudo sha256sum /opt/npmplus/compose.yaml | awk '{print $1}')" = "$compose_before"
+          test "$(sudo sha256sum /opt/npmplus/setup-npmplus.sh | awk '{print $1}')" = "$setup_before"
+          if sudo grep -q rollback-fixture /opt/npmplus/compose.yaml; then
+            echo "failed update content remained after rollback" >&2
+            exit 1
+          fi
+
+          recovered=false
+          for _ in $(seq 1 120); do
+            health="$(sudo docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' npmplus 2>/dev/null || true)"
+            if [[ "$health" == healthy ]] && \
+              curl -fkSs --connect-timeout 2 --max-time 5 https://127.0.0.1:81/api |
+                grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"'; then
+              recovered=true
+              break
+            fi
+            sleep 2
+          done
+          test "$recovered" = true
+          test "$(sudo docker exec npmplus node -e "const d=require('better-sqlite3')('/data/npmplus/database.sqlite',{readonly:true});console.log(d.pragma('integrity_check',{simple:true}));d.close()")" = ok
+          sudo test -s /var/backups/npmplus-last-good/failed-ps.txt
+          sudo test -s /var/backups/npmplus-last-good/failed-logs.txt
+      - name: uninstall, reinstall, and restart without losing operator Docker settings
         if: matrix.name == 'alternate'
         run: |
           printf 'uninstall\n' | sudo /opt/npmplus/setup-npmplus.sh --uninstall
@@ -278,3 +370,33 @@ jobs:
           test -f /etc/systemd/system/docker.service.d/99-operator-owned.conf
           test ! -e /etc/systemd/system/npmplus-admin-lan.socket
           test ! -e /etc/systemd/system/npmplus-admin-lan.service
+
+          answers=(
+            '' # timezone
+            '' # setup wizard
+            '' # setup wizard password
+            '' # crowdsec
+            '' # appsec
+            n  # firewall bouncer (already covered by the first installation)
+            '' # anubis
+            '' # challenge all (safe default off)
+            y  # caddy
+            '' # cloudflare
+            n  # host networking
+            n  # ufw
+            n  # unattended upgrades
+          )
+          printf '%s\n' "${answers[@]}" | sudo bash setup-npmplus.sh
+          sudo systemctl restart docker.service
+          ready=false
+          for _ in $(seq 1 120); do
+            if [[ "$(sudo docker inspect --format '{{.State.Health.Status}}' npmplus 2>/dev/null || true)" == healthy ]] && \
+              curl -fkSs --connect-timeout 2 --max-time 5 https://127.0.0.1:81/api |
+                grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"'; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = true
+          test -f /etc/systemd/system/docker.service.d/99-operator-owned.conf

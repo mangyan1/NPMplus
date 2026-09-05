@@ -8,6 +8,7 @@ set -uo pipefail
 DATA_DIR=/opt/npmplus
 KEY="$DATA_DIR/crowdsec/lapi-ui.key"
 MKEY="$DATA_DIR/crowdsec/lapi-ui-machine.key"
+ADMIN_SECRET_FILE=/run/npmplus-initial-admin-password
 
 bouncer_http_code() {
 	local key
@@ -35,13 +36,30 @@ package_is_installed() {
 }
 
 fail=0
+npmplus_state=missing
 
 hdr "1. containers"
 for c in crowdsec npmplus; do
-	if docker ps --format '{{.Names}}' | grep -qx "$c"; then
-		ok "$c running"
+	if docker inspect "$c" >/dev/null 2>&1; then
+		state=$(docker inspect --format '{{.State.Status}}' "$c" 2>/dev/null || echo unknown)
+		state_exit=$(docker inspect --format '{{.State.ExitCode}}' "$c" 2>/dev/null || echo unknown)
+		[[ "$c" != "npmplus" ]] || npmplus_state="$state"
+		if [[ "$state" == "running" ]]; then
+			ok "$c running"
+		else
+			bad "$c state is $state (exit $state_exit)"
+			state_error=$(docker inspect --format '{{.State.Error}}' "$c" 2>/dev/null || true)
+			[[ -z "$state_error" ]] || note "Docker error: $state_error"
+			if [[ "$c" == "npmplus" ]] && \
+				docker inspect --format '{{range .Mounts}}{{println .Source}}{{end}}' npmplus 2>/dev/null | grep -Fxq "$ADMIN_SECRET_FILE" && \
+				[[ ! -e "$ADMIN_SECRET_FILE" ]]; then
+				note "cause: the container retains a deleted one-time administrator secret mount"
+				note "repair: download the current setup-npmplus.sh, then run it with --update"
+			fi
+			fail=1
+		fi
 	else
-		bad "$c NOT running"
+		bad "$c does not exist"
 		fail=1
 	fi
 done
@@ -104,13 +122,16 @@ else
 fi
 
 hdr "6. what the npmplus container sees (/data/crowdsec/lapi-ui.key)"
-if docker exec npmplus sh -c '[ -s /data/crowdsec/lapi-ui.key ]' 2>/dev/null; then
-	hmd5=$(md5sum "$KEY" | cut -d' ' -f1)
-	cmd5=$(docker exec npmplus md5sum /data/crowdsec/lapi-ui.key 2>/dev/null | cut -d' ' -f1)
-	if [[ $hmd5 == "$cmd5" ]]; then
+if [[ "$npmplus_state" != "running" ]]; then
+	bad "cannot inspect the key because npmplus is $npmplus_state"
+	note "fix the container startup failure reported in step 1 first"
+elif docker exec npmplus sh -c '[ -s /data/crowdsec/lapi-ui.key ]' 2>/dev/null; then
+	host_hash=$(sha256sum "$KEY" | cut -d' ' -f1)
+	container_hash=$(docker exec npmplus sha256sum /data/crowdsec/lapi-ui.key 2>/dev/null | cut -d' ' -f1)
+	if [[ $host_hash == "$container_hash" ]]; then
 		ok "container sees the same key"
 	else
-		bad "container sees a DIFFERENT key (container $cmd5, host $hmd5)"
+		bad "container sees a DIFFERENT key"
 		fail=1
 	fi
 else
@@ -147,7 +168,7 @@ else
 	note "none found"
 fi
 
-hdr "10. crowdsec db files (wal rollback leaves these behind)"
+hdr "10. CrowdSec SQLite files (WAL/SHM are normal while running)"
 db_files=$(find /opt/crowdsec/data -maxdepth 1 -type f -name '*.db*' -print 2>/dev/null)
 if [[ -n $db_files ]]; then
 	printf '        %s\n' "${db_files//$'\n'/$'\n        '}"

@@ -102,7 +102,7 @@ sudo docker compose -f /opt/npmplus/compose.yaml ps
 
 Every listed service should say `Up`. The `npmplus` service should become `healthy` after startup.
 
-The installer enables Docker and configures the containers to return automatically after a server restart.
+The installer enables Docker and configures the containers to return automatically after a server restart. A supplied initial administrator password is removed after first use, and NPMplus is recreated without the temporary secret mount before that file is deleted. This prevents the container from depending on a `/run` file that disappears during reboot.
 
 ## What the installer handles
 
@@ -116,6 +116,7 @@ The installer enables Docker and configures the containers to return automatical
 - CrowdSec credential checks and automatic repair.
 - Optional UFW firewall and unattended operating-system security updates.
 - Loopback-only dashboard access and non-root services by default.
+- Read-only root filesystems, dropped Linux capabilities, `no-new-privileges`, and health checks for the optional CrowdSec, Anubis, and Caddy services.
 
 Backups are stored under `/var/backups/npmplus`. The latest update snapshot is stored under `/var/backups/npmplus-last-good`.
 
@@ -148,9 +149,9 @@ See [Changes in this fork](ADVANCED.md#changes-in-this-fork-vs-zoeyvidnpmplus) f
 
 ## Releases and security reports
 
-Release tags build AMD64 and ARM64 images in this repository, attach build provenance and an SBOM, and scan the exact images before publishing them to GitHub Container Registry. A release candidate updates only the `rc` channel; only a final release can update `latest`.
+Release tags build AMD64 and ARM64 images in this repository, attach build provenance and an SBOM, and scan the exact images before publishing them to GitHub Container Registry. Publication also resolves and scans the exact Caddy, CrowdSec, and Anubis images selected by the installer. A release candidate updates only the `rc` channel; only a final release can update `latest`.
 
-Each GitHub release includes a version-pinned `setup-npmplus.sh` and its SHA-256 checksum. Release candidates are for test systems first. Report suspected vulnerabilities privately by following [the security policy](SECURITY.md), not through a public issue.
+Each GitHub release includes a version-pinned `setup-npmplus.sh` and its SHA-256 checksum. The final image and installer files also receive GitHub identity-backed artifact attestations. After downloading an asset, advanced users can verify it with `gh attestation verify setup-npmplus.sh --repo mangyan1/NPMplus`; verify a release image with `gh attestation verify oci://ghcr.io/mangyan1/npmplus:<tag> --repo mangyan1/NPMplus`. Release candidates are for test systems first. Report suspected vulnerabilities privately by following [the security policy](SECURITY.md), not through a public issue.
 
 ## Existing NPMplus or Nginx Proxy Manager installation
 

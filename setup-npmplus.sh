@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.29"
+SCRIPT_VERSION="1.30"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -177,7 +177,7 @@ run_crowdsec_doctor() (
 	local key="$DATA_DIR/crowdsec/lapi-ui.key"
 	local machine_key="$DATA_DIR/crowdsec/lapi-ui-machine.key"
 	local lapi="http://127.0.0.1:8080"
-	local fail=0 code kcode mcode auth_errors db_files answer
+	local fail=0 code kcode mcode auth_errors db_files answer container state state_error state_exit npmplus_state="missing"
 
 	doctor_header() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 	doctor_ok() { printf ' \033[32m[ok]\033[0m %s\n' "$*"; }
@@ -200,10 +200,24 @@ run_crowdsec_doctor() (
 
 	doctor_header "1. containers"
 	for container in crowdsec npmplus; do
-		if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$container"; then
-			doctor_ok "$container running"
+		if docker inspect "$container" >/dev/null 2>&1; then
+			state=$(docker inspect --format '{{.State.Status}}' "$container" 2>/dev/null || echo unknown)
+			state_exit=$(docker inspect --format '{{.State.ExitCode}}' "$container" 2>/dev/null || echo unknown)
+			[[ "$container" != "npmplus" ]] || npmplus_state="$state"
+			if [[ "$state" == "running" ]]; then
+				doctor_ok "$container running"
+			else
+				doctor_bad "$container state is $state (exit $state_exit)"
+				state_error=$(docker inspect --format '{{.State.Error}}' "$container" 2>/dev/null || true)
+				[[ -z "$state_error" ]] || doctor_note "Docker error: $state_error"
+				if [[ "$container" == "npmplus" ]] && npmplus_uses_bootstrap_secret_mount && [[ ! -e "$ADMIN_SECRET_FILE" ]]; then
+					doctor_note "cause: the container retains a deleted one-time administrator secret mount"
+					doctor_note "repair: rerun this current setup script with --update"
+				fi
+				fail=1
+			fi
 		else
-			doctor_bad "$container NOT running"
+			doctor_bad "$container does not exist"
 			fail=1
 		fi
 	done
@@ -266,7 +280,10 @@ run_crowdsec_doctor() (
 	fi
 
 	doctor_header "6. what the npmplus container sees (/data/crowdsec/lapi-ui.key)"
-	if docker exec npmplus sh -c '[ -s /data/crowdsec/lapi-ui.key ]' 2>/dev/null; then
+	if [[ "$npmplus_state" != "running" ]]; then
+		doctor_bad "cannot inspect the key because npmplus is $npmplus_state"
+		doctor_note "fix the container startup failure reported in step 1 first"
+	elif docker exec npmplus sh -c '[ -s /data/crowdsec/lapi-ui.key ]' 2>/dev/null; then
 		local host_hash container_hash
 		host_hash=$(sha256sum "$key" | cut -d' ' -f1)
 		container_hash=$(docker exec npmplus sha256sum /data/crowdsec/lapi-ui.key 2>/dev/null | cut -d' ' -f1)
@@ -310,7 +327,7 @@ run_crowdsec_doctor() (
 		doctor_note "none found"
 	fi
 
-	doctor_header "10. crowdsec db files (wal rollback leaves these behind)"
+	doctor_header "10. CrowdSec SQLite files (WAL/SHM are normal while running)"
 	db_files=$(find "$CROWDSEC_DIR/data" -maxdepth 1 -type f -name '*.db*' -print 2>/dev/null)
 	if [[ -n $db_files ]]; then
 		printf '        %s\n' "${db_files//$'\n'/$'\n        '}"
@@ -728,6 +745,36 @@ erase_bootstrap_admin_secret() {
 	fi
 }
 
+npmplus_uses_bootstrap_secret_mount() {
+	docker inspect --format '{{range .Mounts}}{{println .Source}}{{end}}' npmplus 2>/dev/null |
+		grep -Fxq "$ADMIN_SECRET_FILE"
+}
+
+wait_for_npmplus_healthy() {
+	local reason="$1" health="" _
+	for _ in $(seq 1 180); do
+		health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' npmplus 2>/dev/null || true)
+		[[ "$health" == "healthy" ]] && return 0
+		sleep 1
+	done
+	docker logs --tail 100 npmplus >&2 || true
+	echo "npmplus did not become healthy after $reason (last state: ${health:-missing})" >&2
+	return 1
+}
+
+recreate_npmplus_without_bootstrap_secret() {
+	if grep -Fq "$ADMIN_SECRET_FILE" "$COMPOSE_FILE"; then
+		echo "refusing to recreate npmplus while compose still references the bootstrap secret" >&2
+		return 1
+	fi
+	docker compose -f "$COMPOSE_FILE" up -d --no-deps --force-recreate npmplus
+	wait_for_npmplus_healthy "removing the one-time administrator secret mount" || return 1
+	if npmplus_uses_bootstrap_secret_mount; then
+		echo "npmplus still retains the one-time administrator secret mount after recreation" >&2
+		return 1
+	fi
+}
+
 finalize_admin_bootstrap() {
 	local ready=false response="" _
 	for _ in $(seq 1 300); do
@@ -745,6 +792,18 @@ finalize_admin_bootstrap() {
 	fi
 	say "removing one-time administrator bootstrap credentials"
 	scrub_bootstrap_admin_credentials
+	# Docker stores bind mounts in the container object. Recreate from the
+	# sanitized Compose file before deleting the /run source, otherwise the old
+	# container cannot start after a reboot when tmpfs-backed /run is empty.
+	recreate_npmplus_without_bootstrap_secret || {
+		if npmplus_uses_bootstrap_secret_mount; then
+			echo "the root-only bootstrap secret was retained because the old container still requires it" >&2
+		else
+			erase_bootstrap_admin_secret
+			echo "the one-time bootstrap secret was removed; inspect npmplus health before retrying" >&2
+		fi
+		return 1
+	}
 	erase_bootstrap_admin_secret
 }
 
@@ -789,6 +848,73 @@ set_compose_service_image() { # set_compose_service_image <service> <image-ref>
 	' "$COMPOSE_FILE" >"$tmp"; then
 		rm -f "$tmp"
 		echo "could not update image for Compose service $service" >&2
+		return 1
+	fi
+	chmod --reference="$COMPOSE_FILE" "$tmp"
+	mv "$tmp" "$COMPOSE_FILE"
+}
+
+harden_auxiliary_service() { # harden_auxiliary_service <service> <crowdsec|anubis|caddy>
+	local service="$1" kind="$2" tmp
+	# Installer-managed services get a complete, tested profile. If an operator
+	# already supplied any custom hardening keys, preserve their policy instead of
+	# creating duplicate YAML keys or silently changing it.
+	if awk -v service="$service" '
+		$0 == "  " service ":" { in_service=1 }
+		in_service && $0 ~ /^  [^ ]/ && $0 != "  " service ":" { in_service=0 }
+		in_service && /NPMPLUS_AUX_HARDENING_BEGIN/ { found=1 }
+		END { exit !found }
+	' "$COMPOSE_FILE"; then
+		return 0
+	fi
+	if awk -v service="$service" '
+		$0 == "  " service ":" { in_service=1; found_service=1 }
+		in_service && $0 ~ /^  [^ ]/ && $0 != "  " service ":" { in_service=0 }
+		in_service && $0 ~ /^    (read_only|cap_drop|security_opt|healthcheck):/ { custom=1 }
+		END { exit !(found_service && custom) }
+	' "$COMPOSE_FILE"; then
+		say "preserving operator-defined security settings for $service"
+		return 0
+	fi
+	tmp=$(mktemp "${COMPOSE_FILE}.XXXXXX")
+	if ! awk -v service="$service" -v kind="$kind" '
+		$0 == "  " service ":" { in_service=1 }
+		in_service && $0 ~ /^  [^ ]/ && $0 != "  " service ":" { in_service=0 }
+		{ print }
+		in_service && $0 ~ /^    pull_policy:/ {
+			print "    # NPMPLUS_AUX_HARDENING_BEGIN"
+			print "    read_only: true"
+			print "    cap_drop:"
+			print "      - ALL"
+			if (kind == "caddy") {
+				print "    cap_add:"
+				print "      - NET_BIND_SERVICE"
+			}
+			print "    security_opt:"
+			print "      - no-new-privileges:true"
+			print "    tmpfs:"
+			if (kind == "crowdsec") print "      - /tmp:rw,noexec,nosuid,nodev,size=64m"
+			else if (kind == "anubis") print "      - /tmp:rw,noexec,nosuid,nodev,size=32m"
+			else print "      - /tmp:rw,noexec,nosuid,nodev,size=16m"
+			print "    healthcheck:"
+			if (kind == "crowdsec") print "      test: [\"CMD\", \"cscli\", \"lapi\", \"status\"]"
+			else if (kind == "anubis") print "      test: [\"CMD\", \"/ko-app/anubis\", \"-healthcheck\"]"
+			else print "      test: [\"CMD\", \"nc\", \"-z\", \"127.0.0.1\", \"80\"]"
+			print "      interval: 30s"
+			if (kind == "caddy") print "      timeout: 5s"
+			else print "      timeout: 10s"
+			if (kind == "caddy") print "      retries: 3"
+			else print "      retries: 5"
+			if (kind == "crowdsec") print "      start_period: 120s"
+			else if (kind == "anubis") print "      start_period: 30s"
+			else print "      start_period: 10s"
+			print "    # NPMPLUS_AUX_HARDENING_END"
+			inserted=1
+		}
+		END { if (!inserted) exit 1 }
+	' "$COMPOSE_FILE" >"$tmp"; then
+		rm -f "$tmp"
+		echo "could not add the security profile to Compose service $service" >&2
 		return 1
 	fi
 	chmod --reference="$COMPOSE_FILE" "$tmp"
@@ -1553,8 +1679,17 @@ if [[ "${1:-}" == "--update" ]]; then
 	fi
 	# Initial credentials are one-time bootstrap inputs. Remove legacy inline
 	# values before the safe-update wrapper snapshots compose.yaml, so neither
-	# the live file nor the new last-good backup retains the password.
+	# the live file nor the new last-good backup retains the password. Older
+	# installs may still have the deleted /run secret bound into their container;
+	# recreate it from sanitized Compose so it can survive the next reboot.
 	scrub_bootstrap_admin_credentials
+	if npmplus_uses_bootstrap_secret_mount; then
+		say "repairing stale one-time administrator secret mount"
+		if ! recreate_npmplus_without_bootstrap_secret; then
+			npmplus_uses_bootstrap_secret_mount || erase_bootstrap_admin_secret
+			exit 1
+		fi
+	fi
 	erase_bootstrap_admin_secret
 	# Make manual updates use the same transactional snapshot/health/revert path
 	# as cron. The environment flag is set only by that wrapper to avoid recursion.
@@ -1664,6 +1799,9 @@ if [[ "${1:-}" == "--update" ]]; then
 		say "anubis -> $ANUBIS_VERSION (policy refreshed)"
 		anubis_policy "$ANUBIS_VERSION" "$CATCHALL"
 	fi
+	grep -q "container_name: crowdsec" "$COMPOSE_FILE" && harden_auxiliary_service crowdsec crowdsec
+	grep -q "container_name: npmplus-anubis" "$COMPOSE_FILE" && harden_auxiliary_service anubis anubis
+	grep -q "container_name: npmplus-caddy" "$COMPOSE_FILE" && harden_auxiliary_service npmplus-caddy caddy
 	# installs made before the crowdsec UI page existed have no bouncer
 	# key for it - backfill instead of showing "not wired" in the admin UI.
 	# a present but rejected key means crowdsec's db lost the registration
@@ -1897,6 +2035,21 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
     restart: unless-stopped
     image: $CROWDSEC_IMAGE
     pull_policy: missing
+    # NPMPLUS_AUX_HARDENING_BEGIN
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    healthcheck:
+      test: ["CMD", "cscli", "lapi", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    # NPMPLUS_AUX_HARDENING_END
     ports:
       - "127.0.0.1:6060:6060"
       - "127.0.0.1:7422:7422"
@@ -1927,6 +2080,21 @@ if [[ "$USE_ANUBIS" == "y" ]]; then
     restart: unless-stopped
     image: $ANUBIS_IMAGE
     pull_policy: missing
+    # NPMPLUS_AUX_HARDENING_BEGIN
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    healthcheck:
+      test: ["CMD", "/ko-app/anubis", "-healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    # NPMPLUS_AUX_HARDENING_END
     ports:
       - "127.0.0.1:8923:8923"
     environment:
@@ -1954,6 +2122,23 @@ if [[ "$USE_CADDY" == "y" ]]; then
     restart: unless-stopped
     image: $CADDY_IMAGE
     pull_policy: missing
+    # NPMPLUS_AUX_HARDENING_BEGIN
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "80"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # NPMPLUS_AUX_HARDENING_END
     ports:
       - "80:80"
     environment:
