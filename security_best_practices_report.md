@@ -1,5 +1,13 @@
 # NPMplus security remediation report
 
+## GoAccess browser hardening — 2026-09-05
+
+The optional, administrator-only GoAccess report now uses GoAccess's supported external-assets mode. Its executable JavaScript and stylesheet are generated as separate same-origin files, both routes require the same administrator authorization as the report, and the HTML, JavaScript, and CSS responses are marked `no-store`. The former executable-inline-script allowance was removed. The container health check also verifies all three generated files and the live WebSocket socket when GoAccess is enabled.
+
+GoAccess 1.10.x still compiles its bundled, fixed report templates at runtime, so its isolated document retains `script-src 'self' 'unsafe-eval'`. Removing that directive breaks the upstream report. The permission is not present on the main NPMplus application, and arbitrary or cross-origin script loading remains blocked. Replacing GoAccess's generated client would be a separate upstream/frontend replacement rather than a safe configuration-only change.
+
+Validation: the production image built successfully; Nginx configuration validation passed; GoAccess generated `index.html`, `goaccess.css`, `goaccess.js`, and its Unix socket; only the same-origin external JavaScript file is executable; generated assets are protected by administrator authorization and no-cache headers; and ShellCheck passed for the updated health check.
+
 ## GitHub code-scanning dashboard check — 2026-09-05
 
 Baseline: `develop` at `70a37330c7c716eda7941a09dd11a6b3f07a4bea`, with the published release candidate at `b332a53aaffab7fab5df4056f6543ad8929542f1`.

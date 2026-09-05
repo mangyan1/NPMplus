@@ -4,7 +4,31 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
-- Clarified the README and operations guide so the version-pinned release-candidate installer is shown before the rolling `develop` channel.
+No unreleased changes.
+
+## v2.15.1-mangyan1.rc.2 - 2026-09-05
+
+Second public release candidate of the security-focused fork.
+
+### Fixed
+
+- Repaired fresh Anubis honeypot file mounts and native CrowdSec conflict handling.
+- Made Docker startup wait for usable DNS and corrected LAN-only administrator access through the host listener.
+- Simplified private-LAN installer questions and made host-networking guidance clearer.
+
+### Changed
+
+- Added explicit per-host Anubis protection controls and left the global catch-all challenge off by default for API, webhook, and licensing compatibility.
+- Reduced the frontend entry bundle from about 1.05 MB to 463 KB by splitting the CrowdSec attack map and importing only supported locale flags.
+- Clarified version-pinned release installation before the rolling `develop` channel.
+
+### Security
+
+- Kept CrowdSec community protection enabled while showing remote blocklist entries only as aggregate dashboard metrics.
+- Moved GoAccess executable code to administrator-protected same-origin assets, removed executable inline-script permission, and disabled caching of report data.
+- Filtered documented, expiring upstream container exceptions out of open SARIF alerts without weakening the failing vulnerability gate.
+
+See the [release notes](.github/release-notes/v2.15.1-mangyan1.rc.2.md) for installation and validation guidance.
 
 ## v2.15.1-mangyan1.rc.1 - 2026-09-04
 

@@ -6,7 +6,7 @@ It is based on [ZoeyVid/NPMplus](https://github.com/ZoeyVid/NPMplus) and the ori
 
 [Project website](https://mangyan1.github.io/NPMplus/) · [Install NPMplus](#new-installation) · [See the main features](#main-features) · [Releases](https://github.com/mangyan1/NPMplus/releases)
 
-The current versioned build is **v2.15.1-mangyan1.rc.1**. It is a release candidate for test servers; no stable fork release has been published yet. Every versioned release includes a pinned installer and SHA-256 checksum on the [Releases page](https://github.com/mangyan1/NPMplus/releases).
+The current versioned build is **v2.15.1-mangyan1.rc.2**. It is a release candidate for test servers; no stable fork release has been published yet. Every versioned release includes a pinned installer and SHA-256 checksum on the [Releases page](https://github.com/mangyan1/NPMplus/releases).
 
 ## Before you start
 
@@ -25,8 +25,8 @@ The installer can install Docker if it is missing. It asks before making importa
 For the current release candidate, copy this entire command, paste it into a **test server** terminal, and press Enter:
 
 ```bash
-wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.1/setup-npmplus.sh &&
-wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.1/setup-npmplus.sh.sha256 &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.2/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.2/setup-npmplus.sh.sha256 &&
 sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh
 ```
