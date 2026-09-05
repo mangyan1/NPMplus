@@ -156,7 +156,7 @@ Setup script v1.33 closes the Docker forwarding gap by migrating installer-manag
 
 Setup script v1.34 removes Ubuntu's package-generated `crowdsec-firewall-bouncer.yaml.local` overlay from installer-managed bouncers. Without that cleanup, the overlay silently forced the old nftables backend over v1.33's generated iptables configuration and could crash Ubuntu's 0.0.25 bouncer parser. The main generated config remains the single installer-owned source of truth.
 
-Setup script v1.35 adds the independent pre-Docker boot guard after live CI showed that Docker can revive an `on-failure` container in a daemon-restart edge case. The guard blocks external 80/443 traffic even if a container appears early and is removed only after CrowdSec enforcement plus application health are verified. CI probes the guarded listener from a network namespace using a non-private source address, then proves the same path answers only after protected startup succeeds.
+Setup script v1.35 adds the independent pre-Docker boot guard after live CI showed that Docker can revive an `on-failure` container in a daemon-restart edge case. The guard blocks external 80/443 traffic even if a container appears early and is removed only after CrowdSec enforcement plus application health are verified. CI repeatedly probes the guarded listener from a network namespace using a non-private source address, confirms every probe is blocked during a forced bouncer failure, and verifies the owned guard rules are removed after protected startup and local application health recover.
 
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 

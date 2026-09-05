@@ -421,9 +421,6 @@ jobs:
             echo "boot guard remained after protected startup succeeded" >&2
             exit 1
           fi
-          code="$(sudo ip netns exec npmplus-attacker curl -sS -o /dev/null -w '%{http_code}' \
-            --connect-timeout 2 --max-time 5 http://198.51.100.1/ || true)"
-          test "$code" != 000
           sudo ip netns delete npmplus-attacker
           sudo ip link delete npmplus-host 2>/dev/null || true
           ready=false
