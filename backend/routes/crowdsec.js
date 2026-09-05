@@ -371,7 +371,17 @@ router
 			//    down, so follow no redirects and never throw on them.
 			if (ANUBIS_UPSTREAM) {
 				probes.push(
-					fetchCrowdsec(ANUBIS_UPSTREAM, { method: "GET", redirect: "manual" }, ANUBIS_TIMEOUT_MS)
+					fetchCrowdsec(
+						ANUBIS_UPSTREAM,
+						{
+							method: "GET",
+							redirect: "manual",
+							// This is an internal reachability probe, not a visitor request.
+							// Anubis requires a client address before evaluating its policy.
+							headers: { "X-Real-Ip": "127.0.0.1" },
+						},
+						ANUBIS_TIMEOUT_MS,
+					)
 						.then(async (upstreamResponse) => {
 							// discard the body but keep it bounded: it is a challenge page
 							await readBoundedText(upstreamResponse, ANUBIS_MAX_RESPONSE_BYTES);

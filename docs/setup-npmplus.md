@@ -107,6 +107,8 @@ Setup script v1.21 installs generated host helpers by atomic replacement. An upd
 
 Setup script v1.22 adds a terminal-aware maintenance menu to the same standalone script. A new server defaults to installation; an existing server defaults to safe update and also offers the integrated CrowdSec doctor, read-only startup/reboot report, advanced reconfiguration, and guarded uninstall. Explicit command-line options remain available for automation, and piped installations keep their previous no-menu behavior.
 
+Setup script v1.23 creates the Anubis honeypot log before deployment and mounts its directory read-only outside NPMplus's `/data` bind. This prevents Docker from replacing the expected file with conflicting directory placeholders. Updates repair the affected release-candidate layout before health checks, retain a root-only Compose backup, and restart Anubis when its log path needed repair.
+
 The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. It is replaced by the next update and is not a substitute for the daily archives.
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.

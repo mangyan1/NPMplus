@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.22"
+SCRIPT_VERSION="1.23"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -772,8 +772,9 @@ EOF
 # the policy but makes the bbolt database and honeypot log unwritable, which
 # sends the container into a restart loop. Discover the numeric image user so
 # this keeps working if Anubis changes it in a later release.
+ANUBIS_DATA_REPAIRED="false"
 prepare_anubis_data() { # prepare_anubis_data <image-ref>
-	local image_ref="$1" image_user uid gid
+	local image_ref="$1" image_user uid gid honeypot_log
 	image_user=$(docker image inspect --format '{{.Config.User}}' "$image_ref" 2>/dev/null || true)
 	case "$image_user" in
 		[0-9]*:[0-9]*) uid=${image_user%%:*}; gid=${image_user#*:} ;;
@@ -784,7 +785,54 @@ prepare_anubis_data() { # prepare_anubis_data <image-ref>
 			;;
 	esac
 	install -d -m 0750 -o "$uid" -g "$gid" /opt/anubis-data /opt/anubis-data/anubis
+	honeypot_log=/opt/anubis-data/anubis/honeypot.addrs
+	# Docker creates a directory when the source of a file bind mount does not
+	# exist. Repair that exact empty placeholder, but refuse to discard anything.
+	if [[ -d "$honeypot_log" ]]; then
+		rmdir -- "$honeypot_log" || {
+			echo "cannot replace non-empty Anubis honeypot path: $honeypot_log" >&2
+			return 1
+		}
+		ANUBIS_DATA_REPAIRED="true"
+	fi
+	if [[ -e "$honeypot_log" && ! -f "$honeypot_log" ]]; then
+		echo "Anubis honeypot path is not a regular file: $honeypot_log" >&2
+		return 1
+	fi
+	if [[ ! -e "$honeypot_log" ]]; then
+		install -m 0640 -o "$uid" -g "$gid" /dev/null "$honeypot_log"
+		ANUBIS_DATA_REPAIRED="true"
+	else
+		chown "$uid:$gid" "$honeypot_log"
+		chmod 0640 "$honeypot_log"
+	fi
 	chown -R "$uid:$gid" /opt/anubis-data
+}
+
+ANUBIS_MOUNT_MIGRATED="false"
+migrate_anubis_honeypot_mount() {
+	local old_mount new_mount tmp backup
+	old_mount='/opt/anubis-data/anubis/honeypot.addrs:/data/anubis/honeypot.addrs:ro'
+	new_mount='/opt/anubis-data/anubis:/run/npmplus-anubis:ro'
+	grep -Fq "$old_mount" "$COMPOSE_FILE" || return 0
+
+	tmp=$(mktemp "${COMPOSE_FILE}.honeypot.XXXXXX")
+	cp -a "$COMPOSE_FILE" "$tmp"
+	sed -i "s|$old_mount|$new_mount|" "$tmp"
+	if ! grep -q 'ANUBIS_HONEYPOT_LOG_FILE=' "$tmp"; then
+		sed -i '/AUTH_REQUEST_ANUBIS_UPSTREAM=/a\      - "ANUBIS_HONEYPOT_LOG_FILE=/run/npmplus-anubis/honeypot.addrs"' "$tmp"
+	fi
+	if ! docker compose -f "$tmp" config --quiet; then
+		rm -f -- "$tmp"
+		echo "refusing invalid Anubis honeypot mount migration" >&2
+		return 1
+	fi
+	backup="${COMPOSE_FILE}.bak.honeypot-mount-v1.23"
+	[[ -e "$backup" ]] || cp -a "$COMPOSE_FILE" "$backup"
+	chmod 600 "$tmp"
+	mv -f -- "$tmp" "$COMPOSE_FILE"
+	ANUBIS_MOUNT_MIGRATED="true"
+	say "repaired legacy Anubis honeypot mount"
 }
 
 anubis_latest_version() {
@@ -894,7 +942,14 @@ remove_native_crowdsec() {
 	dpkg -s crowdsec >/dev/null 2>&1 || return 0
 	say "removing a native crowdsec (its daemon steals the container's lapi port)"
 	systemctl disable --now crowdsec >/dev/null 2>&1 || true
-	apt-get remove -y -qq crowdsec >/dev/null 2>&1 || true
+	if ! apt-get remove -y -qq crowdsec; then
+		echo "failed to remove the conflicting native CrowdSec package" >&2
+		return 1
+	fi
+	if dpkg -s crowdsec >/dev/null 2>&1; then
+		echo "native CrowdSec is still installed; refusing to start a conflicting container" >&2
+		return 1
+	fi
 }
 
 # the generated host tooling (safe-update, backup, key heal + their crons):
@@ -1408,8 +1463,37 @@ if [[ "${1:-}" == "--update" ]]; then
 		if docker inspect npmplus-anubis >/dev/null 2>&1; then
 			ANUBIS_CURRENT_IMAGE=$(docker inspect --format '{{.Config.Image}}' npmplus-anubis)
 			prepare_anubis_data "$ANUBIS_CURRENT_IMAGE"
-			if [[ "$(docker inspect --format '{{.State.Restarting}}' npmplus-anubis)" == "true" ]]; then
+			migrate_anubis_honeypot_mount
+			if [[ "$ANUBIS_DATA_REPAIRED" == "true" ]] || \
+				[[ "$(docker inspect --format '{{.State.Restarting}}' npmplus-anubis)" == "true" ]]; then
 				docker restart npmplus-anubis >/dev/null
+			fi
+		fi
+		# The old nested file mount can leave npmplus unable to start. Once its
+		# compose entry is migrated, recreate only that container before the safe
+		# updater evaluates the healthy baseline. Also recover a stopped container
+		# when an operator already applied the corrected mount by hand.
+		npmplus_mount_needs_recreate="$ANUBIS_MOUNT_MIGRATED"
+		if [[ "$npmplus_mount_needs_recreate" != "true" ]] && \
+			grep -Fq '/opt/anubis-data/anubis:/run/npmplus-anubis:ro' "$COMPOSE_FILE" && \
+			docker inspect npmplus >/dev/null 2>&1 && \
+			[[ "$(docker inspect --format '{{.State.Running}}' npmplus)" != "true" ]]; then
+			npmplus_mount_needs_recreate="true"
+		fi
+		if [[ "$npmplus_mount_needs_recreate" == "true" ]]; then
+			docker compose -f "$COMPOSE_FILE" up -d --no-deps --force-recreate npmplus
+			mount_repaired=false
+			for _ in $(seq 1 180); do
+				if [[ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' npmplus)" == "healthy" ]]; then
+					mount_repaired=true
+					break
+				fi
+				sleep 1
+			done
+			if [[ "$mount_repaired" != "true" ]]; then
+				docker logs --tail 100 npmplus >&2 || true
+				echo "npmplus did not become healthy after the Anubis mount repair" >&2
+				exit 1
 			fi
 		fi
 		# Docker can snapshot an empty host resolv.conf into this host-networked
@@ -1670,7 +1754,8 @@ if [[ "$USE_HOST_NETWORK" == "y" ]]; then
 fi
 ENV_ANUBIS=""
 if [[ "$USE_ANUBIS" == "y" ]]; then
-	ENV_ANUBIS="      - \"AUTH_REQUEST_ANUBIS_UPSTREAM=http://$ANUBIS_SERVICE_HOST:8923\""
+	ENV_ANUBIS="      - \"AUTH_REQUEST_ANUBIS_UPSTREAM=http://$ANUBIS_SERVICE_HOST:8923\"
+      - \"ANUBIS_HONEYPOT_LOG_FILE=/run/npmplus-anubis/honeypot.addrs\""
 fi
 ENV_CROWDSEC=""
 if [[ "$USE_CROWDSEC" == "y" ]]; then
@@ -1728,9 +1813,9 @@ $ENV_TZ
       - "/opt/anubis-data:/data"
 EOF
 
-	# the admin UI's anubis section reads the honeypot log from inside the
-	# npmplus container; mount only the log file, read-only, never the store
-	HONEYPOT_LOG_MOUNT='      - "/opt/anubis-data/anubis/honeypot.addrs:/data/anubis/honeypot.addrs:ro"'
+	# Mount only the honeypot-log directory outside npmplus' /data bind. A nested
+	# file bind under /data lets Docker create conflicting directory placeholders.
+	HONEYPOT_LOG_MOUNT='      - "/opt/anubis-data/anubis:/run/npmplus-anubis:ro"'
 else
 	HONEYPOT_LOG_MOUNT=""
 fi

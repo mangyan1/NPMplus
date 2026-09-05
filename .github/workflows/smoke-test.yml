@@ -109,7 +109,19 @@ jobs:
             exit 1
           fi
           echo "smoke test ok - all containers up, https answers with $code"
+          if dpkg -s crowdsec >/dev/null 2>&1; then
+            echo "conflicting native CrowdSec package is still installed" >&2
+            exit 1
+          fi
           sudo docker compose -f /opt/npmplus/compose.yaml config --images | grep -q '@sha256:'
+          sudo test -f /opt/anubis-data/anubis/honeypot.addrs
+          sudo grep -Fq '/opt/anubis-data/anubis:/run/npmplus-anubis:ro' /opt/npmplus/compose.yaml
+          sudo grep -Fq 'ANUBIS_HONEYPOT_LOG_FILE=/run/npmplus-anubis/honeypot.addrs' /opt/npmplus/compose.yaml
+          sudo docker exec npmplus test -f /run/npmplus-anubis/honeypot.addrs
+          if sudo docker logs npmplus-anubis 2>&1 | grep -q "can't init honeypot subsystem"; then
+            echo "Anubis failed to initialize its honeypot" >&2
+            exit 1
+          fi
           sudo test -x /usr/local/sbin/npmplus-wait-for-dns
           sudo grep -q '^ExecStartPre=/usr/local/sbin/npmplus-wait-for-dns$' \
             /etc/systemd/system/docker.service.d/10-wait-for-dns.conf
@@ -184,8 +196,20 @@ jobs:
             sleep 2
           done
           test "$api_ready" = true
+          # Reproduce the affected RC layout: the honeypot source and nested
+          # destination were both auto-created as directories. The update must
+          # repair the file, migrate the mount, and recreate npmplus before its
+          # transactional preflight checks the baseline.
+          sudo docker stop npmplus-anubis
+          sudo rm -f /opt/anubis-data/anubis/honeypot.addrs
+          sudo mkdir /opt/anubis-data/anubis/honeypot.addrs
+          sudo mkdir -p /opt/npmplus/anubis/honeypot.addrs
+          sudo sed -i \
+            's|/opt/anubis-data/anubis:/run/npmplus-anubis:ro|/opt/anubis-data/anubis/honeypot.addrs:/data/anubis/honeypot.addrs:ro|' \
+            /opt/npmplus/compose.yaml
+          sudo sed -i '/ANUBIS_HONEYPOT_LOG_FILE=/d' /opt/npmplus/compose.yaml
           sudo chown -R 0:0 /opt/anubis-data
-          sudo docker restart npmplus-anubis
+          sudo docker start npmplus-anubis
           sudo docker exec npmplus sh -c ': > /etc/resolv.conf'
           # Reproduce an existing install that opted out of AppSec. The explicit
           # update flag must survive delegation through the safe-update wrapper.
@@ -204,6 +228,10 @@ jobs:
           sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=4' /usr/local/bin/npmplus-safe-update
           sudo test -f /var/backups/npmplus-last-good/override.yaml
           test "$(stat -c '%u:%g' /opt/anubis-data)" = '1000:1000'
+          sudo test -f /opt/anubis-data/anubis/honeypot.addrs
+          sudo grep -Fq '/opt/anubis-data/anubis:/run/npmplus-anubis:ro' /opt/npmplus/compose.yaml
+          sudo grep -Fq 'ANUBIS_HONEYPOT_LOG_FILE=/run/npmplus-anubis/honeypot.addrs' /opt/npmplus/compose.yaml
+          sudo docker exec npmplus test -f /run/npmplus-anubis/honeypot.addrs
           sudo docker exec npmplus awk '$1 == "nameserver" && $2 != "" { found=1; exit } END { exit !found }' /etc/resolv.conf
           test "$(sudo docker inspect --format '{{.Image}}' npmplus)" != \
             "$(sudo docker inspect --format '{{.Image}}' npmplus-caddy)"
