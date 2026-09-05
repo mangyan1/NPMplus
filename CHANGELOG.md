@@ -4,7 +4,7 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
-- No unreleased changes yet.
+- Clarified the README and operations guide so the version-pinned release-candidate installer is shown before the rolling `develop` channel.
 
 ## v2.15.1-mangyan1.rc.1 - 2026-09-04
 

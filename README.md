@@ -6,7 +6,7 @@ It is based on [ZoeyVid/NPMplus](https://github.com/ZoeyVid/NPMplus) and the ori
 
 [Project website](https://mangyan1.github.io/NPMplus/) · [Install NPMplus](#new-installation) · [See the main features](#main-features) · [Releases](https://github.com/mangyan1/NPMplus/releases)
 
-The command below follows the rolling `develop` channel. Testable release candidates are published on the [Releases page](https://github.com/mangyan1/NPMplus/releases) with a version-pinned installer and SHA-256 checksum.
+The current versioned build is **v2.15.1-mangyan1.rc.1**. It is a release candidate for test servers; no stable fork release has been published yet. Every versioned release includes a pinned installer and SHA-256 checksum on the [Releases page](https://github.com/mangyan1/NPMplus/releases).
 
 ## Before you start
 
@@ -22,16 +22,20 @@ The installer can install Docker if it is missing. It asks before making importa
 
 ## New installation
 
-Copy this entire command, paste it into the server terminal, and press Enter:
+For the current release candidate, copy this entire command, paste it into a **test server** terminal, and press Enter:
 
 ```bash
-wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.1/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.1/setup-npmplus.sh.sha256 &&
+sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh
 ```
 
+This command installs the named version instead of silently following later changes. Advanced testers who deliberately want the newest rolling development build can use the [develop installer](https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh).
+
 Select **Install NPMplus**, then answer the questions shown by the installer. If you are unsure, press Enter to accept the displayed default. The recommended defaults enable CrowdSec, CrowdSec AppSec web-application protection, the firewall bouncer, and Anubis. AppSec can still be turned off for an individual proxy host if an application has a confirmed compatibility problem.
 
-Keep the same command. After installation it becomes a simple maintenance menu for safe updates, CrowdSec checks, reboot diagnostics, reconfiguration, and uninstalling. You do not need to memorize a different command for each task.
+After installation, one short local command opens the maintenance menu for safe updates, CrowdSec checks, reboot diagnostics, reconfiguration, and uninstalling. You do not need to memorize a different command for each task.
 
 For the easiest first login, provide an administrator email and password when the installer asks. The password is handled as a temporary secret and is not saved in `compose.yaml`.
 
@@ -65,14 +69,15 @@ sudo docker exec npmplus cat /data/npmplus/setup-token
 
 Enter that token in the setup page. It is removed after the first administrator is created.
 
-## Update or troubleshoot NPMplus
+## Maintain or troubleshoot NPMplus
 
-Copy and paste the same command on the server:
+After installation, reopen the matching maintenance menu with one short command:
 
 ```bash
-wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
-sudo bash setup-npmplus.sh
+sudo /opt/npmplus/setup-npmplus.sh
 ```
+
+To move to a newer release later, use the installation command shown on that release's page. A `develop` installation should download the current [develop installer](https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh) before maintenance so it receives the latest host-management logic.
 
 Choose the action you need from the numbered menu:
 

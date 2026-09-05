@@ -4,17 +4,21 @@
 
 The installer intentionally does not deploy PHP-FPM. This fork treats NPMplus as a reverse proxy and security boundary; every proxied application remains responsible for its own runtime, application files, updates, and health checks. Keep the `PHP83`, `PHP84`, and `PHP85` options disabled unless you deliberately leave this recommended deployment model and accept the advanced compatibility tradeoffs documented in `ADVANCED.md`.
 
-The raw `develop` installer below follows the rolling development channel. GitHub releases provide a version-pinned installer and checksum for controlled test deployments. A release candidate uses the `rc` image channel and does not move the stable `latest` channel.
+GitHub releases provide a version-pinned installer and checksum for controlled deployments. The current `v2.15.1-mangyan1.rc.1` build is a release candidate for test systems; no stable fork release has been published yet. A release candidate uses the `rc` image channel and does not move the stable `latest` channel. The raw `develop` installer remains available to advanced testers who intentionally want a rolling build.
 
 ## Fresh installation
 
-Download the script from this fork, review it, and run it:
+Download the current release-candidate script and checksum, verify them, review the script, and run it on a test server:
 
 ```bash
-wget -O setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh
+wget -O setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.1/setup-npmplus.sh
+wget -O setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.1/setup-npmplus.sh.sha256
+sha256sum -c setup-npmplus.sh.sha256
 less setup-npmplus.sh
 sudo bash setup-npmplus.sh
 ```
+
+The versioned installer keeps its own release URL and image tag. To move to a newer version, download the installer and checksum from that version's [GitHub release](https://github.com/mangyan1/NPMplus/releases). For the rolling development channel, replace the release download with `https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh`.
 
 On a new server, select **Install NPMplus**. On an existing installation, the same command offers safe update, CrowdSec doctor, startup/reboot diagnostics, advanced reconfiguration, and uninstall. The interactive installation prompts cover the initial administrator, CrowdSec and AppSec, the firewall bouncer, Anubis, Caddy, Cloudflare trust, UFW, and unattended security upgrades. The recommended defaults enable CrowdSec, AppSec, the firewall bouncer, and Anubis. Existing UFW rules are preserved unless a reset is explicitly approved. Before a reset, the script detects the active SSH port and asks for confirmation so it does not assume port 22.
 
@@ -47,15 +51,13 @@ The Docker and CrowdSec PackageCloud bootstrap scripts are downloaded to tempora
 
 ## Updating
 
-Download and review the current script, run it, and select **Safe update**:
+For routine maintenance on the installed release, open its menu and select **Safe update**:
 
 ```bash
-wget -O setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh
-less setup-npmplus.sh
-sudo bash setup-npmplus.sh
+sudo /opt/npmplus/setup-npmplus.sh
 ```
 
-The explicit `sudo bash setup-npmplus.sh --update` form remains available for automation.
+Download the new versioned installer and checksum first when moving to a newer release. Rolling `develop` users should similarly download the latest raw script before maintenance. The explicit `sudo bash setup-npmplus.sh --update` form remains available for automation.
 
 An ordinary update preserves the existing AppSec setting. To opt an existing installer-managed CrowdSec deployment into AppSec, run the safe update once with the explicit flag:
 
