@@ -4,14 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>NPMplus Security Fork — maintained by mangyan1</title>
-  <meta name="description" content="A practical NPMplus fork focused on secure setup, CrowdSec and Anubis visibility, recoverable updates, backups, and reliable restarts.">
+  <meta name="description" content="A practical NPMplus fork with guided setup, CrowdSec AppSec WAF monitoring, Anubis visibility, recoverable updates, backups, and reliable restarts.">
+  <meta name="keywords" content="NPMplus, Nginx Proxy Manager, CrowdSec, AppSec, WAF, reverse proxy, self-hosting">
   <meta name="robots" content="index, follow">
   <meta name="theme-color" content="#ffffff">
   <link rel="canonical" href="https://mangyan1.github.io/NPMplus/">
   <link rel="icon" href="https://raw.githubusercontent.com/mangyan1/NPMplus/develop/frontend/public/images/logo-no-text.svg" type="image/svg+xml">
   <meta property="og:type" content="website">
   <meta property="og:title" content="NPMplus Security Fork — maintained by mangyan1">
-  <meta property="og:description" content="Safer setup, useful security visibility, and updates that can roll back when health checks fail.">
+  <meta property="og:description" content="One-command reverse-proxy setup with CrowdSec AppSec WAF monitoring, per-host controls, and updates that can roll back safely.">
   <meta property="og:url" content="https://mangyan1.github.io/NPMplus/">
   <meta property="og:image" content="https://mangyan1.github.io/NPMplus/security-overview.webp">
   <meta name="twitter:card" content="summary_large_image">
@@ -31,7 +32,7 @@
     "@context": "https://schema.org",
     "@type": "SoftwareSourceCode",
     "name": "NPMplus Security Fork",
-    "description": "A practical NPMplus fork focused on secure setup, CrowdSec and Anubis visibility, recoverable updates, backups, and reliable restarts.",
+    "description": "A practical NPMplus fork with guided setup, CrowdSec AppSec WAF monitoring, Anubis visibility, recoverable updates, backups, and reliable restarts.",
     "codeRepository": "https://github.com/mangyan1/NPMplus",
     "url": "https://mangyan1.github.io/NPMplus/",
     "license": "https://www.gnu.org/licenses/agpl-3.0.html",
@@ -476,7 +477,7 @@
       <div>
         <p class="byline">A fork maintained by mangyan1</p>
         <h1>A practical NPMplus fork for servers I want to trust after a reboot.</h1>
-        <p class="intro">I focus on the parts that matter on my own reverse proxy: safer setup, visible protection, updates that can undo themselves, and diagnostics that help when startup goes wrong.</p>
+        <p class="intro">I focus on the parts that matter on my own reverse proxy: safer setup, visible CrowdSec and WAF protection, updates that can undo themselves, and diagnostics that help when startup goes wrong.</p>
         <div class="actions">
           <a class="button primary" href="#install">Install NPMplus</a>
           <a class="button" href="https://github.com/mangyan1/NPMplus">View the code</a>
@@ -503,7 +504,7 @@
 
     <section class="wrap facts" aria-label="Project capabilities">
       <p><strong>Reverse proxy</strong>Nginx, TLS, HTTP/3</p>
-      <p><strong>Protection</strong>CrowdSec and Anubis</p>
+      <p><strong>Protection</strong>CrowdSec, AppSec WAF, Anubis</p>
       <p><strong>Recovery</strong>Backups and rollback</p>
       <p><strong>Operations</strong>Boot checks and tracing</p>
     </section>
@@ -525,9 +526,14 @@
           <p>Daily backups are bounded, CrowdSec credentials can self-heal, and boot diagnostics explain DNS or container delays.</p>
         </article>
         <article>
+          <h3>Web application protection</h3>
+          <p>Fresh installations recommend CrowdSec AppSec with virtual patches and high-confidence rules. Protection stays adjustable for each proxy host and custom location.</p>
+          <p>The WAF view shows whether AppSec is active, how many requests it inspected, what passed or was blocked, and the current failure policy.</p>
+        </article>
+        <article>
           <h3>Security visibility</h3>
           <p>The dashboard separates local attacks from community intelligence, so remote CAPI entries stay enforced without dominating the interface.</p>
-          <p>CrowdSec, Anubis, honeypot status, local bans, audit history, and a lightweight origin map stay together in one operator view.</p>
+          <p>CrowdSec, AppSec, Anubis, honeypot status, local bans, audit history, and a lightweight origin map stay together in one operator view.</p>
         </article>
       </div>
     </section>
@@ -536,7 +542,7 @@
       <div class="wrap install-grid">
         <div>
           <h2>Start with one command</h2>
-          <p>For a clean Debian 12/13 or Ubuntu 22.04+ server. The installer explains its choices and asks before important changes.</p>
+          <p>For a clean Debian 12/13 or Ubuntu 22.04+ server. Recommended defaults enable CrowdSec, AppSec WAF, the firewall bouncer, and Anubis; the installer still asks before important changes.</p>
         </div>
         <div class="command">
           <pre><code>wget -qO setup-npmplus.sh \
