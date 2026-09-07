@@ -1581,6 +1581,10 @@ Options:
   --install                 install or reconfigure NPMplus
   --update                  safely update with snapshot and rollback
   --update --enable-appsec  enable AppSec during a safe update
+  --update --enable-anubis-catchall
+                            make anubis challenge everything its policy does not
+                            match on the next policy refresh (breaks non-browser
+                            clients on anubis-protected hosts)
   --update --enable-strict-boot
                             keep public ports closed until CrowdSec is enforcing
   --update --enable-cloudflare-origin-lock
@@ -1701,12 +1705,14 @@ esac
 # Operators can opt in explicitly without rebuilding the stack interactively;
 # flags are carried through the transactional safe-update wrapper via env.
 ENABLE_APPSEC_ON_UPDATE="${NPMPLUS_ENABLE_APPSEC_ON_UPDATE:-false}"
+ENABLE_ANUBIS_CATCHALL_ON_UPDATE="${NPMPLUS_ENABLE_ANUBIS_CATCHALL_ON_UPDATE:-false}"
 ENABLE_STRICT_BOOT_ON_UPDATE="${NPMPLUS_ENABLE_STRICT_BOOT_ON_UPDATE:-false}"
 ENABLE_CF_ORIGIN_LOCK_ON_UPDATE="${NPMPLUS_ENABLE_CF_ORIGIN_LOCK_ON_UPDATE:-false}"
 if [[ "${1:-}" == "--update" ]]; then
 	for update_option in "${@:2}"; do
 		case "$update_option" in
 			--enable-appsec) ENABLE_APPSEC_ON_UPDATE="true" ;;
+			--enable-anubis-catchall) ENABLE_ANUBIS_CATCHALL_ON_UPDATE="true" ;;
 			--enable-strict-boot) ENABLE_STRICT_BOOT_ON_UPDATE="true" ;;
 			--enable-cloudflare-origin-lock) ENABLE_CF_ORIGIN_LOCK_ON_UPDATE="true" ;;
 			*) echo "unknown update option: $update_option" >&2; exit 1 ;;
@@ -2782,6 +2788,35 @@ EOF
 printf '42 2 * * * root /usr/local/bin/npmplus-crowdsec-heal\n' >/etc/cron.d/npmplus-crowdsec-heal
 chmod 644 /etc/cron.d/npmplus-crowdsec-heal
 touch /var/log/npmplus-crowdsec-heal.log && chmod 640 /var/log/npmplus-crowdsec-heal.log
+
+# honeypot -> crowdsec bridge: installed here (not just at fresh setup) so
+# improvements like a longer ban duration reach existing installs on --update
+if grep -q "container_name: crowdsec" "$COMPOSE_FILE" && grep -q "container_name: npmplus-anubis" "$COMPOSE_FILE"; then
+	say "installing honeypot -> crowdsec auto-ban (every 5 min via cron)"
+	write_root_file /usr/local/bin/anubis-honeypot-ban 755 <<'EOF'
+#!/bin/bash
+# bans IPs caught in anubis' honeypot - those hits are proven malicious by
+# construction, so no false positives are possible; 7d because a repeat
+# offender is simply re-banned on every new pot hit
+set -euo pipefail
+LOG=/opt/anubis-data/anubis/honeypot.addrs
+STATE=/opt/anubis-data/anubis-honeypot.pos
+[ -s "$LOG" ] || exit 0
+pos=$(cat "$STATE" 2>/dev/null || echo 0)
+size=$(stat -c %s "$LOG")
+[ "$pos" -gt "$size" ] && pos=0 # anubis resets the file at 64k
+[ "$pos" -eq "$size" ] && exit 0
+tail -c +$((pos + 1)) "$LOG" | while read -r ip; do
+	case "$ip" in
+		*[!0-9a-fA-F.:]*) ;; # not an address, skip
+		*) docker exec crowdsec cscli decisions add --ip "$ip" --duration 7d --reason anubis-honeypot >/dev/null 2>&1 || true ;;
+	esac
+done
+echo "$size" >"$STATE"
+EOF
+	printf '*/5 * * * * root /usr/local/bin/anubis-honeypot-ban\n' >/etc/cron.d/anubis-honeypot
+	chmod 644 /etc/cron.d/anubis-honeypot
+fi
 }
 
 # --- dependencies (debian/ubuntu) ------------------------------------------------
@@ -2882,6 +2917,10 @@ if [[ "${1:-}" == "--update" ]]; then
 	adopt_legacy_installer_firewall_bouncer
 	if [[ "$ENABLE_APPSEC_ON_UPDATE" == "true" ]] && ! grep -q "container_name: crowdsec" "$COMPOSE_FILE"; then
 		echo "cannot enable AppSec because this installation has no CrowdSec service" >&2
+		exit 1
+	fi
+	if [[ "$ENABLE_ANUBIS_CATCHALL_ON_UPDATE" == "true" ]] && ! grep -q "npmplus-anubis" "$COMPOSE_FILE"; then
+		echo "cannot enable the anubis catch-all because this installation has no anubis service" >&2
 		exit 1
 	fi
 	if [[ "$ENABLE_STRICT_BOOT_ON_UPDATE" == "true" ]] && [[ ! -f /var/lib/npmplus/installed-firewall-bouncer ]]; then
@@ -3022,9 +3061,11 @@ if [[ "${1:-}" == "--update" ]]; then
 		ANUBIS_VERSION=$(anubis_latest_version)
 		ANUBIS_IMAGE=$(pin_image "ghcr.io/techarohq/anubis:$ANUBIS_VERSION")
 		set_compose_service_image anubis "$ANUBIS_IMAGE"
-		# keep the catchall choice from the existing policy
+		# keep the catchall choice from the existing policy unless explicitly
+		# requested for this update
 		CATCHALL="n"
 		grep -q "name: everything-else" /opt/anubis.yaml 2>/dev/null && CATCHALL="y"
+		[[ "$ENABLE_ANUBIS_CATCHALL_ON_UPDATE" != "true" ]] || CATCHALL="y"
 		say "anubis -> $ANUBIS_VERSION (policy refreshed)"
 		anubis_policy "$ANUBIS_VERSION" "$CATCHALL"
 	fi
@@ -3131,11 +3172,11 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 	fi
 fi
 USE_ANUBIS="n"; confirm "Enable anubis (anti-bot proof-of-work)?" "y" && USE_ANUBIS="y"
-CHALLENGE_ALL="n"
+CHALLENGE_ALL="y"
 if [[ "$USE_ANUBIS" == "y" ]]; then
-	# strongest anti-bot, but breaks non-browser clients (APIs, RSS, uptime
-	# monitors). Safe for general reverse-proxy use only as an explicit opt-in.
-	confirm "Challenge everything not matched by any rule?" "n" && CHALLENGE_ALL="y"
+	# strongest anti-bot; hosts that opt into anubis are browser-facing anyway,
+	# but APIs/RSS/uptime monitors on an anubis-protected host still need it off
+	confirm "Challenge everything not matched by any rule?" "y" && CHALLENGE_ALL="y" || CHALLENGE_ALL="n"
 fi
 USE_CADDY="n"; confirm "Enable caddy (port 80 -> https redirect, so NPMplus only serves https)?" "n" && USE_CADDY="y"
 # orange cloud only: with plain dns the visitor ips arrive directly and must NOT be
@@ -3473,32 +3514,6 @@ if [[ "$USE_ANUBIS" == "y" ]]; then
 	say "fetching anubis bot policy $ANUBIS_VERSION (status codes adjusted for auth_request)"
 	anubis_policy "$ANUBIS_VERSION" "$CHALLENGE_ALL"
 	prepare_anubis_data "$ANUBIS_IMAGE" # subdir holds the honeypot IP log
-fi
-
-if [[ "$USE_CROWDSEC" == "y" && "$USE_ANUBIS" == "y" ]]; then
-	say "installing honeypot -> crowdsec auto-ban (every 5 min via cron)"
-	write_root_file /usr/local/bin/anubis-honeypot-ban 755 <<'EOF'
-#!/bin/bash
-# bans IPs caught in anubis' honeypot - those hits are proven malicious by
-# construction, so no false positives are possible
-set -euo pipefail
-LOG=/opt/anubis-data/anubis/honeypot.addrs
-STATE=/opt/anubis-data/anubis-honeypot.pos
-[ -s "$LOG" ] || exit 0
-pos=$(cat "$STATE" 2>/dev/null || echo 0)
-size=$(stat -c %s "$LOG")
-[ "$pos" -gt "$size" ] && pos=0 # anubis resets the file at 64k
-[ "$pos" -eq "$size" ] && exit 0
-tail -c +$((pos + 1)) "$LOG" | while read -r ip; do
-	case "$ip" in
-		*[!0-9a-fA-F.:]*) ;; # not an address, skip
-		*) docker exec crowdsec cscli decisions add --ip "$ip" --duration 24h --reason anubis-honeypot >/dev/null 2>&1 || true ;;
-	esac
-done
-echo "$size" >"$STATE"
-EOF
-	printf '*/5 * * * * root /usr/local/bin/anubis-honeypot-ban\n' >/etc/cron.d/anubis-honeypot
-	chmod 644 /etc/cron.d/anubis-honeypot
 fi
 
 if [[ "$USE_CROWDSEC" == "y" ]]; then
