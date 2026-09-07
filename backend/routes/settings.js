@@ -28,13 +28,8 @@ router
 	 * Retrieve all settings
 	 */
 	.get(async (req, res, next) => {
-		try {
-			const rows = await internalSetting.getAll(res.locals.access);
-			res.status(200).send(rows);
-		} catch (err) {
-			debug(logger, `${req.method.toUpperCase()} ${req.originalUrl}: ${err}`);
-			next(err);
-		}
+		const rows = await internalSetting.getAll(res.locals.access);
+		res.status(200).send(rows);
 	});
 
 /**
@@ -55,30 +50,25 @@ router
 	 * Retrieve a specific setting
 	 */
 	.get(async (req, res, next) => {
-		try {
-			const data = await validator(
-				{
-					required: ["setting_id"],
-					additionalProperties: false,
-					properties: {
-						setting_id: {
-							type: "string",
-							minLength: 1,
-						},
+		const data = await validator(
+			{
+				required: ["setting_id"],
+				additionalProperties: false,
+				properties: {
+					setting_id: {
+						type: "string",
+						minLength: 1,
 					},
 				},
-				{
-					setting_id: req.params.setting_id,
-				},
-			);
-			const row = await internalSetting.get(res.locals.access, {
-				id: data.setting_id,
-			});
-			res.status(200).send(row);
-		} catch (err) {
-			debug(logger, `${req.method.toUpperCase()} ${req.originalUrl}: ${err}`);
-			next(err);
-		}
+			},
+			{
+				setting_id: req.params.setting_id,
+			},
+		);
+		const row = await internalSetting.get(res.locals.access, {
+			id: data.setting_id,
+		});
+		res.status(200).send(row);
 	})
 
 	/**
@@ -87,15 +77,10 @@ router
 	 * Update and existing setting
 	 */
 	.put(async (req, res, next) => {
-		try {
-			const payload = apiValidator(getValidationSchema("/settings/{settingID}", "put"), req.body);
-			payload.id = req.params.setting_id;
-			const result = await internalSetting.update(res.locals.access, payload);
-			res.status(200).send(result);
-		} catch (err) {
-			debug(logger, `${req.method.toUpperCase()} ${req.originalUrl}: ${err}`);
-			next(err);
-		}
+		const payload = apiValidator(getValidationSchema("/settings/{settingID}", "put"), req.body);
+		payload.id = req.params.setting_id;
+		const result = await internalSetting.update(res.locals.access, payload);
+		res.status(200).send(result);
 	});
 
 export default router;

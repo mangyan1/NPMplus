@@ -83,38 +83,33 @@ router
 	 * Create a new Token
 	 */
 	.post(async (req, res, next) => {
-		try {
-			if (process.env.OIDC_DISABLE_PASSWORD === "true") {
-				throw new errs.AuthError("Non OIDC login is disabled");
-			}
-
-			const data = apiValidator(getValidationSchema("/tokens", "post"), req.body);
-			const result = await internalToken.getTokenFromEmail(data);
-			const { token, ...responseBody } = result;
-
-			if (result.requiresTotp) {
-				res.cookie("__Host-Http-challenge_token", token, {
-					signed: true,
-					httpOnly: true,
-					secure: true,
-					sameSite: "Strict",
-					expires: new Date(result.expires),
-				});
-			} else {
-				res.cookie("__Host-Http-token", token, {
-					signed: true,
-					httpOnly: true,
-					secure: true,
-					sameSite: "Strict",
-					expires: new Date(result.expires),
-				});
-			}
-
-			res.status(200).send(responseBody);
-		} catch (err) {
-			debug(logger, `${req.method.toUpperCase()} ${req.originalUrl}: ${err}`);
-			next(err);
+		if (process.env.OIDC_DISABLE_PASSWORD === "true") {
+			throw new errs.AuthError("Non OIDC login is disabled");
 		}
+
+		const data = apiValidator(getValidationSchema("/tokens", "post"), req.body);
+		const result = await internalToken.getTokenFromEmail(data);
+		const { token, ...responseBody } = result;
+
+		if (result.requiresTotp) {
+			res.cookie("__Host-Http-challenge_token", token, {
+				signed: true,
+				httpOnly: true,
+				secure: true,
+				sameSite: "Strict",
+				expires: new Date(result.expires),
+			});
+		} else {
+			res.cookie("__Host-Http-token", token, {
+				signed: true,
+				httpOnly: true,
+				secure: true,
+				sameSite: "Strict",
+				expires: new Date(result.expires),
+			});
+		}
+
+		res.status(200).send(responseBody);
 	})
 
 	/**
@@ -123,22 +118,17 @@ router
 	 * Delete the Token
 	 */
 	.delete((req, res, next) => {
-		try {
-			res.clearCookie("__Host-Http-token", {
-				httpOnly: true,
-				secure: true,
-				sameSite: "Strict",
-			});
-			res.cookie("__Host-npmplus_oidc_no_redirect", "true", {
-				secure: true,
-				sameSite: "Strict",
-				maxAge: 60 * 60 * 1000,
-			});
-			res.status(200).send({ expires: new Date(0).toISOString() });
-		} catch (err) {
-			debug(logger, `${req.method.toUpperCase()} ${req.originalUrl}: ${err}`);
-			next(err);
-		}
+		res.clearCookie("__Host-Http-token", {
+			httpOnly: true,
+			secure: true,
+			sameSite: "Strict",
+		});
+		res.cookie("__Host-npmplus_oidc_no_redirect", "true", {
+			secure: true,
+			sameSite: "Strict",
+			maxAge: 60 * 60 * 1000,
+		});
+		res.status(200).send({ expires: new Date(0).toISOString() });
 	});
 
 router
