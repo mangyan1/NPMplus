@@ -220,6 +220,18 @@ not valid
 	});
 });
 
+test("CrowdSec 1.8 parser metrics under their renamed node names are summarized", () => {
+	// 1.8 renamed cs_parser_hits_* to cs_node_hits_*
+	const summary = summarizeCrowdsecMetrics(
+		parsePrometheusText(`
+cs_node_hits_total{type="parser",name="crowdsecurity/nginx-logs"} 10
+cs_node_hits_ok_total{type="parser",name="crowdsecurity/nginx-logs"} 8
+`),
+	);
+	assert.equal(summary.parser_hits, 10);
+	assert.equal(summary.parser_success_rate, 0.8);
+});
+
 test("decision origin totals degrade safely when an older metric has no origin label", () => {
 	const summary = summarizeCrowdsecMetrics(parsePrometheusText("cs_active_decisions 7"));
 	assert.equal(summary.active_decisions, 7);

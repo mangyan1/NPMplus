@@ -239,8 +239,10 @@ const summarizeCrowdsecMetrics = (samples) => {
 	const sum = (name) =>
 		samples.filter((sample) => sample.name === name).reduce((total, sample) => total + sample.value, 0);
 	const ratio = (numerator, denominator) => (denominator > 0 ? numerator / denominator : null);
-	const parserHits = sum("cs_parser_hits_total");
-	const parserOk = sum("cs_parser_hits_ok_total");
+	// CrowdSec 1.8 renamed the parser counters cs_parser_hits_* to
+	// cs_node_hits_*; prefer the new names and fall back to the old ones
+	const parserHits = sum("cs_node_hits_total") || sum("cs_parser_hits_total");
+	const parserOk = sum("cs_node_hits_ok_total") || sum("cs_parser_hits_ok_total");
 	const lapiCount = sum("cs_lapi_request_duration_seconds_count");
 	const parsingCount = sum("cs_parsing_time_seconds_count");
 	const appsecRequests = sum("cs_appsec_reqs_total");
