@@ -8,6 +8,7 @@ process.env.COOKIE_SECRET ||= "api-test-cookie-secret";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
+import net from "node:net";
 import { after, test } from "node:test";
 
 // the container image creates these before the app boots; the nginx config
@@ -286,6 +287,77 @@ test("proxy host CRUD round-trips through nginx config generation", async (t) =>
 
 	const cleared = await api("GET", "/api/nginx/proxy-hosts", { cookie: adminCookie });
 	assert.ok(!cleared.body.some((row) => row.id === hostId));
+});
+
+// --- proxy host forward-destination reachability probe ---
+
+// a real listening socket on an ephemeral port, so the tcp probe has a
+// genuine destination to succeed against
+const listenOnEphemeralPort = () =>
+	new Promise((resolve, reject) => {
+		const srv = net.createServer(() => {});
+		srv.once("error", reject);
+		srv.listen(0, "127.0.0.1", () => resolve({ srv, port: srv.address().port }));
+	});
+
+test("proxy host create probes the forward destination and reports it reachable", async (t) => {
+	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
+	const { srv, port } = await listenOnEphemeralPort();
+	try {
+		const created = await api("POST", "/api/nginx/proxy-hosts", {
+			cookie: adminCookie,
+			body: {
+				domain_names: ["reach-ok.example.com"],
+				forward_scheme: "http",
+				forward_host: "127.0.0.1",
+				forward_port: port,
+			},
+		});
+		assert.equal(created.status, 201, created.text);
+		assert.equal(created.body.meta.reach_ok, true, created.text);
+		assert.equal(created.body.meta.reach_err, null, created.text);
+
+		const fetched = await api("GET", `/api/nginx/proxy-hosts/${created.body.id}`, { cookie: adminCookie });
+		assert.equal(fetched.body.meta.reach_ok, true, fetched.text);
+	} finally {
+		srv.close();
+	}
+});
+
+test("proxy host create reports an unreachable forward destination", async (t) => {
+	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
+	// grab an ephemeral port and then let go of it, so nothing is listening
+	const { srv, port } = await listenOnEphemeralPort();
+	await new Promise((resolve) => srv.close(resolve));
+
+	const created = await api("POST", "/api/nginx/proxy-hosts", {
+		cookie: adminCookie,
+		body: {
+			domain_names: ["reach-dead.example.com"],
+			forward_scheme: "http",
+			forward_host: "127.0.0.1",
+			forward_port: port,
+		},
+	});
+	assert.equal(created.status, 201, created.text);
+	assert.equal(created.body.meta.reach_ok, false, created.text);
+	assert.ok(created.body.meta.reach_err, "no reach error message stored");
+});
+
+test("proxy host without a tcp destination skips the reachability probe", async (t) => {
+	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
+
+	const created = await api("POST", "/api/nginx/proxy-hosts", {
+		cookie: adminCookie,
+		body: {
+			domain_names: ["reach-path.example.com"],
+			forward_scheme: "path",
+			forward_host: "/data/html",
+			forward_port: 80,
+		},
+	});
+	assert.equal(created.status, 201, created.text);
+	assert.equal("reach_ok" in created.body.meta, false, created.text);
 });
 
 // CrowdSec routes: no LAPI is wired in the test environment, so these pin the

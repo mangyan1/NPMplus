@@ -518,6 +518,7 @@
 	"unhealthy.subtitle": "We'll keep checking and hope to be back soon!",
 	"unhealthy.title": "The API is not healthy.",
 	"unknown": "Unknown",
+	"unreachable": "Unreachable",
 	"update-available": "Update Available: {latestVersion}",
 	"user": "User",
 	"user.change-password": "Change Password",

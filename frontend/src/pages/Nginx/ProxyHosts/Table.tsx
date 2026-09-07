@@ -143,9 +143,10 @@ export default function Table({
 			),
 			columnHelper.accessor(
 				(row: any) => {
-					if (!row.enabled) return "3disabled";
-					if (row.meta.nginxOnline) return "2online";
-					return "1offline";
+					if (!row.enabled) return "4disabled";
+					if (!row.meta.nginxOnline) return "1offline";
+					if (row.meta.reachOk === false) return "2unreachable";
+					return "3online";
 				},
 				{
 					id: "enabled",
@@ -157,6 +158,8 @@ export default function Table({
 								enabled={value.enabled}
 								nginxOnline={value.meta.nginxOnline}
 								nginxErr={value.meta.nginxErr}
+								reachable={value.meta.reachOk}
+								reachErr={value.meta.reachErr}
 							/>
 						);
 					},

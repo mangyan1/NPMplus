@@ -1,3 +1,4 @@
+import net from "node:net";
 import _ from "lodash";
 import errs from "../lib/error.js";
 import { castJsonIfNeed } from "../lib/helpers.js";
@@ -11,6 +12,43 @@ import internalNginx from "./nginx.js";
 import internalProxyHostAccessList from "./proxy-host-access-list.js";
 
 const omissions = () => ["is_deleted", "owner.is_deleted", "certificate.is_deleted"];
+
+// tcp probe of the forward destination; nginx -t never checks it, but a
+// destination nothing listens on means the host serves errors, so the
+// dashboard dot should say so. Returns null when there is no tcp
+// destination to probe (path/empty schemes, unix sockets, upstream names).
+const probeForwardDestination = (scheme, host, port) => {
+	if (!["http", "https", "grpc", "grpcs"].includes(scheme)) {
+		return null;
+	}
+	if (!host || host.startsWith("/") || host.startsWith("unix") || host.startsWith("cu_")) {
+		return null;
+	}
+	const portNumber = Number(port) || (["https", "grpcs"].includes(scheme) ? 443 : 80);
+	return new Promise((resolve) => {
+		const socket = net.connect({ host, port: portNumber });
+		const finish = (ok, err) => {
+			socket.destroy();
+			resolve({ ok, err: err ? err.message : null });
+		};
+		socket.setTimeout(3_000, () => finish(false, new Error("Connection timed out")));
+		socket.once("connect", () => finish(true));
+		socket.once("error", (err) => finish(false, err));
+	});
+};
+
+// configure nginx, then probe and persist reachability into the host meta so
+// the create/update/enable responses and the list all carry the same state
+const configureWithReachability = async (row) => {
+	const meta = await internalNginx.configure(proxyHostModel, "proxy_host", row);
+	const reach = await probeForwardDestination(row.forward_scheme, row.forward_host, row.forward_port);
+	if (reach) {
+		meta.reach_ok = reach.ok;
+		meta.reach_err = reach.err;
+		await proxyHostModel.query().where("id", row.id).patch({ meta });
+	}
+	return meta;
+};
 
 const internalProxyHost = {
 	/**
@@ -77,7 +115,7 @@ const internalProxyHost = {
 		);
 
 		// Configure nginx
-		await internalNginx.configure(proxyHostModel, "proxy_host", row);
+		row.meta = await configureWithReachability(row);
 
 		// Add to audit log
 		thisData.meta = { ...thisData.meta, ...row.meta };
@@ -178,7 +216,7 @@ const internalProxyHost = {
 		}
 
 		// Configure nginx
-		row.meta = await internalNginx.configure(proxyHostModel, "proxy_host", row);
+		row.meta = await configureWithReachability(row);
 
 		return internalProxyHostAccessList.maskAccessListItems(
 			_.omit(internalHost.cleanRowCertificateMeta(row), omissions()),
@@ -302,9 +340,7 @@ const internalProxyHost = {
 		});
 
 		// Configure nginx
-		await internalNginx.configure(
-			proxyHostModel,
-			"proxy_host",
+		row.meta = await configureWithReachability(
 			await internalProxyHostAccessList.populateLocationAccessLists(
 				internalProxyHostAccessList.cleanAccessListTypes(row),
 			),
