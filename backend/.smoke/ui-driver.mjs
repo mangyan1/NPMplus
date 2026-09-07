@@ -370,20 +370,13 @@ await page.getByRole("tab", { name: "Active bans" }).click();
 const localTable = page.locator("#crowdsec-active-bans tbody");
 await localTable.locator("tr").first().waitFor();
 const localText = await localTable.innerText();
-check(
-	"manual action is named clearly",
-	(await page.getByRole("button", { name: "Add IP ban" }).count()) === 1,
-);
+check("manual action is named clearly", (await page.getByRole("button", { name: "Add IP ban" }).count()) === 1);
 check(
 	"simulated decisions are visibly marked",
 	(await localTable.getByText("simulated", { exact: true }).count()) === 1,
 	localText,
 );
-check(
-	"ban expiry shows the real timestamp, not the raw lapi duration",
-	!/in \d+[hms]/.test(localText),
-	localText,
-);
+check("ban expiry shows the real timestamp, not the raw lapi duration", !/in \d+[hms]/.test(localText), localText);
 check(
 	"active bans lists only this instance",
 	localText.includes("203.0.113.9") && localText.includes("198.51.100.7"),
@@ -404,8 +397,7 @@ await banSearch.fill("198.51.100.7");
 await page.getByText("1 match", { exact: true }).waitFor();
 check(
 	"ban search reports the match count",
-	(await page.getByText("1 match", { exact: true }).count()) === 1 &&
-		(await localTable.locator("tr").count()) === 1,
+	(await page.getByText("1 match", { exact: true }).count()) === 1 && (await localTable.locator("tr").count()) === 1,
 	await localTable.innerText(),
 );
 await banSearch.fill("");

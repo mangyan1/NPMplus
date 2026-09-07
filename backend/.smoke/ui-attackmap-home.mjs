@@ -105,8 +105,7 @@ const api = async (route) => {
 			container: { up: true, error: null },
 			recent: [],
 		});
-	if (apiPath === "/crowdsec/insights")
-		return respond({ ...insights, home: homeKnown ? insights.home : null });
+	if (apiPath === "/crowdsec/insights") return respond({ ...insights, home: homeKnown ? insights.home : null });
 	if (apiPath === "/crowdsec/metrics")
 		return respond({
 			available: true,
@@ -186,7 +185,11 @@ const observeMeteor = () =>
 
 const flight = await observeMeteor();
 check("meteor becomes visible during its animation", flight.sawFlight);
-check("meteor visibly travels across the map", flight.sawFlight && flight.travel > 30, `travel=${flight.travel.toFixed(1)}`);
+check(
+	"meteor visibly travels across the map",
+	flight.sawFlight && flight.travel > 30,
+	`travel=${flight.travel.toFixed(1)}`,
+);
 check(
 	"meteor head lands on the instance dot",
 	flight.sawFlight && flight.closest < 25,
@@ -202,10 +205,7 @@ check("instance dot pulses", homeAnimation !== "none", homeAnimation);
 homeKnown = false;
 await page.reload({ waitUntil: "networkidle" });
 await page.getByRole("heading", { name: "Security overview" }).waitFor({ timeout: 15000 });
-check(
-	"instance dot is absent without a known home location",
-	(await page.locator('[class*="homeDot"]').count()) === 0,
-);
+check("instance dot is absent without a known home location", (await page.locator('[class*="homeDot"]').count()) === 0);
 const degraded = await observeMeteor();
 check(
 	"meteor still flies when the home location is unknown",
