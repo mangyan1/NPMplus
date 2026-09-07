@@ -34,6 +34,11 @@ const SystemMetrics = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetr
 							? "—"
 							: `${(metrics.data.parserSuccessRate * 100).toFixed(1)}%`
 					}
+					description={
+						metrics.data.parserSuccessRate === null || typeof metrics.data.parserSuccessRate === "undefined" ? (
+							<T id="crowdsec.metrics.parser-unavailable" />
+						) : undefined
+					}
 				/>
 				<Metric
 					label={<T id="crowdsec.metrics.lapi-latency" />}

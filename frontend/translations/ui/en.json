@@ -258,6 +258,7 @@
 	"crowdsec.metrics.lapi-latency": "Average LAPI latency",
 	"crowdsec.metrics.machine-requests": "Machine requests",
 	"crowdsec.metrics.parser-rate": "Parser success",
+	"crowdsec.metrics.parser-unavailable": "CrowdSec no longer exports parser metrics",
 	"crowdsec.metrics.title": "Engine metrics since restart",
 	"crowdsec.next": "Next",
 	"crowdsec.no-alerts": "No alert context kept for this ban (alerts are pruned after their retention)",
