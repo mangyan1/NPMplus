@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 // biome-ignore lint/correctness/noNodejsModules: this file is executed by Node's test runner.
 import test from "node:test";
 import type { CrowdsecDecision } from "../src/api/backend/getCrowdsecDecisions.ts";
+import { midTruncate, presentScenarioId, scenarioCategory, scenarioLabel } from "../src/pages/Crowdsec/scenarios.ts";
 import {
 	attackMixSegments,
 	decisionTarget,
@@ -24,21 +25,22 @@ const decision = (id: number, value: string, scenario = "http-probing"): Crowdse
 	simulated: false,
 });
 
-test("attack mix segments add a residual other slice", () => {
-	assert.deepEqual(attackMixSegments([{ name: "http-probing", count: 6 }], 10), [
-		{ name: "http-probing", count: 6, share: 0.6, color: 0 },
+test("attack mix segments group scenarios by attack type and add a residual other slice", () => {
+	assert.deepEqual(attackMixSegments([{ name: "crowdsecurity/http-probing", count: 6 }], 10), [
+		{ name: "probing", count: 6, share: 0.6, color: 0 },
 		{ name: "", count: 4, share: 0.4, color: -1 },
 	]);
 });
 
-test("attack mix shares sum to one and skip empty scenarios", () => {
+test("attack mix shares sum to one, merge same-type scenarios, and skip empty entries", () => {
 	const segments = attackMixSegments(
 		[
-			{ name: "http-probing", count: 1 },
+			{ name: "crowdsecurity/http-probing", count: 1 },
 			{ name: "", count: 5 },
-			{ name: "ssh-bruteforce", count: 1 },
+			{ name: "crowdsecurity/ssh-bf", count: 1 },
+			{ name: "crowdsecurity/vpatch-cve-2024-1234", count: 2 },
 		],
-		2,
+		4,
 	);
 	assert.equal(
 		segments.reduce((sum, item) => sum + item.share, 0),
@@ -46,9 +48,9 @@ test("attack mix shares sum to one and skip empty scenarios", () => {
 	);
 	assert.deepEqual(
 		segments.map(({ name }) => name),
-		["http-probing", "ssh-bruteforce"],
+		["waf", "brute-force", "probing"],
 	);
-	assert.deepEqual(attackMixSegments([{ name: "http-probing", count: 3 }], 0), []);
+	assert.deepEqual(attackMixSegments([{ name: "crowdsecurity/http-probing", count: 3 }], 0), []);
 });
 
 test("decision target includes non-IP scopes", () => {
@@ -143,4 +145,39 @@ test("empty field token value is treated as free text", () => {
 		filterCrowdsecDecisions(decisions, "origin: 198").map(({ id }) => id),
 		[2],
 	);
+});
+
+test("known scenario families get readable labels and categories", () => {
+	assert.deepEqual(presentScenarioId("crowdsecurity/http-probing"), {
+		raw: "crowdsecurity/http-probing",
+		label: "HTTP probing",
+		category: "probing",
+	});
+	assert.equal(scenarioLabel("crowdsecurity/ssh-bf"), "SSH brute force");
+	assert.equal(scenarioCategory("crowdsecurity/http-generic-bf"), "brute-force");
+	assert.equal(scenarioLabel("crowdsecurity/vpatch-cve-2024-1234"), "vPatch CVE 2024 1234");
+	assert.equal(scenarioCategory("crowdsecurity/vpatch-cve-2024-1234"), "waf");
+	assert.equal(scenarioCategory("crowdsecurity/http-sqli-probing"), "injection");
+	assert.equal(scenarioCategory("crowdsecurity/http-bad-user-agent"), "suspicious-client");
+	assert.equal(scenarioLabel("manual/web-ui"), "Manual ban");
+	assert.equal(scenarioCategory("anubis-honeypot"), "honeypot");
+	assert.equal(scenarioLabel("anubis-honeypot"), "Anubis honeypot");
+	assert.equal(scenarioCategory("update : +15000/-0 IPs"), "sync");
+	assert.equal(scenarioLabel("update : +15000/-0 IPs"), "Community blocklist sync");
+});
+
+test("unknown scenarios keep their identifier instead of a wrong guess", () => {
+	assert.equal(scenarioLabel("crowdsecurity/some-new-scenario"), "Some new scenario");
+	assert.equal(scenarioCategory("crowdsecurity/some-new-scenario"), "other");
+	assert.equal(scenarioLabel("http-probing"), "HTTP probing");
+});
+
+test("mid truncation keeps both ends of a long name", () => {
+	assert.equal(midTruncate("short"), "short");
+	assert.equal(midTruncate("crowdsecurity/http-crawl-non-statics"), "crowdsecurit…non-statics");
+	const long = "crowdsecurity/http-crawl-non-statics-on-wordpress-sites";
+	const truncated = midTruncate(long, 40);
+	assert.equal(truncated.length, 40);
+	assert.equal(truncated.startsWith("crowdsecurit"), true);
+	assert.equal(long.endsWith(truncated.slice(-12)), true);
 });

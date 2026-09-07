@@ -13,6 +13,14 @@ const DONUT_COLORS = [
 const DONUT_RADIUS = 48;
 const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
 
+// segments carry a scenario category key (or "" for the residual slice);
+// clicking any slice opens the attacks breakdown, which lists the exact
+// scenarios behind each category
+const segmentLabel = (name: string) =>
+	name === ""
+		? intl.formatMessage({ id: "crowdsec.attack-mix.other" })
+		: intl.formatMessage({ id: `crowdsec.category.${name}` });
+
 const AttackMix = ({
 	items,
 	total,
@@ -65,7 +73,7 @@ const AttackMix = ({
 										strokeDasharray={`${visible} ${DONUT_CIRCUMFERENCE - visible}`}
 										strokeDashoffset={-offset}
 									>
-										<title>{`${segment.name || intl.formatMessage({ id: "crowdsec.attack-mix.other" })}: ${intl.formatNumber(segment.count)}`}</title>
+										<title>{`${segmentLabel(segment.name)}: ${intl.formatNumber(segment.count)}`}</title>
 									</circle>
 								);
 								offset += length;
@@ -85,7 +93,7 @@ const AttackMix = ({
 							{intl.formatMessage({ id: "crowdsec.attack-mix" })}
 						</text>
 					</svg>
-					{/* shrinkable: long scenario names must truncate inside the list
+					{/* shrinkable: long names must truncate inside the list
 					    rather than pushing the legend wider than its card column */}
 					<ul className={`list-unstyled mb-0 ${styles.donutList}`}>
 						{segments.map((segment) => {
@@ -93,7 +101,7 @@ const AttackMix = ({
 								segment.color >= 0
 									? DONUT_COLORS[segment.color % DONUT_COLORS.length]
 									: "var(--tblr-secondary)";
-							const label = segment.name || intl.formatMessage({ id: "crowdsec.attack-mix.other" });
+							const label = segmentLabel(segment.name);
 							return (
 								<li key={segment.name || "other"} className={styles.donutRow}>
 									<span
@@ -105,13 +113,10 @@ const AttackMix = ({
 										<button
 											type="button"
 											className={styles.donutName}
-											title={intl.formatMessage(
-												{ id: "crowdsec.attack-mix.filter" },
-												{ scenario: segment.name },
-											)}
+											title={intl.formatMessage({ id: "crowdsec.attack-mix.details" })}
 											onClick={() => onSelect(segment.name)}
 										>
-											{segment.name}
+											{label}
 										</button>
 									) : (
 										<span className="text-secondary text-truncate">{label}</span>

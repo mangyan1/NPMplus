@@ -140,6 +140,7 @@ export interface CrowdsecMetrics {
 	appsecBlocked?: number;
 	appsecPassed?: number;
 	appsecBlockRate?: number | null;
+	appsecRules?: { name: string; count: number }[];
 	bouncerRequests?: number;
 	bouncerDecisionHits?: number;
 	machineRequests?: number;

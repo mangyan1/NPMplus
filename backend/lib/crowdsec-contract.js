@@ -285,14 +285,38 @@ const summarizeCrowdsecMetrics = (samples) => {
 
 const hasCrowdsecAdminAccess = (permission) => Boolean(permission);
 
+// community blocklist syncs arrive as alerts with the literal scenario
+// "update : +N/-M IPs" (origin capi) - they are bookkeeping, not attacks,
+// so the dashboard keeps them out of attack counts and rankings
+const BLOCKLIST_SYNC_SCENARIO_RE = /^update : \+\d+\/-\d+ IPs$/;
+const isBlocklistSyncAlert = (alert) => BLOCKLIST_SYNC_SCENARIO_RE.test(alert?.scenario ?? "");
+
+// per-rule AppSec trigger counts, aggregated across labels and ranked;
+// feeds the WAF tab's "what actually got blocked" breakdown
+const summarizeAppsecRules = (samples, limit = 10) => {
+	const counts = new Map();
+	for (const sample of samples) {
+		if (sample.name !== "cs_appsec_rule_hits") continue;
+		const rule = optionalString(sample.labels?.rule_name);
+		if (!rule) continue;
+		counts.set(rule, (counts.get(rule) ?? 0) + sample.value);
+	}
+	return [...counts.entries()]
+		.map(([name, count]) => ({ name, count }))
+		.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+		.slice(0, limit);
+};
+
 export {
 	crowdsecAlertTarget,
 	filterCrowdsecAlerts,
 	hasCrowdsecAdminAccess,
+	isBlocklistSyncAlert,
 	normalizeCrowdsecAlerts,
 	normalizeCrowdsecDecisions,
 	parseCrowdsecDecisionId,
 	parsePrometheusText,
+	summarizeAppsecRules,
 	summarizeCrowdsecMetrics,
 	validateManualBan,
 };
