@@ -90,9 +90,12 @@ const AttackMap = ({ items, home }: Props) => {
 						const label = `${item.country || intl.formatMessage({ id: "unknown" })}: ${intl.formatNumber(item.count)}`;
 						// with a known instance location the meteor flies from the
 						// origin toward it: the group is rotated so local +x points
-						// at home, and the animation advances along that axis
-						const angle = homePos ? (Math.atan2(homePos.y - y, homePos.x - x) * 180) / Math.PI : -135;
-						const dist = homePos ? Math.hypot(homePos.x - x, homePos.y - y) : 0;
+						// at home, and the animation advances along that axis;
+						// without one it heads for the map center so the origin
+						// still visibly flies instead of only fading in place
+						const target = homePos ?? { x: 360, y: 180 };
+						const angle = (Math.atan2(target.y - y, target.x - x) * 180) / Math.PI;
+						const dist = Math.hypot(target.x - x, target.y - y);
 						const animationStyle = {
 							"--meteor-delay": `${index * 1.1}s`,
 							"--meteor-duration": duration,
@@ -114,8 +117,13 @@ const AttackMap = ({ items, home }: Props) => {
 						);
 					})}
 					{homePos ? (
-						<g transform={`translate(${homePos.x} ${homePos.y})`}>
+						<g
+							transform={`translate(${homePos.x} ${homePos.y})`}
+							style={{ "--meteor-duration": duration } as CSSProperties}
+						>
 							<title>{intl.formatMessage({ id: "crowdsec.attack-map.home" })}</title>
+							{/* pulses land just after the first meteor's arrival */}
+							<circle r="5" className={styles.homePulse} />
 							<circle r="4.5" className={styles.homeDot} />
 						</g>
 					) : null}
