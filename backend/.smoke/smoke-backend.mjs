@@ -61,6 +61,14 @@ app.use(
 	},
 	crowdsecRouter,
 );
+// mirror the production error handler (app.js): publicError must come back as
+// JSON, not express's default HTML error page, or every deliberate error-path
+// check below dies parsing "<!DOCTYPE html>"
+app.use((err, _req, res, _next) => {
+	res.status(err.status || 500).send({
+		error: { code: err.status || 500, message: err.public ? err.message : "Internal Error" },
+	});
+});
 
 const server = app.listen(13000, "127.0.0.1", async () => {
 	const base = "http://127.0.0.1:13000/api/crowdsec";

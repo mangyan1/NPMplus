@@ -1,8 +1,10 @@
 import { IconBell, IconBellOff, IconRefresh } from "@tabler/icons-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { lazy, type KeyboardEvent as ReactKeyboardEvent, Suspense, useEffect, useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import type { CrowdsecInsightsItem } from "src/api/backend";
 import { Button } from "src/components";
+import { useLocaleState } from "src/context";
 import { useAnubisStatus, useCrowdsecInsights, useCrowdsecMetrics } from "src/hooks";
 import { formatDateTime, intl, T } from "src/locale";
 import ActiveBans from "./ActiveBans";
@@ -47,6 +49,8 @@ const QuickFilters = ({ items, onSelect }: { items: CrowdsecInsightsItem[]; onSe
 	);
 
 const CrowdsecDashboard = () => {
+	const { locale } = useLocaleState();
+	const queryClient = useQueryClient();
 	const [tab, setTab] = useState<DashboardTab>("overview");
 	const [kpi, setKpi] = useState<KpiKind | null>(null);
 	const [windowHours, setWindowHours] = useState(24);
@@ -115,7 +119,13 @@ const CrowdsecDashboard = () => {
 		setPage(1);
 		setTab("activity");
 	};
-	const refresh = () => Promise.all([insights.refetch(), metrics.refetch(), anubis.refetch()]);
+	// the toolbar refresh must also cover the activity and bans tables, whose
+	// queries live in the tab components rather than this page
+	const refresh = async () => {
+		await Promise.all([insights.refetch(), metrics.refetch(), anubis.refetch()]);
+		await queryClient.invalidateQueries({ queryKey: ["crowdsec-decisions"] });
+		await queryClient.invalidateQueries({ queryKey: ["crowdsec-alert-history"] });
+	};
 	const tabs: { id: DashboardTab; label: string }[] = [
 		{ id: "overview", label: "crowdsec.tabs.overview" },
 		{ id: "activity", label: "crowdsec.tabs.activity" },
@@ -195,7 +205,9 @@ const CrowdsecDashboard = () => {
 										<span className="text-secondary small">
 											<T
 												id="crowdsec.last-updated"
-												data={{ date: formatDateTime(new Date(lastUpdatedAt).toISOString()) }}
+												data={{
+													date: formatDateTime(new Date(lastUpdatedAt).toISOString(), locale),
+												}}
 											/>
 										</span>
 									)}

@@ -24,12 +24,7 @@ const AppsecSummary = ({ metrics, onOpen }: { metrics: ReturnType<typeof useCrow
 	const passedWidth = requests > 0 ? 100 - blockedWidth : 0;
 	const summary = intl.formatMessage({ id: "crowdsec.appsec.traffic-summary" }, { requests, blocked, passed });
 	return (
-		<button
-			type="button"
-			className={`${styles.metricCard} card card-sm w-100 text-start`}
-			onClick={onOpen}
-			aria-haspopup="dialog"
-		>
+		<button type="button" className={`${styles.metricCard} card card-sm w-100 text-start`} onClick={onOpen}>
 			<div className={`card-status-start bg-${status.tone}`} />
 			<div className="card-body">
 				<div className="d-flex justify-content-between align-items-start gap-2">

@@ -16,9 +16,10 @@ interface Props {
 }
 
 const AttackMap = ({ items, home }: Props) => {
-	const plotted = items
-		.filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude))
-		.slice(0, 12);
+	const finiteItems = items.filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
+	const plotted = finiteItems.slice(0, 12);
+	// the map is a top-origins view: say so whenever locations were left out
+	const unplottedCount = finiteItems.length - plotted.length;
 	const homePos =
 		home && Number.isFinite(home.latitude) && Number.isFinite(home.longitude)
 			? {
@@ -159,6 +160,14 @@ const AttackMap = ({ items, home }: Props) => {
 				<div className="text-secondary small mt-2">
 					<T id="crowdsec.attack-map.motion-note" />
 				</div>
+				{unplottedCount > 0 && (
+					<div className="text-secondary small mt-1">
+						<T
+							id="crowdsec.attack-map.top-origins"
+							data={{ count: plotted.length, rest: unplottedCount }}
+						/>
+					</div>
+				)}
 			</figcaption>
 		</figure>
 	);

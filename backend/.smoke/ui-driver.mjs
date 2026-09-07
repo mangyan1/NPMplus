@@ -303,7 +303,6 @@ check(
 	"honeypot status distinguishes log readiness from active bans",
 	(await page.getByText("Honeypot logging ready", { exact: true }).count()) >= 1,
 );
-check("manual action is named clearly", (await page.getByRole("button", { name: "Add IP ban" }).count()) === 1);
 const dashboardButtonLabels = await page
 	.locator("button")
 	.evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label") || button.textContent?.trim()));
@@ -372,6 +371,20 @@ const localTable = page.locator("#crowdsec-active-bans tbody");
 await localTable.locator("tr").first().waitFor();
 const localText = await localTable.innerText();
 check(
+	"manual action is named clearly",
+	(await page.getByRole("button", { name: "Add IP ban" }).count()) === 1,
+);
+check(
+	"simulated decisions are visibly marked",
+	(await localTable.getByText("simulated", { exact: true }).count()) === 1,
+	localText,
+);
+check(
+	"ban expiry shows the real timestamp, not the raw lapi duration",
+	!/in \d+[hms]/.test(localText),
+	localText,
+);
+check(
 	"active bans lists only this instance",
 	localText.includes("203.0.113.9") && localText.includes("198.51.100.7"),
 	localText,
@@ -385,6 +398,17 @@ check(
 	"unban actions exist only for local rows",
 	(await localTable.getByRole("button", { name: /Unban/i }).count()) === 3,
 );
+
+const banSearch = page.getByRole("searchbox", { name: "Search bans" });
+await banSearch.fill("198.51.100.7");
+await page.getByText("1 match", { exact: true }).waitFor();
+check(
+	"ban search reports the match count",
+	(await page.getByText("1 match", { exact: true }).count()) === 1 &&
+		(await localTable.locator("tr").count()) === 1,
+	await localTable.innerText(),
+);
+await banSearch.fill("");
 
 await page.getByRole("tab", { name: "Overview" }).click();
 await page.getByRole("button", { name: /Honeypot bans/i }).click();
@@ -430,6 +454,11 @@ const systemText = await page.locator("body").innerText();
 check(
 	"technical metrics moved to the System tab",
 	/parser success/i.test(systemText) && systemText.includes("500.0 ms"),
+	systemText.slice(0, 300),
+);
+check(
+	"whitelisted events are surfaced on the System tab",
+	/whitelisted events/i.test(systemText),
 	systemText.slice(0, 300),
 );
 check(
@@ -480,6 +509,7 @@ check(
 		);
 	}),
 );
+await page.getByRole("tab", { name: "Active bans" }).click();
 check(
 	"the manual-ban control does not clip at 320px",
 	await page

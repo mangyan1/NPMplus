@@ -26,7 +26,9 @@ const ManualBanModal = EasyModal.create(({ visible, remove, onCreated, initialTa
 	const [duration, setDuration] = useState("4h");
 	const [type, setType] = useState("ban");
 	const [reason, setReason] = useState("");
-	const [error, setError] = useState<string | null>(null);
+	// translation id + values, not a pre-formatted string: the alert renders
+	// through <T>, and formatting here would feed the message back in as an id
+	const [error, setError] = useState<{ id: string; data?: Record<string, string> } | null>(null);
 
 	const onSubmit = async () => {
 		if (createBan.isPending) return;
@@ -38,9 +40,9 @@ const ManualBanModal = EasyModal.create(({ visible, remove, onCreated, initialTa
 		} catch (err: any) {
 			const fields = err?.payload?.error?.fields;
 			if (Array.isArray(fields) && fields.length > 0) {
-				setError(intl.formatMessage({ id: "crowdsec.ban-invalid" }, { fields: fields.join(", ") }));
+				setError({ id: "crowdsec.ban-invalid", data: { fields: fields.join(", ") } });
 			} else {
-				setError(err?.message || "error.unknown");
+				setError({ id: err?.message || "error.unknown" });
 			}
 		}
 	};
@@ -54,7 +56,7 @@ const ManualBanModal = EasyModal.create(({ visible, remove, onCreated, initialTa
 			</Modal.Header>
 			<Modal.Body>
 				<Alert variant="danger" show={Boolean(error)} onClose={() => setError(null)} dismissible>
-					<T id={error || "error.unknown"} />
+					{error && <T id={error.id} data={error.data} />}
 				</Alert>
 				<Form>
 					<Form.Group className="mb-3">

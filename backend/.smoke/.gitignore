@@ -5,3 +5,4 @@ crowdsec-bouncer.conf
 lapi-requests.json
 vite.log
 *.png
+vite-*.log

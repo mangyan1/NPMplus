@@ -59,6 +59,7 @@ const AlertContext = ({ decision }: { decision: CrowdsecDecision }) => {
 };
 
 const ActiveBans = () => {
+	const { locale } = useLocaleState();
 	const [page, setPage] = useState(1);
 	const [search, setSearch] = useState("");
 	const [expanded, setExpanded] = useState<number | null>(null);
@@ -106,6 +107,7 @@ const ActiveBans = () => {
 						<input
 							className="form-control form-control-sm"
 							type="search"
+							aria-label={intl.formatMessage({ id: "crowdsec.search" })}
 							value={search}
 							placeholder={intl.formatMessage({ id: "crowdsec.search" })}
 							onChange={(event) => {
@@ -141,6 +143,11 @@ const ActiveBans = () => {
 					{query.isError && (
 						<Alert variant="warning">
 							<T id="crowdsec.stale" /> <T id={query.error?.message || "error.unknown"} />
+						</Alert>
+					)}
+					{query.data.truncated && (
+						<Alert variant="info">
+							<T id="crowdsec.truncated-bans" data={{ limit: query.data.limit }} />
 						</Alert>
 					)}
 					<div className="table-responsive">
@@ -184,20 +191,49 @@ const ActiveBans = () => {
 														type="button"
 														className="btn btn-sm btn-ghost-secondary"
 														aria-expanded={open}
+														aria-label={intl.formatMessage({
+															id: open
+																? "crowdsec.collapse-details"
+																: "crowdsec.expand-details",
+														})}
 														onClick={() => setExpanded(open ? null : decision.id)}
 													>
+														{/* no rotate utility class in tabler 1.4.0: rotate the collapsed chevron inline */}
 														<IconChevronDown
 															size={16}
-															className={open ? "" : "rotate-270"}
+															style={open ? undefined : { transform: "rotate(-90deg)" }}
 														/>
 													</button>
 												</td>
 												<td className="text-break">{decisionTarget(decision)}</td>
-												<td className="text-break">{decision.scenario}</td>
+												<td className="text-break">
+													{decision.scenario}
+													{decision.simulated && (
+														<span
+															className="badge bg-yellow-lt ms-1"
+															title={intl.formatMessage({
+																id: "crowdsec.simulated-help",
+															})}
+														>
+															<T id="crowdsec.simulated" />
+														</span>
+													)}
+												</td>
 												<td>{decision.origin}</td>
 												<td>{decision.type}</td>
-												<td>
-													{decision.duration ? (
+												<td
+													title={
+														decision.duration
+															? intl.formatMessage(
+																	{ id: "crowdsec.expires-in" },
+																	{ duration: decision.duration },
+																)
+															: undefined
+													}
+												>
+													{decision.until ? (
+														formatDateTime(decision.until, locale)
+													) : decision.duration ? (
 														<T
 															id="crowdsec.expires-in"
 															data={{ duration: decision.duration }}
@@ -233,6 +269,12 @@ const ActiveBans = () => {
 					<div className="d-flex align-items-center justify-content-between pt-3 border-top">
 						<span className="text-secondary">
 							<T id="crowdsec.history.page" data={{ page }} />
+							{deferredSearch && (
+								<>
+									·
+									<T id="crowdsec.matches" data={{ count: query.data.matched }} />
+								</>
+							)}
 						</span>
 						<div className="btn-list">
 							<Button

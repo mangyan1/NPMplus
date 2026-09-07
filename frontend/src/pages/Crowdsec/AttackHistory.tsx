@@ -72,6 +72,7 @@ const AttackHistory = ({
 						id="crowdsec-history-search"
 						className="form-control form-control-sm"
 						type="search"
+						aria-label={intl.formatMessage({ id: "crowdsec.history.search" })}
 						value={search}
 						placeholder={intl.formatMessage({ id: "crowdsec.history.search" })}
 						onChange={(event) => {
@@ -135,7 +136,7 @@ const AttackHistory = ({
 											<T
 												id={
 													scenario || country || target || search
-														? "crowdsec.no-matches"
+														? "crowdsec.history.no-matches"
 														: "crowdsec.history.empty"
 												}
 											/>

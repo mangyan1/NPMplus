@@ -31,7 +31,8 @@ const WafMonitoring = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetr
 							<IconShield size={28} />
 						)}
 					</div>
-					<div className="flex-fill min-w-0">
+					{/* min-w-0 is not a tabler class: keep the flex child shrinkable inline */}
+					<div className="flex-fill" style={{ minWidth: 0 }}>
 						<div className="d-flex flex-wrap align-items-center gap-2 mb-1">
 							<h3 id="appsec-monitor-title" className="mb-0">
 								<T id="crowdsec.appsec.title" />

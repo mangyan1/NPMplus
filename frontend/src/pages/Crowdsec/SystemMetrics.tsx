@@ -49,6 +49,11 @@ const SystemMetrics = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetr
 							: `${metrics.data.averageLapiMs.toFixed(1)} ms`
 					}
 				/>
+				<Metric
+					label={<T id="crowdsec.metrics.whitelist-hits" />}
+					value={metrics.data.whitelistHits ?? "—"}
+					description={<T id="crowdsec.metrics.whitelist-hits-help" />}
+				/>
 			</div>
 		</>
 	);
