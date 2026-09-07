@@ -311,6 +311,11 @@ const CrowdsecDashboard = () => {
 										<T id="crowdsec.spike-warning" />
 									</Alert>
 								)}
+								{insights.data.sampled && (
+									<Alert variant="info">
+										<T id="crowdsec.insights.sampled" />
+									</Alert>
+								)}
 								<div className="row g-3 mb-4">
 									<Metric
 										label={<T id="crowdsec.kpi.attacks" />}
@@ -385,7 +390,7 @@ const CrowdsecDashboard = () => {
 											total={insights.data.alertCount}
 											sampled={insights.data.sampled}
 											windowHours={windowHours}
-											onSelect={(value) => quickFilter(setScenario, value)}
+											onSelect={() => setKpi("attacks")}
 										/>
 										<ActivityStrip activity={insights.data.activity} windowHours={windowHours} />
 									</div>
@@ -488,6 +493,7 @@ const CrowdsecDashboard = () => {
 				anubis={anubis.data}
 				onClose={() => setKpi(null)}
 				onNavigate={setTab}
+				onFilterScenario={(value) => quickFilter(setScenario, value)}
 			/>
 		</>
 	);

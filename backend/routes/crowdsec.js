@@ -16,10 +16,12 @@ import {
 	crowdsecAlertTarget,
 	filterCrowdsecAlerts,
 	hasCrowdsecAdminAccess,
+	isBlocklistSyncAlert,
 	normalizeCrowdsecAlerts,
 	normalizeCrowdsecDecisions,
 	parseCrowdsecDecisionId,
 	parsePrometheusText,
+	summarizeAppsecRules,
 	summarizeCrowdsecMetrics,
 	validateManualBan,
 } from "../lib/crowdsec-contract.js";
@@ -443,10 +445,13 @@ router
 		const fetchLimit = hasFilters ? HISTORY_MAX_ITEMS + 1 : requestedEnd + 1;
 		const payload = await readAlertsSample(windowHours, fetchLimit);
 		let alerts;
+		let normalizedCount;
 		try {
-			alerts = normalizeCrowdsecAlerts(payload).sort(
-				(a, b) => Date.parse(alertTime(b)) - Date.parse(alertTime(a)) || b.id - a.id,
-			);
+			normalizedCount = normalizeCrowdsecAlerts(payload).length;
+			alerts = normalizeCrowdsecAlerts(payload)
+				// the activity feed is an attack feed: blocklist syncs are noise here too
+				.filter((alert) => !isBlocklistSyncAlert(alert))
+				.sort((a, b) => Date.parse(alertTime(b)) - Date.parse(alertTime(a)) || b.id - a.id);
 		} catch (err) {
 			debug(logger, `CrowdSec history contract mismatch: ${err}`);
 			throw publicError("crowdsec.invalid-response", 502);
@@ -461,8 +466,8 @@ router
 			matched: Math.min(filtered.length, requestedEnd),
 			window_hours: windowHours,
 			truncated:
-				alerts.length >= fetchLimit ||
-				(fetchLimit > INSIGHTS_FALLBACK_ALERT_LIMIT && alerts.length === INSIGHTS_FALLBACK_ALERT_LIMIT),
+				normalizedCount >= fetchLimit ||
+				(fetchLimit > INSIGHTS_FALLBACK_ALERT_LIMIT && normalizedCount === INSIGHTS_FALLBACK_ALERT_LIMIT),
 		});
 	});
 
@@ -579,7 +584,10 @@ router
 				return null;
 			}),
 		]);
-		const alerts = normalizeCrowdsecAlerts(payload);
+		const normalizedAlerts = normalizeCrowdsecAlerts(payload);
+		// blocklist syncs are bookkeeping, not attacks: they never appear in
+		// attack stats, but truncation still reflects the raw sample size
+		const alerts = normalizedAlerts.filter((alert) => !isBlocklistSyncAlert(alert));
 		const countries = {};
 		const asns = {};
 		const ips = {};
@@ -617,7 +625,7 @@ router
 		const activeDecisions = localDecisions === null ? null : Math.min(localDecisions.length, LAPI_DECISION_LIMIT);
 		// a full sample means the buckets only cover the newest tail of the window,
 		// so the spike baseline is structurally deflated - never call that a spike
-		const sampled = alerts.length >= INSIGHTS_ALERT_LIMIT;
+		const sampled = normalizedAlerts.length >= INSIGHTS_ALERT_LIMIT;
 		const signals = [];
 		if (!sampled && attackSpike(activity))
 			signals.push({ id: `spike-${activity.at(-1).start}`, severity: "warning", type: "attack-spike" });
@@ -675,10 +683,12 @@ router
 			);
 			if (!response.ok) throw new Error(`HTTP ${response.status}`);
 			const text = await readBoundedText(response, METRICS_MAX_RESPONSE_BYTES);
+			const samples = parsePrometheusText(text);
 			res.status(200).send({
 				available: true,
 				...appsecConfiguration,
-				...summarizeCrowdsecMetrics(parsePrometheusText(text)),
+				...summarizeCrowdsecMetrics(samples),
+				appsec_rules: summarizeAppsecRules(samples),
 			});
 		} catch (err) {
 			debug(logger, `CrowdSec metrics unavailable: ${err}`);

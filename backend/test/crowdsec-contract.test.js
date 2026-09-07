@@ -4,10 +4,12 @@ import {
 	crowdsecAlertTarget,
 	filterCrowdsecAlerts,
 	hasCrowdsecAdminAccess,
+	isBlocklistSyncAlert,
 	normalizeCrowdsecAlerts,
 	normalizeCrowdsecDecisions,
 	parseCrowdsecDecisionId,
 	parsePrometheusText,
+	summarizeAppsecRules,
 	summarizeCrowdsecMetrics,
 	validateManualBan,
 } from "../lib/crowdsec-contract.js";
@@ -223,6 +225,48 @@ test("decision origin totals degrade safely when an older metric has no origin l
 	assert.equal(summary.active_decisions, 7);
 	assert.equal(summary.local_active_decisions, null);
 	assert.equal(summary.community_active_decisions, null);
+});
+
+test("community blocklist sync alerts are separated from attacker alerts", () => {
+	const alerts = normalizeCrowdsecAlerts([
+		{ id: 1, scenario: "crowdsecurity/http-probing", source: { ip: "192.0.2.10" } },
+		{ id: 2, scenario: "update : +15000/-0 IPs", source: {} },
+		{ id: 3, scenario: "update : +512/-0 IPs", source: {} },
+		{ id: 4, scenario: "crowdsecurity/vpatch-CVE-2024-1234", source: { ip: "192.0.2.11" } },
+	]);
+	const attacks = normalizeCrowdsecAlerts(alerts).filter((alert) => !isBlocklistSyncAlert(alert));
+	assert.deepEqual(
+		attacks.map(({ id }) => id),
+		[1, 4],
+	);
+	// the sync scenario string comes from capi; anything else is an attack
+	assert.equal(isBlocklistSyncAlert(normalizeCrowdsecAlerts([{ id: 5, scenario: "update : +1/-0 IPs" }])[0]), true);
+	assert.equal(
+		isBlocklistSyncAlert(normalizeCrowdsecAlerts([{ id: 6, scenario: "crowdsecurity/http-bf" }])[0]),
+		false,
+	);
+	assert.equal(isBlocklistSyncAlert(normalizeCrowdsecAlerts([{ id: 7, scenario: "" }])[0]), false);
+});
+
+test("appsec rule hits are grouped per rule name and ranked", () => {
+	const summary = summarizeAppsecRules(
+		parsePrometheusText(`
+cs_appsec_rule_hits{rule_name="crowdsecurity/vpatch-CVE-2017-9841",type="inband",appsec_engine="default",source="npmplus"} 38
+cs_appsec_rule_hits{rule_name="crowdsecurity/http-sqli-probing",type="inband",appsec_engine="default",source="npmplus"} 12
+cs_appsec_rule_hits{rule_name="crowdsecurity/vpatch-CVE-2017-9841",type="outband",appsec_engine="default",source="npmplus"} 4
+cs_appsec_rule_hits{rule_name="crowdsecurity/vpatch-CVE-2021-9999",type="inband",appsec_engine="default",source="npmplus"} 1
+cs_parser_hits_total{source="nginx"} 10
+`),
+	);
+	assert.deepEqual(summary, [
+		{ name: "crowdsecurity/vpatch-CVE-2017-9841", count: 42 },
+		{ name: "crowdsecurity/http-sqli-probing", count: 12 },
+		{ name: "crowdsecurity/vpatch-CVE-2021-9999", count: 1 },
+	]);
+});
+
+test("appsec rule summary is empty without rule hits", () => {
+	assert.deepEqual(summarizeAppsecRules(parsePrometheusText("cs_appsec_reqs_total 12")), []);
 });
 
 test("CrowdSec payload validation rejects malformed upstream responses", () => {
