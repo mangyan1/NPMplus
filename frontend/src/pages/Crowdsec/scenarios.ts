@@ -60,7 +60,7 @@ const stripAuthor = (id: string) => {
 
 const humanizeToken = (token: string) => (ACRONYMS.has(token) ? token.toUpperCase() : token);
 
-// generic readable form: "http-crawl-non-statics" -> "HTTP crawl non statics"
+// generic readable form: "http-cve-2021-41773" -> "HTTP cve 2021 41773"
 const humanize = (rest: string) =>
 	rest
 		.split(/[-_]+/)
@@ -124,7 +124,7 @@ export const scenarioLabel = (id: string) => presentScenarioId(id).label;
 export const scenarioCategory = (id: string) => presentScenarioId(id).category;
 
 // keep both ends visible when a name must fit a narrow column:
-// "crowdsecurity/http-crawl-non-statics" -> "crowdsecuri…non-statics"
+// "crowdsecurity/http-probing" -> "crowdsecurit…-probing"
 export const midTruncate = (value: string, max = 24) => {
 	if (value.length <= max) return value;
 	const tail = Math.floor((max - 1) / 2);
