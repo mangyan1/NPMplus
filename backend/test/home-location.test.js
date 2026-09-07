@@ -8,7 +8,10 @@ import { afterEach, test } from "node:test";
 // module state, and node caches a dynamic import by URL, so a query param
 // busts it
 let loadCount = 0;
-const loadModule = () => import(`../internal/home-location.js?case=${(loadCount += 1)}`);
+const loadModule = () => {
+	loadCount += 1;
+	return import(`../internal/home-location.js?case=${loadCount}`);
+};
 
 afterEach(() => {
 	delete process.env.HOME_LATITUDE;
