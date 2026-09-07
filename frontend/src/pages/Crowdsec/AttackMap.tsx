@@ -10,10 +10,22 @@ interface AttackMapItem {
 	count: number;
 }
 
-const AttackMap = ({ items }: { items: AttackMapItem[] }) => {
+interface Props {
+	items: AttackMapItem[];
+	home?: { latitude: number; longitude: number } | null;
+}
+
+const AttackMap = ({ items, home }: Props) => {
 	const plotted = items
 		.filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude))
 		.slice(0, 12);
+	const homePos =
+		home && Number.isFinite(home.latitude) && Number.isFinite(home.longitude)
+			? {
+					x: Math.min(708, Math.max(12, 360 + home.longitude * 2)),
+					y: Math.min(348, Math.max(12, 180 - home.latitude * 2)),
+				}
+			: null;
 	const duration = `${Math.max(5, plotted.length * 1.1)}s`;
 	const position = (item: (typeof plotted)[number]) => ({
 		x: Math.min(708, Math.max(12, 360 + item.longitude * 2)),
@@ -40,10 +52,10 @@ const AttackMap = ({ items }: { items: AttackMapItem[] }) => {
 						<linearGradient
 							id="meteor-fade"
 							gradientUnits="userSpaceOnUse"
-							x1="-22"
-							y1="-14"
+							x1="-26"
+							y1="-2.5"
 							x2="-3"
-							y2="-2"
+							y2="0"
 						>
 							<stop offset="0" stopColor="#ff9862" stopOpacity="0" />
 							<stop offset="0.55" stopColor="#ff9862" stopOpacity="0.45" />
@@ -76,18 +88,24 @@ const AttackMap = ({ items }: { items: AttackMapItem[] }) => {
 					{plotted.map((item, index) => {
 						const { x, y } = position(item);
 						const label = `${item.country || intl.formatMessage({ id: "unknown" })}: ${intl.formatNumber(item.count)}`;
+						// with a known instance location the meteor flies from the
+						// origin toward it: the group is rotated so local +x points
+						// at home, and the animation advances along that axis
+						const angle = homePos ? (Math.atan2(homePos.y - y, homePos.x - x) * 180) / Math.PI : -135;
+						const dist = homePos ? Math.hypot(homePos.x - x, homePos.y - y) : 0;
 						const animationStyle = {
 							"--meteor-delay": `${index * 1.1}s`,
 							"--meteor-duration": duration,
+							"--meteor-dist": `${dist}px`,
 						} as CSSProperties;
 						return (
 							<g
 								key={`${item.latitude}-${item.longitude}-${item.country}`}
-								transform={`translate(${x} ${y})`}
+								transform={`translate(${x} ${y}) rotate(${angle})`}
 							>
 								<title>{label}</title>
 								<g className={styles.meteor} style={animationStyle}>
-									<path d="M-22 -14 Q-14 -9.5 -3 -2" className={styles.meteorTrail} />
+									<path d="M-26 -2.5 Q-15 -1 -3 0" className={styles.meteorTrail} />
 									<circle cx="0" cy="0" r="3.5" className={styles.meteorHead} />
 								</g>
 								<circle r={Math.min(11, 3.5 + Math.sqrt(item.count))} className={styles.locationDot} />
@@ -95,6 +113,12 @@ const AttackMap = ({ items }: { items: AttackMapItem[] }) => {
 							</g>
 						);
 					})}
+					{homePos ? (
+						<g transform={`translate(${homePos.x} ${homePos.y})`}>
+							<title>{intl.formatMessage({ id: "crowdsec.attack-map.home" })}</title>
+							<circle r="4.5" className={styles.homeDot} />
+						</g>
+					) : null}
 				</svg>
 			</div>
 			<figcaption className="mt-2">

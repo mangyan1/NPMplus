@@ -11,6 +11,7 @@ import {
 	readCrowdsecJson,
 	readRecentHoneypotIps,
 } from "../internal/crowdsec.js";
+import { getHomeLocation } from "../internal/home-location.js";
 import { fetchWithTimeout, readBoundedText } from "../lib/bounded-fetch.js";
 import {
 	crowdsecAlertTarget,
@@ -584,6 +585,10 @@ router
 				return null;
 			}),
 		]);
+		// the attack map flies meteors from the origins toward the instance, so
+		// it needs to know where the instance is; null just means the map
+		// degrades to marking the origins only
+		const home = await getHomeLocation();
 		const normalizedAlerts = normalizeCrowdsecAlerts(payload);
 		// blocklist syncs are bookkeeping, not attacks: they never appear in
 		// attack stats, but truncation still reflects the raw sample size
@@ -644,6 +649,7 @@ router
 			local_active_decisions: activeDecisions,
 			sampled,
 			activity,
+			home,
 			locations: [...locationCounts.values()].sort((a, b) => b.count - a.count).slice(0, 100),
 			signals,
 			top_scenarios: topCounts(scenarios),

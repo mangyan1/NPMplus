@@ -406,7 +406,7 @@ const CrowdsecDashboard = () => {
 										</h3>
 										{insights.data.locations.length ? (
 											<Suspense fallback={<TableSkeleton />}>
-												<AttackMap items={insights.data.locations} />
+												<AttackMap items={insights.data.locations} home={insights.data.home} />
 											</Suspense>
 										) : (
 											<div className="text-secondary py-5 text-center">

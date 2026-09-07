@@ -95,6 +95,7 @@ export interface CrowdsecInsights {
 	localActiveDecisions: number | null;
 	sampled: boolean;
 	activity: { start: string; count: number }[];
+	home: { latitude: number; longitude: number } | null;
 	locations: { latitude: number; longitude: number; country: string; count: number }[];
 	signals: { id: string; severity: "info" | "warning"; type: "active-bans" | "attack-spike"; count?: number }[];
 	topScenarios: CrowdsecInsightsItem[];

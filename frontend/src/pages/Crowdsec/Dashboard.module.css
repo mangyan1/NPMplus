@@ -202,6 +202,13 @@ button.metricCard:focus-visible {
 	filter: drop-shadow(0 0 0.3rem #ff5d6c);
 }
 
+.homeDot {
+	fill: #2fb344;
+	stroke: #d3f5dc;
+	stroke-width: 2;
+	filter: drop-shadow(0 0 0.3rem #2fb344);
+}
+
 .meteor {
 	animation: meteor-arrival var(--meteor-duration) ease-out infinite;
 	animation-delay: var(--meteor-delay);
@@ -363,19 +370,19 @@ button.metricCard:focus-visible {
 @keyframes meteor-arrival {
 	0%,
 	72% {
-		transform: translate(-22px, -14px);
+		transform: translate(0, 0);
 		opacity: 0;
 	}
 	78% {
 		opacity: 0.9;
 	}
 	86% {
-		transform: translate(0, 0);
+		transform: translate(var(--meteor-dist, 0px), 0);
 		opacity: 1;
 	}
 	92%,
 	100% {
-		transform: translate(0, 0);
+		transform: translate(var(--meteor-dist, 0px), 0);
 		opacity: 0;
 	}
 }
