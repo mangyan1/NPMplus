@@ -19,7 +19,7 @@ It is based on [ZoeyVid/NPMplus](https://github.com/ZoeyVid/NPMplus) and the ori
 | Feature overview | [Main features](#main-features) |
 | Everything else (updates, boot, backups internals, diagnostics) | [Setup and operations guide](docs/setup-npmplus.md) · [Advanced reference](ADVANCED.md) |
 
-The recommended installer follows the maintained `develop` channel, which contains the latest tested fixes and maintenance features. A pinned **v2.15.1-mangyan1.rc.4** release candidate remains available for controlled deployments on the [Releases page](https://github.com/mangyan1/NPMplus/releases).
+The recommended installer is the pinned **v2.15.1-mangyan1.rc.5** release candidate, which is SHA-256-verified and resolves its images to immutable digests. The maintained `develop` channel contains the newest fixes between releases and remains available for rolling test deployments on the [Releases page](https://github.com/mangyan1/NPMplus/releases).
 
 ## Before you start
 
@@ -38,11 +38,13 @@ The installer can install Docker if it is missing. It asks before making importa
 For the recommended maintained build, copy this entire command, paste it into a **test server** terminal, and press Enter:
 
 ```bash
-wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh.sha256 &&
+sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh
 ```
 
-This follows the current `develop` installer, so review it before running on a production host. For a pinned installer and SHA-256 verification, use the versioned asset from the [Releases page](https://github.com/mangyan1/NPMplus/releases) instead.
+This downloads the version-pinned RC5 installer and verifies it against its SHA-256 file before running it. Review the script before running it on a production host. Rolling `develop` builds remain available for maintainers directly from the [branch](https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh).
 
 Select **Install NPMplus**, then answer the questions shown by the installer. If you are unsure, press Enter to accept the displayed default. The recommended defaults enable CrowdSec, CrowdSec AppSec web-application protection, the firewall bouncer, and Anubis. Anubis's global catch-all challenge defaults off so APIs, licensing servers, webhooks, monitors, and other non-browser clients continue to work. AppSec can still be turned off for an individual proxy host if an application has a confirmed compatibility problem.
 
@@ -94,7 +96,7 @@ sudo /opt/npmplus/setup-npmplus.sh
 - **Restore a backup from an archive** - put old data back onto this machine (see [Migrate to a new server](#migrate-to-a-new-server)).
 - **Uninstall** - final backup, clear description, typed confirmation.
 
-To move to a newer release later, use the installation command shown on that release's page. A `develop` installation should download the current [develop installer](https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh) before maintenance.
+To move to a newer release later, use the installation command shown on that release's page. A `develop` installation should first switch to the current release candidate using the [pinned installer](https://github.com/mangyan1/NPMplus/releases) before its next maintenance.
 
 Advanced opt-ins that an ordinary menu update deliberately preserves - enabling AppSec, protected startup, or the Cloudflare origin lock on an existing installation - each need one explicit command: see [Updating](docs/setup-npmplus.md#updating) in the operations guide.
 

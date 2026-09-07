@@ -4,6 +4,12 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+Nothing yet.
+
+## v2.15.1-mangyan1.rc.5 - 2026-09-07
+
+Fifth public release candidate of the security-focused fork.
+
 ### Added
 
 - Turned up two of the three protection dials reviewed on 2026-09-06: honeypot auto-bans last 7 days instead of 24h (a repeat offender is simply re-banned on every new pot hit), and the honeypot ban bridge moved into the shared host-tooling installer so it is refreshed on every `--update` instead of only at fresh setup. The anubis catch-all keeps the API-safe default (CI re-asserted the documented v2.15.1 decision), but a new `--update --enable-anubis-catchall` flag turns it on for an existing install without reconfiguring. AppSec stays on `crowdsecurity/appsec-default` on purpose: that config already ships base-config plus every vpatch and generic rule, the remaining hub appsec configs are bot-challenge variants rather than extra coverage, and the DoS collections are log-parsers that cannot fire on this AppSec-fed stack.
@@ -58,6 +64,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 - Restored upstream NPMplus runtime Certbot DNS-plugin installation so Cloudflare and other DNS challenges work out of the box; pinned pip and Certbot stay in the image and the pip packaging-tool scan findings are carried under a reviewed, expiring `.trivy/npmplus.yaml` baseline.
 - Refactored the internal code layout without behavior changes: the CrowdSec LAPI client moved to its own module, the redundant per-route error handling that Express 5 already performs was deleted, the frontend API transport is generically typed, and the CrowdSec dashboard was split into per-tab components. HTTP-level characterization tests now pin the auth, CRUD, CrowdSec route, and DNS-challenge certificate contracts before any future change can drift them, and the backend entrypoint is pinned to LF so local Windows image builds boot.
+
+See the [release notes](.github/release-notes/v2.15.1-mangyan1.rc.5.md) for installation and validation guidance.
 
 ## v2.15.1-mangyan1.rc.4 - 2026-09-05
 

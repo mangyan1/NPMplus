@@ -4,23 +4,25 @@
 
 The installer intentionally does not deploy PHP-FPM. This fork treats NPMplus as a reverse proxy and security boundary; every proxied application remains responsible for its own runtime, application files, updates, and health checks. Keep the `PHP83`, `PHP84`, and `PHP85` options disabled unless you deliberately leave this recommended deployment model and accept the advanced compatibility tradeoffs documented in `ADVANCED.md`.
 
-The recommended installer follows the maintained `develop` channel, which contains the latest tested fixes and maintenance features. GitHub releases provide a version-pinned installer and checksum for controlled deployments; the current `v2.15.1-mangyan1.rc.4` build remains a release candidate and does not move the stable `latest` channel.
+The recommended installer is the pinned **v2.15.1-mangyan1.rc.5** release candidate, which is SHA-256-verified and resolves its images to immutable digests; it does not move the stable `latest` channel. The maintained `develop` channel contains the newest fixes between releases and remains available for rolling test deployments.
 
 ## Fresh installation
 
 Download the current release-candidate script and checksum, verify them, review the script, and run it on a test server:
 
 ```bash
-wget -O setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh
-less setup-npmplus.sh
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh.sha256 &&
+sha256sum -c setup-npmplus.sh.sha256 &&
+less setup-npmplus.sh &&
 sudo bash setup-npmplus.sh
 ```
 
-The `develop` installer follows the latest maintained script, so review it before running on a production host. For a pinned installer and SHA-256 verification, download the installer and checksum from the desired [GitHub release](https://github.com/mangyan1/NPMplus/releases) instead.
+The version-pinned installer is verified against its checksum file before it is read or run. Rolling `develop` builds remain available for maintainers directly from the [branch](https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh).
 
 On a new server, select **Install NPMplus**. On an existing installation, the same command offers safe update, CrowdSec doctor, startup/reboot diagnostics, advanced reconfiguration, and uninstall. The interactive installation prompts cover the initial administrator, CrowdSec and AppSec, the firewall bouncer, Anubis, Caddy, Cloudflare trust, UFW, and unattended security upgrades. The recommended defaults enable CrowdSec, AppSec, the firewall bouncer, and Anubis. Existing UFW rules are preserved unless a reset is explicitly approved. Before a reset, the script detects the active SSH port and asks for confirmation so it does not assume port 22.
 
-RC4 stays frozen while it is tested against real traffic. The rolling `develop` installer contains the post-RC4 protected-startup work described below; it has not been published as another release candidate.
+RC5 is the current release candidate and contains all of the post-RC4 protected-startup, boot-guard, and origin-lock work described below, plus the CrowdSec dashboard overhaul. It is being tested against real traffic before promotion.
 
 The generated Compose file is `/opt/npmplus/compose.yaml`. Registry channels are pulled and resolved to immutable `sha256` image digests before that file is written. An explicitly supplied initial administrator password is passed through a root-only, one-time Docker secret under `/run`, never embedded in Compose. After the API confirms that the account exists, the script removes its Compose references, recreates NPMplus without the secret mount, confirms health, and only then erases the file. Setup script v1.16 also scrubs legacy inline `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` entries before an update snapshot is created.
 
@@ -46,7 +48,7 @@ The script installs these root-owned helpers:
 
 ## GitHub and download integrity
 
-At startup, the local script compares its version and content with `mangyan1/NPMplus` on the `develop` branch. A newer remote script, or different content carrying the same version, blocks `--update`. The remote script is inspected but is never executed by that check.
+At startup, the local script compares its version and content with the download URL it was pinned to: the release asset for a versioned installer, or the `develop` branch for a rolling script. A newer remote script, or different content carrying the same version, blocks `--update`. The remote script is inspected but is never executed by that check.
 
 `NPMPLUS_ALLOW_STALE_SCRIPT=true` bypasses the block for an intentional emergency update. Review the difference first; this override accepts older host-management logic.
 
@@ -65,16 +67,20 @@ Download the new versioned installer and checksum first when moving to a newer r
 An ordinary update preserves the existing AppSec setting. To opt an existing installer-managed CrowdSec deployment into AppSec, run the safe update once with the explicit flag:
 
 ```bash
-wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh.sha256 &&
+sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh --update --enable-appsec
 ```
 
 The opt-in is included in the same snapshot, health-check, and automatic-rollback transaction as a normal update. It does not disable CrowdSec decisions or the firewall bouncer.
 
-Fresh rolling-`develop` installs default protected startup to on when the installer-managed firewall bouncer is selected. Existing installations preserve their current behavior unless this explicit opt-in is used:
+Fresh installs default protected startup to on when the installer-managed firewall bouncer is selected. Existing installations preserve their current behavior unless this explicit opt-in is used:
 
 ```bash
-wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh.sha256 &&
+sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh --update --enable-strict-boot
 ```
 
@@ -85,11 +91,13 @@ The firewall bouncer uses its supported iptables/ipset backend with both `INPUT`
 If every public hostname sharing the origin IP is Cloudflare orange-clouded, the optional origin lock can be enabled in the fresh-install prompt or during the same safe update:
 
 ```bash
-wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh.sha256 &&
+sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh --update --enable-strict-boot --enable-cloudflare-origin-lock
 ```
 
-The lock downloads Cloudflare's [published IPv4 and IPv6 ranges](https://www.cloudflare.com/ips/), validates them, atomically keeps a last-known-good copy, and permits those ranges plus loopback/RFC1918/ULA networks on public web ports. It rejects other sources in an iptables raw-table pre-routing chain, before host `INPUT`, Docker `FORWARD`, UFW, and destination NAT. Its list refresh runs daily. This does not disable CrowdSec: allowed Cloudflare requests continue to pass through CrowdSec and AppSec. Because rejected direct-origin probes never reach Nginx, they are blocked rather than recorded as CrowdSec attack activity. Leave this opt-in off while specifically evaluating how RC4 observes direct scans. It also does not replace upstream DDoS protection; a router/hypervisor allowlist or Cloudflare Tunnel remains stronger because unwanted traffic is discarded before reaching the VM.
+The lock downloads Cloudflare's [published IPv4 and IPv6 ranges](https://www.cloudflare.com/ips/), validates them, atomically keeps a last-known-good copy, and permits those ranges plus loopback/RFC1918/ULA networks on public web ports. It rejects other sources in an iptables raw-table pre-routing chain, before host `INPUT`, Docker `FORWARD`, UFW, and destination NAT. Its list refresh runs daily. This does not disable CrowdSec: allowed Cloudflare requests continue to pass through CrowdSec and AppSec. Because rejected direct-origin probes never reach Nginx, they are blocked rather than recorded as CrowdSec attack activity. Leave this opt-in off while specifically evaluating how the release candidate observes direct scans. It also does not replace upstream DDoS protection; a router/hypervisor allowlist or Cloudflare Tunnel remains stronger because unwanted traffic is discarded before reaching the VM.
 
 Do not enable the origin lock while any website, licensing API, webhook, or other public hostname on ports 80/443 is DNS-only. Such traffic correctly stops reaching the origin. Multiple orange-clouded websites and APIs may share the same public IP. Keep Anubis disabled per API host even when Cloudflare and CrowdSec remain enabled.
 
