@@ -3172,11 +3172,12 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 	fi
 fi
 USE_ANUBIS="n"; confirm "Enable anubis (anti-bot proof-of-work)?" "y" && USE_ANUBIS="y"
-CHALLENGE_ALL="y"
+CHALLENGE_ALL="n"
 if [[ "$USE_ANUBIS" == "y" ]]; then
-	# strongest anti-bot; hosts that opt into anubis are browser-facing anyway,
-	# but APIs/RSS/uptime monitors on an anubis-protected host still need it off
-	confirm "Challenge everything not matched by any rule?" "y" && CHALLENGE_ALL="y" || CHALLENGE_ALL="n"
+	# strongest anti-bot, but breaks non-browser clients (APIs, RSS, uptime
+	# monitors). Safe for general reverse-proxy use only as an explicit opt-in,
+	# which --update --enable-anubis-catchall also provides for existing installs.
+	confirm "Challenge everything not matched by any rule?" "n" && CHALLENGE_ALL="y"
 fi
 USE_CADDY="n"; confirm "Enable caddy (port 80 -> https redirect, so NPMplus only serves https)?" "n" && USE_CADDY="y"
 # orange cloud only: with plain dns the visitor ips arrive directly and must NOT be
