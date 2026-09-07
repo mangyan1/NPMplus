@@ -412,7 +412,15 @@ const gravatarHashOf = (email) => crypto.createHash("sha256").update(email.toLow
 const mockGravatarFetch = (t, respond) => {
 	const realFetch = globalThis.fetch;
 	t.mock.method(globalThis, "fetch", (url, options) => {
-		if (String(url).includes("gravatar.com")) return respond(url);
+		// match the parsed hostname only, so a "gravatar.com" string inside a
+		// path or query cannot trigger the mock
+		let hostname = "";
+		try {
+			hostname = new URL(String(url)).hostname;
+		} catch {
+			// not a parseable URL, let the original fetch handle it
+		}
+		if (hostname === "www.gravatar.com" || hostname === "gravatar.com") return respond(url);
 		return realFetch(url, options);
 	});
 };
