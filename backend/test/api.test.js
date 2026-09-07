@@ -2,6 +2,7 @@
 // (temporary) sqlite database and pin the auth, permission and CRUD contract.
 // The nginx binary is mocked; everything else is the genuine article.
 import process from "node:process";
+
 process.env.COOKIE_SECRET ||= "api-test-cookie-secret";
 
 import assert from "node:assert/strict";
