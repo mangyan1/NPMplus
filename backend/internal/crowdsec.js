@@ -114,15 +114,18 @@ export const lapiFetch = async (path) => {
 let machineTokenCache = null;
 
 const lapiLogin = async () => {
-	let password = "";
+	let machineKey = "";
 	try {
-		password = (await readFile(LAPI_MACHINE_KEY_FILE, "utf8")).trim();
+		machineKey = (await readFile(LAPI_MACHINE_KEY_FILE, "utf8")).trim();
 	} catch {
 		// Handled below with a stable, localizable error code.
 	}
-	if (!password) throw publicError("crowdsec.not-wired-machine", 503);
+	if (!machineKey) throw publicError("crowdsec.not-wired-machine", 503);
 
-	const fingerprint = createHash("sha256").update(password).digest("hex");
+	// sha256 here is only an in-memory cache fingerprint to notice key-file
+	// changes between requests; the key itself is never stored or compared
+	// against persisted verifiers.
+	const fingerprint = createHash("sha256").update(machineKey).digest("hex");
 	if (
 		machineTokenCache?.fingerprint === fingerprint &&
 		machineTokenCache.expiresAt > Date.now() &&
@@ -134,7 +137,7 @@ const lapiLogin = async () => {
 	const response = await fetchCrowdsec(`${LAPI_URL}/v1/watchers/login`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json", "User-Agent": LAPI_USER_AGENT },
-		body: JSON.stringify({ machine_id: LAPI_MACHINE_ID, password }),
+		body: JSON.stringify({ machine_id: LAPI_MACHINE_ID, password: machineKey }),
 	});
 	if (!response.ok) {
 		throw publicError(
