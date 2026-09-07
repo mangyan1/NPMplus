@@ -18,6 +18,7 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 - Added bouncer enforcement status to the local-bans card: decision hits served to the proxy bouncer (`cs_lapi_decisions_ok_total`) prove bans are enforced, and a bouncer that never queries CrowdSec is called out instead of failing silently.
 - Added top attacker IP filters and a top attacker IP list in the attacks detail modal.
 - Labeled sampled insight windows as a lower bound: when the alert window exceeds the dashboard sample, the attacks figure gains a "100+"-style suffix and an info banner states the counts are a floor, so a truncated sample is never presented as a complete total.
+- Gave users seeded without an avatar their gravatar back on login: the installer's initial-admin seed and restored archives insert the user row directly, bypassing the gravatar download that only ran on user create and update, so those accounts kept a blank avatar forever until an admin edited and saved them. A successful login now backfills the missing avatar in the background (never delaying or failing the login), and a failed fetch stays empty so the next login retries instead of freezing a wrong default into the row.
 
 ### Fixed
 

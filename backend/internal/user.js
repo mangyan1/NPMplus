@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
+import process from "node:process";
 import _ from "lodash";
 import { fetchWithTimeout, readBoundedBuffer } from "../lib/bounded-fetch.js";
 import errs from "../lib/error.js";
@@ -32,6 +33,76 @@ const avatarExt = (b) => {
 	return null;
 };
 
+// download the gravatar for an email into the cache dir and return the served
+// path, or fall back to the default avatar on any failure; shared by the
+// create and update paths so both keep exactly the same contract
+const resolveGravatarAvatar = async (email, name) => {
+	if (process.env.DISABLE_GRAVATAR === "true") {
+		return "/images/default-avatar.jpg";
+	}
+	try {
+		const hash = crypto.createHash("sha256").update(email.trim().toLowerCase()).digest("hex");
+		const response = await fetchWithTimeout(
+			`https://www.gravatar.com/avatar/${hash}?s=64&default=initials&name=${encodeURIComponent(
+				name
+					.split(" ")
+					.map((n) => n[0])
+					.join(""),
+			)}`,
+			{
+				headers: {
+					"User-Agent": `NPMplus/${pjson.version}`,
+				},
+			},
+			5_000,
+		);
+
+		if (!response.ok) throw new Error(`Status code: ${response.status}`);
+
+		let ext;
+		switch (response.headers.get("content-type")) {
+			case "image/png":
+				ext = "png";
+				break;
+			case "image/jpeg":
+				ext = "jpg";
+				break;
+			case "image/gif":
+				ext = "gif";
+				break;
+			default:
+				throw new Error(`Unsupported content-type: ${response.headers.get("content-type")}`);
+		}
+
+		const buffer = await readBoundedBuffer(response, 1024 * 1024);
+		await writeFile(`/data/npmplus/gravatar/${hash}.${ext}`, buffer);
+
+		return `/images/gravatar/${hash}.${ext}`;
+	} catch (err) {
+		logger.error(`Error downloading gravatar: ${err.message}`);
+		return "/images/default-avatar.jpg";
+	}
+};
+
+// users whose row was written without running the download (the installer's
+// initial-admin seed and restored archives insert rows directly) would keep an
+// empty avatar forever, because the download only runs in create and update.
+// Login calls this in the background: an empty avatar gets fetched once, and a
+// failed attempt stays empty so the next login retries instead of freezing a
+// wrong default into the row.
+const backfillGravatarAvatar = async (email) => {
+	if (process.env.DISABLE_GRAVATAR === "true") return;
+	const user = await userModel
+		.query()
+		.where("email", String(email).toLowerCase().trim())
+		.andWhere("is_deleted", 0)
+		.first();
+	if (!user || user.avatar) return;
+	const avatar = await resolveGravatarAvatar(user.email, user.name);
+	if (avatar === "/images/default-avatar.jpg") return;
+	await userModel.query().patchAndFetchById(user.id, { avatar });
+};
+
 const internalUser = {
 	/**
 	 * Create a user can happen unauthenticated only once and only when no active users exist.
@@ -60,52 +131,7 @@ const internalUser = {
 			throw new errs.ValidationError(`Email address already in use - ${data.email}`);
 		}
 
-		if (process.env.DISABLE_GRAVATAR === "true") {
-			data.avatar = "/images/default-avatar.jpg";
-		} else {
-			try {
-				const hash = crypto.createHash("sha256").update(data.email.trim().toLowerCase()).digest("hex");
-				const response = await fetchWithTimeout(
-					`https://www.gravatar.com/avatar/${hash}?s=64&default=initials&name=${encodeURIComponent(
-						data.name
-							.split(" ")
-							.map((n) => n[0])
-							.join(""),
-					)}`,
-					{
-						headers: {
-							"User-Agent": `NPMplus/${pjson.version}`,
-						},
-					},
-					5_000,
-				);
-
-				if (!response.ok) throw new Error(`Status code: ${response.status}`);
-
-				let ext;
-				switch (response.headers.get("content-type")) {
-					case "image/png":
-						ext = "png";
-						break;
-					case "image/jpeg":
-						ext = "jpg";
-						break;
-					case "image/gif":
-						ext = "gif";
-						break;
-					default:
-						throw new Error(`Unsupported content-type: ${response.headers.get("content-type")}`);
-				}
-
-				const buffer = await readBoundedBuffer(response, 1024 * 1024);
-				await writeFile(`/data/npmplus/gravatar/${hash}.${ext}`, buffer);
-
-				data.avatar = `/images/gravatar/${hash}.${ext}`;
-			} catch (err) {
-				logger.error(`Error downloading gravatar: ${err.message}`);
-				data.avatar = "/images/default-avatar.jpg";
-			}
-		}
+		data.avatar = await resolveGravatarAvatar(data.email, data.name);
 
 		let user = utils.omitRow(omissions())(await userModel.query().insertAndFetch(data));
 		if (auth) {
@@ -201,54 +227,8 @@ const internalUser = {
 
 		if (existingUser.avatar?.startsWith("/images/avatar/")) {
 			data.avatar = existingUser.avatar;
-		} else if (process.env.DISABLE_GRAVATAR === "true") {
-			data.avatar = "/images/default-avatar.jpg";
 		} else {
-			try {
-				const hash = crypto
-					.createHash("sha256")
-					.update((data.email || existingUser.email).trim().toLowerCase())
-					.digest("hex");
-				const response = await fetchWithTimeout(
-					`https://www.gravatar.com/avatar/${hash}?s=64&default=initials&name=${encodeURIComponent(
-						(data.name || existingUser.name)
-							.split(" ")
-							.map((n) => n[0])
-							.join(""),
-					)}`,
-					{
-						headers: {
-							"User-Agent": `NPMplus/${pjson.version}`,
-						},
-					},
-					5_000,
-				);
-
-				if (!response.ok) throw new Error(`Status code: ${response.status}`);
-
-				let ext;
-				switch (response.headers.get("content-type")) {
-					case "image/png":
-						ext = "png";
-						break;
-					case "image/jpeg":
-						ext = "jpg";
-						break;
-					case "image/gif":
-						ext = "gif";
-						break;
-					default:
-						throw new Error(`Unsupported content-type: ${response.headers.get("content-type")}`);
-				}
-
-				const buffer = await readBoundedBuffer(response, 1024 * 1024);
-				await writeFile(`/data/npmplus/gravatar/${hash}.${ext}`, buffer);
-
-				data.avatar = `/images/gravatar/${hash}.${ext}`;
-			} catch (err) {
-				logger.error(`Error downloading gravatar: ${err.message}`);
-				data.avatar = "/images/default-avatar.jpg";
-			}
+			data.avatar = await resolveGravatarAvatar(data.email || existingUser.email, data.name || existingUser.name);
 		}
 
 		await userModel.query().patchAndFetchById(existingUser.id, data);
@@ -548,5 +528,7 @@ const internalUser = {
 		return true;
 	},
 };
+
+export { backfillGravatarAvatar };
 
 export default internalUser;

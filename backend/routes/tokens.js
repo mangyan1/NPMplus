@@ -1,6 +1,8 @@
+import process from "node:process";
 import express from "express";
 import { rateLimit } from "express-rate-limit";
 import internalToken from "../internal/token.js";
+import { backfillGravatarAvatar } from "../internal/user.js";
 import errs from "../lib/error.js";
 import jwtdecode from "../lib/express/jwt-decode.js";
 import apiValidator from "../lib/validator/api.js";
@@ -89,6 +91,10 @@ router
 
 		const data = apiValidator(getValidationSchema("/tokens", "post"), req.body);
 		const result = await internalToken.getTokenFromEmail(data);
+		// users seeded without an avatar (installer initial-admin, restores)
+		// self-heal here; the fetch runs in the background and must never
+		// delay or fail the login itself
+		backfillGravatarAvatar(data.identity).catch(() => {});
 		const { token, ...responseBody } = result;
 
 		if (result.requiresTotp) {

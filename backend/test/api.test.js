@@ -1,6 +1,7 @@
 // HTTP-level characterization tests: boot the real express app against a real
 // (temporary) sqlite database and pin the auth, permission and CRUD contract.
 // The nginx binary is mocked; everything else is the genuine article.
+import process from "node:process";
 process.env.COOKIE_SECRET ||= "api-test-cookie-secret";
 
 import assert from "node:assert/strict";
@@ -12,6 +13,9 @@ import { after, test } from "node:test";
 // generation and access-list handling expect them to exist
 for (const dir of [
 	"/data/npmplus",
+	// the container image pre-creates the gravatar cache; user.js writes into
+	// it directly, so the create/update contract tests need it present
+	"/data/npmplus/gravatar",
 	"/data/nginx",
 	"/data/nginx/proxy_host",
 	"/data/nginx/redirection_host",
@@ -321,4 +325,95 @@ test("crowdsec reads degrade to a stable not-wired error without a LAPI key", as
 	assert.equal(anubis.body.configured, false);
 	assert.equal(anubis.body.honeypot.decisionsAvailable, false);
 	assert.equal(anubis.body.honeypot.status, "disabled");
+});
+
+// --- gravatar avatar contract ---
+
+// a fake but structurally valid png: user.js switches on content-type and
+// stores whatever bytes arrived, so only the header matters to the contract
+const gravatarPng = Buffer.from("89504e470d0a1a0a00000000", "hex");
+const gravatarHashOf = (email) => crypto.createHash("sha256").update(email.toLowerCase().trim()).digest("hex");
+
+// gravatar.com must never be contacted for real in tests; everything else
+// (the api helper itself) goes through the untouched original fetch
+const mockGravatarFetch = (t, respond) => {
+	const realFetch = globalThis.fetch;
+	t.mock.method(globalThis, "fetch", (url, options) => {
+		if (String(url).includes("gravatar.com")) return respond(url);
+		return realFetch(url, options);
+	});
+};
+
+test("user creation downloads and stores the gravatar for the email", async (t) => {
+	mockGravatarFetch(t, () => new Response(gravatarPng, { status: 200, headers: { "content-type": "image/png" } }));
+	const { readFile } = await import("node:fs/promises");
+	const res = await api("POST", "/api/users", {
+		cookie: adminCookie,
+		body: { name: "Grav Atar", nickname: "grav", email: "gravatar-user@example.com" },
+	});
+	assert.equal(res.status, 201, res.text);
+	const hash = gravatarHashOf("gravatar-user@example.com");
+	assert.equal(res.body.avatar, `/images/gravatar/${hash}.png`);
+	const stored = await readFile(`/data/npmplus/gravatar/${hash}.png`);
+	assert.equal(stored.subarray(0, 4).toString("hex"), "89504e47");
+});
+
+test("a failed gravatar download falls back to the default avatar", async (t) => {
+	mockGravatarFetch(t, () => new Response("nope", { status: 500 }));
+	const res = await api("POST", "/api/users", {
+		cookie: adminCookie,
+		body: {
+			name: "Grav Fail",
+			nickname: "gravfail",
+			email: "gravatar-fail@example.com",
+			auth: { type: "password", secret: "Grav-Fail-1" },
+		},
+	});
+	assert.equal(res.status, 201, res.text);
+	assert.equal(res.body.avatar, "/images/default-avatar.jpg");
+});
+
+test("a custom local avatar survives a user update", async (t) => {
+	const user = await insertUser({ email: "local-avatar@example.com", password: "Local-Avatar-1", roles: ["user"] });
+	await userModel.query().patchAndFetchById(user.id, { avatar: "/images/avatar/local.jpg" });
+	const res = await api("PUT", `/api/users/${user.id}`, {
+		cookie: adminCookie,
+		body: { name: "Renamed", nickname: "renamed", email: "local-avatar@example.com" },
+	});
+	assert.equal(res.status, 200, res.text);
+	assert.equal(res.body.avatar, "/images/avatar/local.jpg");
+});
+
+test("login backfills the avatar of a user whose row has none", async (t) => {
+	// this mimics the installer seed path, which inserts the user directly
+	// with an empty avatar and never runs the gravatar download
+	const seeded = await insertUser({ email: "backfill@example.com", password: "Backfill-1", roles: ["admin"] });
+	assert.equal(seeded.avatar, "");
+
+	mockGravatarFetch(t, () => new Response(gravatarPng, { status: 200, headers: { "content-type": "image/png" } }));
+	const login = await api("POST", "/api/tokens", {
+		body: { identity: "backfill@example.com", secret: "Backfill-1" },
+	});
+	assert.equal(login.status, 200, login.text);
+
+	// the backfill runs in the background so it cannot slow the login down
+	const hash = gravatarHashOf("backfill@example.com");
+	for (let waited = 0; waited < 5000; waited += 100) {
+		const row = await userModel.query().findById(seeded.id);
+		if (row.avatar === `/images/gravatar/${hash}.png`) return;
+		await new Promise((resolve) => setTimeout(resolve, 100));
+	}
+	assert.fail("login did not backfill the missing gravatar avatar");
+});
+
+test("a failed backfill leaves the avatar empty for the next login to retry", async (t) => {
+	const seeded = await insertUser({ email: "backfill-fail@example.com", password: "Backfill-2", roles: ["admin"] });
+	mockGravatarFetch(t, () => new Response("nope", { status: 500 }));
+	const login = await api("POST", "/api/tokens", {
+		body: { identity: "backfill-fail@example.com", secret: "Backfill-2" },
+	});
+	assert.equal(login.status, 200, login.text);
+	await new Promise((resolve) => setTimeout(resolve, 300));
+	const row = await userModel.query().findById(seeded.id);
+	assert.equal(row.avatar, "");
 });
