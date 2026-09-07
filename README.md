@@ -4,6 +4,8 @@ NPMplus gives you a web dashboard for publishing services securely through Nginx
 
 It is based on [ZoeyVid/NPMplus](https://github.com/ZoeyVid/NPMplus) and the original [Nginx Proxy Manager](https://github.com/NginxProxyManager/nginx-proxy-manager). [Project website](https://mangyan1.github.io/NPMplus/)
 
+![The NPMplus security overview showing CrowdSec and Anubis status, local bans, attack mix, WAF verdicts, and a geographic attack map](docs/security-overview.webp)
+
 ## Contents
 
 | Task | Section |
