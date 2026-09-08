@@ -14,6 +14,7 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ### Fixed
 
+- Updated the Debian restore smoke fixture to serve a real HTTPS health response, satisfy the strengthened container health gate, and verify the complete snapshot layout. Restore failures now print their diagnostic log in CI.
 - Honeypot bridge prefix fingerprints detect log resets that regrow beyond the previous cursor; failed entries remain pending. Reporting keeps missing metrics, stale observations, and current-ban lookup failures distinct from zero activity.
 - Installer v1.57 preserves pending honeypot entries after a CrowdSec ban-command failure, prevents overlapping bridge runs, and publishes an atomic status file through the existing read-only log mount. Incomplete log lines remain pending. Anubis reachability now uses HTTP response headers, so an oversized challenge body cannot cause a false outage.
 - Setup script v1.55 checks the public TCP listener separately from the admin health API, so a supported default 404/444 policy no longer blocks protected startup, safe updates, or restore.

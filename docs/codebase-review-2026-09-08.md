@@ -97,6 +97,25 @@ not compare counts against the owner's live VM, reboot its systemd/network stack
 or constitute a new image scan or release. The production frontend build passes. MFA concurrency is exercised on the supported SQLite configuration;
 the MySQL/PostgreSQL compatibility casts are not integration-tested here.
 
+## Post-push CI correction
+
+The installer smoke run `34261821162` failed in the Debian restore fixture after
+commit `27175d84`. Its sleeping BusyBox container had neither a Docker health
+check nor an admin API, so the strengthened restore gate correctly refused it.
+The fixture also checked the old snapshot path instead of
+`pre-restore-*/data/npmplus/database.sqlite`. The step's `errexit` handling hid
+the restore log when the command failed.
+
+The fixture now serves an actual HTTPS `/api` response and declares a health
+check, waits for healthy before restoring, verifies the complete snapshot path,
+and prints the restore log even on failure. Production restore checks remain
+unchanged. The updated Debian 13 round trip passes locally through real Docker
+and Compose, using synthetic database bytes and certificates. All 15 executable
+Linux installer recovery tests also pass, including real SQLite WAL preservation
+and rejection of running-but-unhealthy containers. Workflow validation and
+ShellCheck for the changed step pass; full-workflow ShellCheck retains unrelated
+existing SC2016/SC2024 diagnostics in earlier steps.
+
 ## Suggested next dashboard changes
 
 Follow-up: items 1 and 2 are now implemented for develop. See

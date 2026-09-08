@@ -746,7 +746,7 @@ jobs:
 
           # the usage/help surfaces the restore action
           bash setup-npmplus.sh --help | grep -q -- '--restore'
-      - name: full restore round trip on debian (real stack)
+      - name: full restore round trip on debian (healthy HTTPS fixture)
         shell: bash
         run: |
           fail=0
@@ -756,24 +756,37 @@ jobs:
             if "$@"; then echo "PASS: $name"; else echo "FAIL: $name"; fail=1; fi
           }
 
-          # Build a real (small) npmplus-style installation: compose file with
-          # one npmplus service plus the data layout --restore expects, a
-          # database, and a backup archive in the same layout the daily
-          # backup helper produces. Then restore it on Debian.
+          # Exercise the real Docker/Compose restore lifecycle with a small
+          # HTTPS fixture. The unpublished-port restore gate requires both a
+          # healthy container and a responding admin API, not just a process.
+          mkdir -p /tmp/restore-health-fixture
+          cat >/tmp/restore-health-fixture/Dockerfile <<'DOCKERFILE'
+          FROM alpine:3.22
+          RUN apk add --no-cache curl openssl \
+              && mkdir /www \
+              && printf '{"status":"OK"}\n' >/www/api \
+              && openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+                  -subj /CN=localhost -keyout /key.pem -out /cert.pem
+          WORKDIR /www
+          HEALTHCHECK --interval=1s --timeout=3s --start-period=2s --retries=10 \
+              CMD curl -fkSs --max-time 2 https://127.0.0.1:81/api | grep -q '"status":"OK"'
+          CMD ["openssl", "s_server", "-accept", "81", "-cert", "/cert.pem", "-key", "/key.pem", "-WWW", "-quiet"]
+          DOCKERFILE
+          docker build -t npmplus-restore-fixture /tmp/restore-health-fixture
           mkdir -p /opt/npmplus/npmplus /opt/npmplus/nginx/logs /opt/npmplus/tls
           cat >/opt/npmplus/compose.yaml <<'YAML'
           name: npmplus
           services:
             npmplus:
               container_name: npmplus
-              image: busybox
-              command: sh -c 'mkdir -p /data/npmplus && sleep infinity'
+              image: npmplus-restore-fixture
               restart: no
           YAML
           printf 'debian-restore-test-database' >/opt/npmplus/npmplus/database.sqlite
           printf 'old-cert' >/opt/npmplus/tls/cert.pem
-          docker compose -f /opt/npmplus/compose.yaml up -d >/dev/null
-          check "fake stack running" bash -c 'docker inspect --format "{{.State.Status}}" npmplus | grep -qx running'
+          docker compose -f /opt/npmplus/compose.yaml up -d --wait --wait-timeout 30 >/dev/null
+          check "fixture healthy" bash -c 'docker inspect --format "{{.State.Health.Status}}" npmplus | grep -qx healthy'
+          check "fixture admin API responds" docker exec npmplus curl -fkSs --max-time 3 https://127.0.0.1:81/api
 
           # the archive: a backup of a DIFFERENT machine's data (migration)
           mkdir -p /tmp/oldserver/opt/npmplus/npmplus /tmp/oldserver/opt/npmplus/tls /tmp/oldserver/opt/crowdsec/conf
@@ -782,8 +795,9 @@ jobs:
           printf 'crowdsec-state' >/tmp/oldserver/opt/crowdsec/conf/config.yaml
           tar -czf /tmp/oldmachine-backup.tar.gz -C /tmp/oldserver opt/npmplus opt/crowdsec
 
-          printf 'restore\n' | bash setup-npmplus.sh --restore /tmp/oldmachine-backup.tar.gz >/tmp/debian-restore.log 2>&1
-          restore_status="${PIPESTATUS[1]}"
+          restore_status=0
+          printf 'restore\n' | bash setup-npmplus.sh --restore /tmp/oldmachine-backup.tar.gz >/tmp/debian-restore.log 2>&1 || restore_status=$?
+          cat /tmp/debian-restore.log
           check "restore exited 0" test "$restore_status" -eq 0
           check "log says restore complete" grep -q 'restore complete' /tmp/debian-restore.log
 
@@ -807,7 +821,7 @@ jobs:
           # a snapshot of the replaced state was kept
           check "pre-restore snapshot kept" bash -c 'ls -d /var/backups/npmplus/pre-restore-* >/dev/null'
           if ls -d /var/backups/npmplus/pre-restore-*/ >/dev/null 2>&1; then
-            check "snapshot has the replaced database" grep -q 'debian-restore-test-database' /var/backups/npmplus/pre-restore-*/database.sqlite
+            check "snapshot has the replaced database" grep -q 'debian-restore-test-database' /var/backups/npmplus/pre-restore-*/data/npmplus/database.sqlite
           fi
 
           # WAL replay: a live-file-only archive of a WAL-mode database carries
