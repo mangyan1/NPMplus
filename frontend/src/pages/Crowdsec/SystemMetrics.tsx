@@ -6,7 +6,13 @@ import Metric from "./Metric";
 
 const SystemMetrics = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetrics> }) =>
 	!metrics.data ? (
-		<MetricsSkeleton />
+		metrics.isError ? (
+			<Alert variant="secondary">
+				<T id="crowdsec.metrics-unavailable" />
+			</Alert>
+		) : (
+			<MetricsSkeleton />
+		)
 	) : !metrics.data.available ? (
 		<Alert variant="secondary">
 			<T id={metrics.data.error || "crowdsec.metrics-unavailable"} />
@@ -16,19 +22,30 @@ const SystemMetrics = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetr
 			<h3>
 				<T id="crowdsec.metrics.title" />
 			</h3>
+			<p className="text-secondary">
+				<T id="crowdsec.metrics.since-restart" />
+			</p>
 			<div className="row g-3">
 				<Metric
 					label={<T id="crowdsec.metrics.bouncer-requests" />}
-					value={metrics.data.bouncerRequests ?? 0}
+					value={metrics.data.bouncerRequests ?? "—"}
 					tone="green"
 				/>
 				<Metric
 					label={<T id="crowdsec.metrics.machine-requests" />}
-					value={metrics.data.machineRequests ?? 0}
+					value={metrics.data.machineRequests ?? "—"}
 					tone="orange"
 				/>
 				<Metric
-					label={<T id="crowdsec.metrics.parser-rate" />}
+					label={
+						<T
+							id={
+								metrics.data.parserMetricScope === "nodes"
+									? "crowdsec.metrics.parser-node-rate"
+									: "crowdsec.metrics.parser-rate"
+							}
+						/>
+					}
 					value={
 						metrics.data.parserSuccessRate === null || typeof metrics.data.parserSuccessRate === "undefined"
 							? "—"

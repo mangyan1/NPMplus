@@ -180,9 +180,19 @@ Backup archives created before upgrading to v1.16 can still contain an older Com
 
 ## Security dashboard
 
+The local unreleased follow-up adds **WAF by proxy host** and **Observed enforcement**
+in the WAF and System tabs. It requires the updated image plus installer v1.56.
+See [reporting definitions, collection limits, and deployment steps](security-telemetry.md).
+RC5 does not include this addition.
+
+The subsequent local **Explore older alerts** control can browse beyond the recent
+history sample in bounded batches. See [extended history and IPv6 offender guidance](security-history.md)
+for its limits and how IPv6 visitors can be blocked through a trusted proxy even
+when the origin uses IPv4.
+
 Open **CrowdSec** in the NPMplus navigation to see the combined CrowdSec, AppSec, and Anubis security dashboard. Its five tabs separate the daily operator view from deeper details:
 
-- **Overview** shows attack activity, local bans, community protection, and honeypot bans as clickable summary cards. The attack-mix donut groups attacks by type—brute force, probing, injection, WAF blocks, and so on—with a clickable legend that opens the attacks breakdown modal, and the activity strip underneath shows when they happened, with the current interval highlighted. Machine scenario identifiers are shown as readable labels ("crowdsecurity/http-probing" becomes "HTTP probing"); unknown identifiers keep their raw name instead of guessing wrong. The WAF card summarizes AppSec inspection: how many requests were blocked, the pass/blocked traffic split, and whether AppSec is configured at all. The local-bans card reports bouncer enforcement—whether decisions were actually served to the proxy bouncer—so a dead bouncer key is visible at a glance instead of silently stopping enforcement. Clickable filters cover top scenarios, countries, ASNs, attacker IPs, and targets. The geographic map animates up to 12 aggregated attack origins with one inline SVG and CSS-only effects; it does not load map tiles, use WebGL, perform browser-side IP lookup, or render the full CAPI address list. The pulses are a visual sequence, not inferred network routes.
+- **Overview** shows attack activity, local bans, community protection, and honeypot bans as clickable summary cards. The attack-mix donut groups attacks by type—brute force, probing, injection, WAF blocks, and so on—with a clickable legend that opens the attacks breakdown modal, and the activity strip underneath shows when they happened, with the current interval highlighted. Machine scenario identifiers are shown as readable labels ("crowdsecurity/http-probing" becomes "HTTP probing"); unknown identifiers keep their raw name instead of guessing wrong. The WAF card summarizes AppSec inspection: how many requests were blocked, the pass/blocked traffic split, and whether AppSec is configured at all. The local-bans card reports decision availability and LAPI read activity. Those reads do not prove that a bouncer blocked traffic. Clickable filters cover top scenarios, countries, ASNs, attacker IPs, and targets. The geographic map animates up to 12 aggregated attack origins with one inline SVG and CSS-only effects; it does not load map tiles, use WebGL, perform browser-side IP lookup, or render the full CAPI address list. The pulses are a visual sequence, not inferred network routes.
 - **Attack activity** shows alerts observed by this instance, with search, filters, sanitized event details, and one-click manual-ban prefilling. The table separates the two sides of an attack: **Source** is the offender IP CrowdSec recorded, and **Target** is the URI that was attacked, so an entry never reads as your own address being the attacker.
 - **Active bans** lists only local detections, manual bans, and imported local decisions. It loads 25 rows at a time and provides audited unban actions.
 - **WAF** reports whether AppSec is configured, request totals since CrowdSec started, passed and blocked traffic, block rate, the non-secret failure/body-handling policy, and the top triggered rules with hit counts since CrowdSec last started.
@@ -243,7 +253,9 @@ sudo /opt/npmplus/setup-npmplus.sh --backup
 
 It uses the same helper as the daily cron, takes the consistent database copy, and prints the new archive's path and size. The interactive menu lists it as **Create a backup now** (option 5) and the restore as **Restore a backup from an archive** (option 6).
 
-The restore replaces data only. The current machine's Compose configuration (image digests, LAN binding, published ports, admin secret) is kept, which is what makes a server migration work: install NPMplus on the new machine, copy an archive from the old one, and restore it on top. The restore path is distro-agnostic (no apt/dpkg/systemd/UFW calls), so archives move freely between Debian and Ubuntu servers in either direction - the fresh install on the new machine sets up that machine's own host integration for its distro, and the restore only carries the data. Afterwards, log in with the account from the restored database. The restore requires the typed word `restore` as confirmation, keeps a copy of the replaced state in `/var/backups/npmplus/pre-restore-<timestamp>/`, and refuses archives that do not match the npmplus backup layout.
+The restore replaces data only. The current machine's Compose configuration (image digests, LAN binding, published ports, admin secret) is kept, which is what makes a server migration work: install NPMplus on the new machine, copy an archive from the old one, and restore it on top. Archives can move between supported Debian and Ubuntu installations. The fresh installation supplies host integration; restore can restart the host firewall bouncer when its CrowdSec key needs repair. Afterwards, log in with the account from the restored database. The restore requires the typed word `restore` as confirmation, keeps a copy of the replaced state in `/var/backups/npmplus/pre-restore-<timestamp>.<random>/`, and refuses archives that do not match the npmplus backup layout.
+
+Since setup script v1.55, restore acquires the same lock as backup and update, stops the stack before taking its recovery snapshot, and retains SQLite WAL/SHM files with the database. It restores access-list password files (`/data/access`) and custom HTML (`/data/html`) as well as certificates and generated nginx configuration. A failed snapshot leaves the original data in place; a failed restore attempts to recover the saved data and restart the stack. The root-only snapshot is retained for inspection if recovery itself fails.
 
 A full migration to a new machine is therefore:
 
@@ -266,25 +278,7 @@ Copying the whole `/var/backups/npmplus/` folder instead of one file works too: 
 
 The equivalent menu path is **Restore a backup** in the maintenance menu.
 
-For reference, the manual equivalent (stop the stack, extract the data payloads, promote the consistent database copy, start the stack) is:
-
-```bash
-sudo docker compose -f /opt/npmplus/compose.yaml down
-# extract everything EXCEPT the old machine's compose file, setup script, and
-# admin secret: the new machine must keep its own
-newest=$(sudo ls -1t /var/backups/npmplus/npmplus-*.tar.gz | head -1)
-sudo tar -xzf "$newest" -C / \
-  --exclude='opt/npmplus/compose.yaml' --exclude='opt/npmplus/setup-npmplus.sh'
-if sudo test -f /opt/npmplus/npmplus/database.backup.sqlite; then
-  sudo cp -a /opt/npmplus/npmplus/database.backup.sqlite /opt/npmplus/npmplus/database.sqlite
-  # the consistent copy already contains the newest writes; the live file's
-  # write-ahead log must not replay on top of it
-  sudo rm -f /opt/npmplus/npmplus/database.sqlite-wal /opt/npmplus/npmplus/database.sqlite-shm
-fi
-# without the consistent copy, leave the extracted -wal/-shm in place: the
-# database runs in WAL mode and its newest writes sit there until first open
-sudo docker compose -f /opt/npmplus/compose.yaml up -d
-```
+Use the restore action for migrations. Extracting a whole archive over `/` can overwrite machine-specific settings and bypass the lock, key repair, recovery snapshot, and health checks.
 
 Choose the archive explicitly and retain a copy until the restored stack has been verified. Prefer the restore action over the manual path: it validates the archive, keeps a pre-restore snapshot, re-registers CrowdSec keys, and waits for the stack to become healthy.
 
@@ -305,6 +299,20 @@ sudo /opt/npmplus/setup-npmplus.sh --uninstall --no-backup
 Uninstall removes NPMplus containers, `/opt/npmplus`, optional CrowdSec and Anubis state, the protected-start/origin-lock packet rules, and the cron/helper files owned by this script. It retains `/var/backups/npmplus`, container images, unrelated Docker systemd drop-ins, unrelated packages, and all UFW rules. A CrowdSec firewall bouncer is removed only when an ownership marker proves this script installed it.
 
 ## Diagnostics
+
+The Security overview's **Honeypot decisions** modal separates Anubis reachability,
+log readiness, CrowdSec decisions, and the honeypot bridge's last run. Installer
+v1.57 and the accompanying image add bridge status and pending-ban evidence; older
+tooling displays "Not observed". Allow one five-minute cron interval after updating.
+See [Anubis reporting definitions and the nginx CVE review](anubis-nginx-review-2026-09-08.md)
+for limits, operational checks, and the remaining dashboard recommendations.
+
+Installer v1.58 and its accompanying image also add **Anubis outcomes**, expandable
+host/location configuration coverage, and timestamped observation/ban history in
+that modal. Metrics stay private and run on a one-minute collector; windowed values
+need a baseline and a completed five-minute interval. See [Anubis reporting](anubis-reporting.md)
+for installation requirements, retention limits, and the distinction between an
+observed address and the original request time.
 
 Run the current setup script and select either **Check or repair CrowdSec** or **Create a startup/reboot diagnostic report**. Both tools are built into the setup script, so no second download is needed.
 
@@ -327,6 +335,6 @@ sudo /opt/npmplus/setup-npmplus.sh --boot-trace
 
 For a failure after reboot, create the read-only report before manually restarting Docker or the Compose stack. This preserves the failed state. The report is written with mode `0600` under `/tmp/npmplus-boot-trace-*.log`. It includes systemd's Docker critical chain, network-online services, host and NPMplus resolver files, the current boot journal, container state/restart policy, recent container logs, Docker events, port listeners, and basic resource checks. Review it for hostnames and IP addresses before sharing it.
 
-After a failed update, the last-good directory also contains `failed-ps.txt` and `failed-logs.txt`. The maintenance lock is `/run/lock/npmplus-maintenance.lock`; an update and a backup will not run concurrently.
+After a failed update, the last-good directory also contains `failed-ps.txt` and `failed-logs.txt`. The maintenance lock is `/run/lock/npmplus-maintenance.lock`; update, backup, and restore will not run concurrently.
 
 The GitHub smoke workflow exercises default and alternate installations on disposable Ubuntu runners. It verifies digest-pinned Compose images, administrator login with Compose-sensitive password characters, transactional update health checks, and uninstall preservation of operator-owned Docker configuration.

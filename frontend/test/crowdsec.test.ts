@@ -2,8 +2,9 @@
 import assert from "node:assert/strict";
 // biome-ignore lint/correctness/noNodejsModules: this file is executed by Node's test runner.
 import test from "node:test";
-import type { CrowdsecDecision } from "../src/api/backend/getCrowdsecDecisions.ts";
+import type { CrowdsecDecision, CrowdsecMetrics } from "../src/api/backend/getCrowdsecDecisions.ts";
 import { midTruncate, presentScenarioId, scenarioCategory, scenarioLabel } from "../src/pages/Crowdsec/scenarios.ts";
+import { appsecStatus, appsecTrafficAvailable, boundedCount } from "../src/pages/Crowdsec/shared.ts";
 import { attackMixSegments, decisionTarget } from "../src/pages/Crowdsec/utils.ts";
 
 const decision = (id: number, value: string, scenario = "http-probing"): CrowdsecDecision => ({
@@ -86,4 +87,28 @@ test("mid truncation keeps both ends of a long name", () => {
 	assert.equal(truncated.length, 40);
 	assert.equal(truncated.startsWith("crowdsecurit"), true);
 	assert.equal(long.endsWith(truncated.slice(-12)), true);
+});
+
+test("bounded and missing counts remain distinguishable from exact zero", () => {
+	assert.equal(boundedCount(null), "—");
+	assert.equal(boundedCount(0), 0);
+	assert.equal(boundedCount(500, true), "500+");
+});
+
+test("WAF status distinguishes missing, stale, disabled and exposed metrics", () => {
+	const metrics = {
+		available: true,
+		appsecConfigured: true,
+		appsecMetricsPresent: true,
+		appsecRequests: 0,
+		appsecBlocked: 0,
+		appsecPassed: 0,
+	} as CrowdsecMetrics;
+	assert.equal(appsecTrafficAvailable(metrics), true);
+	assert.equal(appsecTrafficAvailable({ ...metrics, appsecRequests: null }), false);
+	assert.equal(appsecTrafficAvailable({ ...metrics, available: false }), false);
+	assert.equal(appsecStatus(metrics, true).tone, "orange");
+	assert.equal(appsecStatus({ ...metrics, available: false }).label, "crowdsec.appsec.status-monitoring-unavailable");
+	assert.equal(appsecStatus({ ...metrics, appsecConfigured: false }).label, "crowdsec.appsec.status-disabled");
+	assert.equal(appsecStatus(metrics).label, "crowdsec.appsec.status-active");
 });

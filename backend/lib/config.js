@@ -1,8 +1,13 @@
 import crypto from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 import { global as logger } from "../logger.js";
 
-const keysFile = "/data/npmplus/keys-ec.json";
+const testRoot = process.env.NODE_ENV === "test" ? process.env.NPMPLUS_TEST_ROOT : null;
+if (process.env.NODE_ENV === "test" && (!testRoot || !isAbsolute(testRoot))) {
+	throw new Error("Tests require an isolated NPMPLUS_TEST_ROOT before loading application configuration");
+}
+const keysFile = testRoot ? join(testRoot, "data/npmplus/keys-ec.json") : "/data/npmplus/keys-ec.json";
 const sqliteEngine = "better-sqlite3";
 const mysqlEngine = "mysql2";
 const postgresEngine = "pg";
@@ -71,7 +76,7 @@ const configure = () => {
 		return;
 	}
 
-	const envSqliteFile = "/data/npmplus/database.sqlite";
+	const envSqliteFile = testRoot ? join(testRoot, "data/npmplus/database.sqlite") : "/data/npmplus/database.sqlite";
 
 	logger.info(`Using Sqlite: ${envSqliteFile}`);
 	instance = {

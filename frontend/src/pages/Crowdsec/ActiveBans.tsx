@@ -272,7 +272,10 @@ const ActiveBans = () => {
 							{deferredSearch && (
 								<>
 									·
-									<T id="crowdsec.matches" data={{ count: query.data.matched }} />
+									<T
+										id={query.data.truncated ? "crowdsec.matches-at-least" : "crowdsec.matches"}
+										data={{ count: query.data.matched }}
+									/>
 								</>
 							)}
 						</span>

@@ -255,6 +255,7 @@ RUN apk upgrade --no-cache -a && \
     \
     git-clone-commit.sh https://github.com/crowdsecurity/lua-cs-bouncer "$LCSB_VER" /src/lua-cs-bouncer && \
     mv /src/lua-cs-bouncer/lib/* /usr/local/share/lua/5.1 && \
+    python3 /usr/local/bin/instrument-crowdsec-telemetry.py && \
     mv /src/lua-cs-bouncer/templates/captcha.html /etc/captcha.html.original && \
     mv /src/lua-cs-bouncer/templates/ban.html /etc/ban.html.original && \
     \

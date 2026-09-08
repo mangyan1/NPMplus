@@ -133,6 +133,11 @@ const proxyHosts = [
 
 let failures = 0;
 let appsecConfigured = true;
+let metricsMissing = false;
+let metricsFailure = false;
+let anubisReportFailure = false;
+let countsTruncated = false;
+let telemetryState = "observed";
 const check = (name, ok, detail = "") => {
 	if (!ok) failures++;
 	console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : ` -> ${detail}`}`);
@@ -145,6 +150,56 @@ const api = async (route) => {
 	const apiPath = url.pathname.replace(/^\/api/, "");
 	const respond = (data) =>
 		route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(data) });
+	if (apiPath === "/crowdsec/telemetry") {
+		const counters = { checks: 51, inspected: 48, errors: 2, unreadable: 1, bans: 9, wafBans: 7, challenges: 3 };
+		return respond({
+			windowHours: Number(url.searchParams.get("window_hours") || 24),
+			start: iso(-3600_000),
+			end: iso(-300_000),
+			nginx: {
+				status: telemetryState,
+				observedAt: iso(-30_000),
+				coveredMs: telemetryState === "unavailable" ? 0 : 3300_000,
+				incomplete: true,
+				totals: counters,
+				hostsTruncated: false,
+				hosts: [
+					{ id: 42, domains: ["shop.example.com"], counters },
+					{
+						id: 43,
+						domains: ["api.example.com"],
+						counters: Object.fromEntries(Object.keys(counters).map((key) => [key, 0])),
+					},
+				],
+			},
+			firewall: {
+				status: telemetryState,
+				observedAt: iso(-30_000),
+				coveredMs: telemetryState === "unavailable" ? 0 : 3300_000,
+				incomplete: true,
+				totals: { inputPackets: 105, forwardPackets: 205 },
+				serviceActive: true,
+				inputRule: true,
+				forwardRule: true,
+			},
+		});
+	}
+	if (apiPath === "/crowdsec/metrics" && metricsFailure)
+		return route.fulfill({
+			status: 503,
+			contentType: "application/json",
+			body: JSON.stringify({ error: { message: "Fixture outage" } }),
+		});
+	if (apiPath === "/crowdsec/metrics" && metricsMissing)
+		return respond({
+			available: true,
+			appsecConfigured: true,
+			appsecMetricsPresent: false,
+			appsecRequests: null,
+			appsecBlocked: null,
+			appsecPassed: null,
+			communityActiveDecisions: null,
+		});
 
 	if (apiPath === "/" && request.method() === "GET")
 		return respond({ status: "OK", setup: true, password: false, oidc: false });
@@ -190,19 +245,20 @@ const api = async (route) => {
 			page,
 			pageSize,
 			hasNext: filtered.length > start + pageSize,
-			matched: Math.min(filtered.length, start + pageSize),
+			matched: filtered.length,
 		});
 	}
 	if (apiPath === "/crowdsec/insights")
 		return respond({
 			windowHours: 24,
-			alertCount: 7,
+			alertCount: 10,
 			activeDecisions: 3,
-			localActiveDecisions: 3,
+			localActiveDecisions: countsTruncated ? 500 : 1,
+			localActiveDecisionsTruncated: countsTruncated,
 			sampled: false,
 			activity: Array.from({ length: 24 }, (_, index) => ({
 				start: iso((index - 23) * 3600 * 1000),
-				count: index === 23 ? 7 : index % 5,
+				count: index === 23 ? 4 : index >= 21 ? 3 : 0,
 			})),
 			locations: [
 				{ latitude: 51.16, longitude: 10.45, country: "DE", count: 5 },
@@ -220,6 +276,21 @@ const api = async (route) => {
 			topIps: [{ name: "203.0.113.9", count: 4 }],
 			topTargets: [{ name: "very-long-subdomain-for-responsive-testing.example.internal/.env", count: 4 }],
 		});
+	if (apiPath === "/crowdsec/history/alerts" && url.searchParams.has("cursor")) {
+		const older = url.searchParams.get("cursor") === "older-fixture";
+		return respond({
+			items: older ? [{ ...alerts[0], id: 20, source: { ...alerts[0].source, ip: "2001:db8::1234" } }] : [],
+			scanMode: true,
+			scanned: 25,
+			start: iso(-86400_000),
+			end: iso(-60_000),
+			pageSize: 25,
+			hasNext: !older,
+			nextCursor: older ? null : "older-fixture",
+			matched: older ? 1 : 0,
+			truncated: false,
+		});
+	}
 	if (apiPath === "/crowdsec/history/alerts")
 		return respond({
 			items: alerts,
@@ -255,14 +326,62 @@ const api = async (route) => {
 			bouncerDecisionHits: 12,
 			machineRequests: 8,
 			parserHits: 10,
+			parserMetricScope: "nodes",
 			parserSuccessRate: 0.9,
 			whitelistHits: 1,
 			averageLapiMs: 500,
 			averageParsingMs: 2,
 		});
+	if (apiPath === "/crowdsec/anubis-report" && anubisReportFailure)
+		return route.fulfill({
+			status: 503,
+			contentType: "application/json",
+			body: JSON.stringify({ error: { message: "fixture outage" } }),
+		});
+	if (apiPath === "/crowdsec/anubis-report")
+		return respond({
+			metrics: {
+				status: "observed",
+				observedAt: iso(0),
+				start: iso(-3600000),
+				end: iso(0),
+				partial: true,
+				totals: { issued: url.searchParams.get("window") === "1" ? 0 : 14, validated: 9, failed: null },
+			},
+			ledger: {
+				attemptsStatus: "observed",
+				status: "observed",
+				observedAt: iso(0),
+				gap: true,
+				pending: false,
+				total: 2,
+				page: 1,
+				items: [
+					{ id: "attempt", time: iso(-60000), ip: "2001:db8::1234", kind: "accepted", activeBan: true },
+					{ id: "seen", time: iso(-120000), ip: "2001:db8::1234", kind: "observed", activeBan: null },
+				],
+			},
+			coverage: {
+				total: 1,
+				page: 1,
+				items: [
+					{
+						id: 1,
+						domains: ["browser.example.test"],
+						anubis: true,
+						customUpstream: false,
+						locationsTruncated: false,
+						locations: [{ path: "/api", anubis: false, customUpstream: false }],
+					},
+				],
+			},
+		});
 	if (apiPath === "/crowdsec/anubis")
 		return respond({
 			configured: true,
+			checkedAt: iso(0),
+			log: { modifiedAt: iso(-60_000), sizeBytes: 24, truncated: false, entries: 3, uniqueIps: 2 },
+			bridge: { status: "failed", checkedAt: iso(-60_000), applied: 1, failed: 1, invalid: 0, pendingBytes: 12 },
 			honeypot: {
 				status: "ready",
 				decisionsAvailable: true,
@@ -270,7 +389,7 @@ const api = async (route) => {
 				truncated: false,
 				items: decisions.filter((decision) => decision.scenario === "anubis-honeypot"),
 			},
-			container: { up: true, error: null },
+			container: { up: true, error: null, httpStatus: 403 },
 			recent: ["203.0.113.9"],
 		});
 	if (apiPath === "/crowdsec/alerts")
@@ -284,6 +403,7 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 const browserErrors = [];
 page.on("console", (message) => {
 	if (message.type() !== "error") return;
+	if ((metricsFailure || anubisReportFailure) && message.text().includes("503")) return;
 	browserErrors.push(message.text());
 	console.log(`  [console error] ${message.text().slice(0, 160)}`);
 });
@@ -298,7 +418,10 @@ await page.goto("http://localhost:5173/crowdsec", { waitUntil: "networkidle" });
 await page.getByRole("heading", { name: "Security overview" }).waitFor({ timeout: 15000 });
 check("security dashboard has one sticky toolbar", (await page.locator(".sticky-top").count()) === 1);
 check("dashboard exposes five focused tabs", (await page.getByRole("tab").count()) === 5);
-check("dashboard header reports AppSec state", (await page.getByText("AppSec active", { exact: true }).count()) >= 1);
+check(
+	"dashboard header reports AppSec state",
+	(await page.getByText("AppSec metrics available", { exact: true }).count()) >= 1,
+);
 check(
 	"honeypot status distinguishes log readiness from active bans",
 	(await page.getByText("Honeypot logging ready", { exact: true }).count()) >= 1,
@@ -355,13 +478,14 @@ check(
 	communityText,
 );
 check(
-	"community modal explains enforcement remains active",
-	/still downloaded and enforced/i.test(communityText),
+	"community modal describes configured enforcement without claiming current proof",
+	/configured remediation components/i.test(communityText),
 	communityText,
 );
 check(
 	"community modal has no CAPI IPs or unban action",
-	!communityText.includes("192.0.2.55") && !/Unban/i.test(communityText),
+	!communityText.includes("192.0.2.55") &&
+		(await page.getByRole("dialog").getByRole("button", { name: /Unban/i }).count()) === 0,
 	communityText,
 );
 await communityModal.getByRole("button", { name: /close/i }).first().click();
@@ -403,7 +527,7 @@ check(
 await banSearch.fill("");
 
 await page.getByRole("tab", { name: "Overview" }).click();
-await page.getByRole("button", { name: /Honeypot bans/i }).click();
+await page.getByRole("button", { name: /Honeypot decisions/i }).click();
 const anubisModal = page.getByRole("dialog");
 const anubisText = await anubisModal.innerText();
 check(
@@ -411,9 +535,97 @@ check(
 	anubisText.includes("Anubis is up") && anubisText.includes("203.0.113.9"),
 	anubisText,
 );
+check(
+	"honeypot details report bridge failures independently of reachability",
+	anubisText.includes("HTTP 403") &&
+		anubisText.includes("1 ban commands accepted, 1 failed; 12 bytes pending") &&
+		(await anubisModal.locator(".alert-warning").filter({ hasText: "Last run:" }).count()) === 1,
+	anubisText,
+);
+check(
+	"honeypot log counts explain retained scope and missing event timestamps",
+	anubisText.includes("3 entries / 2 distinct IPs") &&
+		anubisText.includes("Retained address entries have no event timestamps"),
+	anubisText,
+);
+await anubisModal.getByRole("heading", { name: "Anubis outcomes" }).waitFor();
+check(
+	"Anubis counters show absent validation metrics as unknown",
+	(await anubisModal.innerText()).includes("Failed validations") &&
+		(await anubisModal.getByText("\u2014", { exact: true }).count()) >= 1,
+);
+await anubisModal.getByLabel("Anubis reporting window").selectOption("1");
+await anubisModal.getByText("0", { exact: true }).waitFor();
+check(
+	"Anubis window changes retrieve scoped metrics",
+	(await anubisModal.getByText("0", { exact: true }).count()) === 1,
+);
+await anubisModal.locator("summary").filter({ hasText: "Host configuration" }).click();
+check(
+	"Anubis coverage shows custom-location exceptions",
+	(await anubisModal.innerText()).includes("/api: Anubis not selected"),
+);
+await anubisModal.locator("summary").filter({ hasText: "Honeypot observation" }).click();
+check(
+	"Anubis history separates observation time and accepted IPv6 bans",
+	(await anubisModal.innerText()).includes("2001:db8::1234") &&
+		(await anubisModal.innerText()).includes("Ban command accepted") &&
+		(await anubisModal.innerText()).includes("Unknown"),
+);
+await anubisModal.locator("summary").filter({ hasText: "Host configuration" }).click();
+await anubisModal.locator("summary").filter({ hasText: "Honeypot observation" }).click();
+await page.waitForFunction(() => getComputedStyle(document.querySelector('[role="dialog"]')).opacity === "1");
+await page.screenshot({ path: ".smoke/ui-security-anubis.png", animations: "disabled" });
+await page.setViewportSize({ width: 320, height: 900 });
+check("honeypot details fit a 320px viewport", await anubisModal.evaluate((el) => el.scrollWidth <= el.clientWidth));
+await page.screenshot({ path: ".smoke/ui-security-anubis-mobile.png", animations: "disabled" });
+await anubisModal.locator("summary").filter({ hasText: "Honeypot observation" }).click();
+await anubisModal.getByText("2001:db8::1234", { exact: true }).first().scrollIntoViewIfNeeded();
+check(
+	"Anubis IPv6 history stays within the mobile modal",
+	await anubisModal.evaluate((el) => el.scrollWidth <= el.clientWidth),
+);
+await page.screenshot({ path: ".smoke/ui-security-anubis-history-mobile.png", animations: "disabled" });
+await page.setViewportSize({ width: 1280, height: 900 });
+anubisReportFailure = true;
+await anubisModal.getByLabel("Anubis reporting window").selectOption("6");
+await anubisModal.getByRole("button", { name: "Retry reporting" }).waitFor();
+check(
+	"Anubis initial reporting failure offers retry",
+	(await anubisModal.innerText()).includes("Reporting unavailable"),
+);
+anubisReportFailure = false;
+await anubisModal.getByRole("button", { name: "Retry reporting" }).click();
+await anubisModal.getByRole("heading", { name: "Anubis outcomes" }).waitFor();
+check(
+	"Anubis reporting recovers after retry",
+	(await anubisModal.getByLabel("Anubis reporting window").inputValue()) === "6",
+);
+anubisReportFailure = true;
+await anubisModal.getByLabel("Anubis reporting window").selectOption("24");
+await anubisModal.getByText("Refresh failed. Displayed reporting is stale.", { exact: true }).waitFor();
+check(
+	"Anubis failed refresh identifies cached data as stale",
+	(await anubisModal.getByText("14", { exact: true }).count()) === 1,
+);
+anubisReportFailure = false;
 await anubisModal.getByRole("button", { name: /close/i }).first().click();
 
 await page.getByRole("tab", { name: "WAF" }).click();
+await page.getByLabel("Proxy host", { exact: true }).waitFor();
+const telemetryWaf = page.locator('section[aria-labelledby="telemetry-waf"]');
+check("windowed WAF reports partial coverage explicitly", (await telemetryWaf.innerText()).includes("Partial history"));
+await page.getByLabel("Proxy host", { exact: true }).selectOption("43");
+check(
+	"per-host WAF selection uses that host's counters",
+	(await telemetryWaf.getByText("0", { exact: true }).count()) >= 2,
+);
+await page.getByLabel("Proxy host", { exact: true }).selectOption("42");
+check(
+	"per-host WAF can switch back to observed traffic",
+	(await telemetryWaf.getByText("48", { exact: true }).count()) === 1,
+);
+await page.getByLabel("Proxy host", { exact: true }).selectOption("");
 const wafText = await page.locator("#crowdsec-tab-panel").innerText();
 check(
 	"WAF tab shows protection state and traffic outcomes",
@@ -442,15 +654,22 @@ appsecConfigured = true;
 await page.reload({ waitUntil: "networkidle" });
 
 await page.getByRole("tab", { name: "System" }).click();
+await page.getByText("Service active; INPUT and FORWARD drop rules present", { exact: true }).waitFor();
 const systemText = await page.locator("body").innerText();
 check(
+	"enforcement separates HTTP requests from IPv4 packets",
+	/HTTP ban actions/i.test(systemText) &&
+		/IPv4 forwarded packets dropped/i.test(systemText) &&
+		systemText.includes("Service active; INPUT and FORWARD drop rules present"),
+);
+check(
 	"technical metrics moved to the System tab",
-	/parser success/i.test(systemText) && systemText.includes("500.0 ms"),
+	/parser node evaluation success/i.test(systemText) && systemText.includes("500.0 ms"),
 	systemText.slice(0, 300),
 );
 check(
 	"whitelisted events are surfaced on the System tab",
-	/whitelisted events/i.test(systemText),
+	/whitelist node matches/i.test(systemText),
 	systemText.slice(0, 300),
 );
 check(
@@ -462,6 +681,33 @@ await page.getByRole("tab", { name: "Attack activity" }).click();
 await page.locator("#crowdsec-alert-history tbody tr").first().waitFor();
 const attackRows = await page.locator("#crowdsec-alert-history tbody tr").count();
 check("attack history lives inside the dashboard", attackRows === 1, `${attackRows} rows`);
+
+const historyPanel = page.locator("#crowdsec-alert-history");
+await page.getByRole("button", { name: "Explore older alerts", exact: true }).click();
+await historyPanel.getByText("0 matches in this batch", { exact: true }).waitFor();
+check(
+	"empty exploration batches keep older results reachable",
+	await historyPanel.getByRole("button", { name: "Next", exact: true }).isEnabled(),
+);
+await historyPanel.getByRole("button", { name: "Next", exact: true }).click();
+await historyPanel.getByText("2001:db8::1234", { exact: true }).waitFor();
+check("extended history renders IPv6 offenders", (await historyPanel.innerText()).includes("1 match in this batch"));
+await page.screenshot({ path: ".smoke/ui-security-history.png", fullPage: true });
+await page.setViewportSize({ width: 320, height: 844 });
+check(
+	"history exploration controls and IPv6 values fit 320px",
+	await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+);
+await page.screenshot({ path: ".smoke/ui-security-history-mobile.png", fullPage: true });
+await historyPanel.getByRole("button", { name: "Previous", exact: true }).click();
+await historyPanel.getByText("0 matches in this batch", { exact: true }).waitFor();
+check(
+	"history exploration can return to its previous batch",
+	await historyPanel.getByRole("button", { name: "Next", exact: true }).isEnabled(),
+);
+await page.getByRole("button", { name: "Return to recent history", exact: true }).click();
+await historyPanel.getByText("198.51.100.7", { exact: true }).waitFor();
+await page.setViewportSize({ width: 1280, height: 900 });
 
 await page.getByRole("tab", { name: "Overview" }).click();
 await page.screenshot({ path: ".smoke/ui-security-dashboard.png", fullPage: true });
@@ -511,6 +757,63 @@ check(
 await page.screenshot({ path: ".smoke/ui-security-dashboard-320.png", fullPage: true });
 
 await page.setViewportSize({ width: 1280, height: 900 });
+metricsMissing = true;
+countsTruncated = true;
+await page.reload({ waitUntil: "networkidle" });
+check(
+	"capped local counts are visibly lower bounds",
+	(await page.getByRole("button", { name: /Local active decisions/i }).innerText()).includes("500+"),
+);
+await page.getByRole("tab", { name: "WAF" }).click();
+check(
+	"missing AppSec counters do not render a fabricated zero-traffic chart",
+	(await page.getByRole("img", { name: /AppSec inspected 0 requests/i }).count()) === 0 &&
+		(await page.locator("#crowdsec-tab-panel").innerText()).includes("—"),
+);
+await page.screenshot({ path: ".smoke/ui-security-dashboard-missing-metrics.png", fullPage: true });
+metricsMissing = false;
+countsTruncated = false;
+await page.reload({ waitUntil: "networkidle" });
+metricsFailure = true;
+await page.getByRole("button", { name: "Refresh", exact: true }).click();
+await page.getByText("Displayed data stale", { exact: true }).first().waitFor({ timeout: 20000 });
+check(
+	"a failed metrics refresh marks cached WAF data stale",
+	(await page.getByText("AppSec metrics available", { exact: true }).count()) === 0,
+);
+await page.reload({ waitUntil: "networkidle" });
+await page.getByText("AppSec metrics unavailable", { exact: true }).first().waitFor({ timeout: 20000 });
+await page.getByRole("tab", { name: "WAF" }).click();
+check(
+	"an initial metrics outage renders an error instead of an endless skeleton",
+	/CrowdSec metrics are unavailable/.test(await page.locator("#crowdsec-tab-panel").innerText()),
+);
+metricsFailure = false;
+await page.reload({ waitUntil: "networkidle" });
+check(
+	"WAF state recovers when metrics return",
+	(await page.getByText("AppSec metrics available", { exact: true }).count()) >= 1,
+);
+telemetryState = "stale";
+await page.getByRole("tab", { name: "System" }).click();
+await page.getByRole("button", { name: "Refresh", exact: true }).click();
+const enforcement = page.locator('section[aria-labelledby="telemetry-enforcement"]');
+await enforcement.getByText("Not currently verified", { exact: true }).waitFor();
+check(
+	"stale firewall observations cannot claim current rule verification",
+	(await enforcement.innerText()).includes("Observation stale"),
+);
+telemetryState = "unavailable";
+await page.getByRole("button", { name: "Refresh", exact: true }).click();
+await enforcement
+	.getByText("Telemetry unavailable. Update the image and installer to enable collection.", { exact: true })
+	.first()
+	.waitFor();
+check(
+	"missing telemetry history renders unknown counts instead of zeros",
+	(await enforcement.getByText("—", { exact: true }).count()) === 4,
+);
+telemetryState = "observed";
 await page.goto("http://localhost:5173/nginx/proxy", { waitUntil: "networkidle" });
 await page.getByRole("heading", { name: "Proxy Hosts", exact: true }).waitFor();
 check("proxy-host list shows when Anubis is enabled", (await page.getByText("Anubis enabled").count()) === 1);

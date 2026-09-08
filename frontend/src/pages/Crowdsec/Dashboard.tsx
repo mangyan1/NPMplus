@@ -14,12 +14,13 @@ import AppsecSummary from "./AppsecSummary";
 import AttackHistory from "./AttackHistory";
 import AttackMix from "./AttackMix";
 import styles from "./Dashboard.module.css";
+import EnforcementTelemetry from "./EnforcementTelemetry";
 import KpiDetailsModal from "./KpiDetailsModal";
 import { OverviewSkeleton, TableSkeleton } from "./LoadingSkeleton";
 import Metric from "./Metric";
 import SystemMetrics from "./SystemMetrics";
 import type { DashboardTab, KpiKind } from "./shared";
-import { anubisServiceStatus, appsecStatus, honeypotStatus } from "./shared";
+import { anubisServiceStatus, appsecStatus, boundedCount, honeypotStatus } from "./shared";
 import WafMonitoring from "./WafMonitoring";
 
 const AttackMap = lazy(() => import("./AttackMap"));
@@ -125,6 +126,7 @@ const CrowdsecDashboard = () => {
 		await Promise.all([insights.refetch(), metrics.refetch(), anubis.refetch()]);
 		await queryClient.invalidateQueries({ queryKey: ["crowdsec-decisions"] });
 		await queryClient.invalidateQueries({ queryKey: ["crowdsec-alert-history"] });
+		await queryClient.invalidateQueries({ queryKey: ["security-telemetry"] });
 	};
 	const tabs: { id: DashboardTab; label: string }[] = [
 		{ id: "overview", label: "crowdsec.tabs.overview" },
@@ -136,18 +138,27 @@ const CrowdsecDashboard = () => {
 	const serviceStatus =
 		anubis.isError && !anubis.data
 			? { label: "crowdsec.anubis.container-down", tone: "red" as const }
-			: anubisServiceStatus(anubis.data);
+			: anubis.isRefetchError
+				? { label: "crowdsec.status.stale", tone: "orange" as const }
+				: anubisServiceStatus(anubis.data);
 	const trapStatus =
 		anubis.isError && !anubis.data
 			? { label: "crowdsec.anubis.honeypot-unavailable", tone: "red" as const }
-			: honeypotStatus(anubis.data);
+			: anubis.isRefetchError
+				? { label: "crowdsec.status.stale", tone: "orange" as const }
+				: honeypotStatus(anubis.data);
 	const crowdsecStatus =
 		insights.isError && !insights.data
 			? { label: "crowdsec.status.down", tone: "red" }
 			: insights.isRefetchError
 				? { label: "crowdsec.status.stale", tone: "orange" }
-				: { label: "crowdsec.status.up", tone: "green" };
-	const wafStatus = appsecStatus(metrics.data);
+				: !insights.data
+					? { label: "crowdsec.status.checking", tone: "orange" }
+					: { label: "crowdsec.status.up", tone: "green" };
+	const wafStatus =
+		metrics.isError && !metrics.data
+			? { label: "crowdsec.appsec.status-monitoring-unavailable", tone: "orange" as const }
+			: appsecStatus(metrics.data, metrics.isRefetchError);
 	const notificationLabel =
 		notificationPermission === "unsupported"
 			? "crowdsec.notifications.unsupported"
@@ -159,10 +170,10 @@ const CrowdsecDashboard = () => {
 	const partialRefreshFailed = insights.isRefetchError || metrics.isRefetchError || anubis.isRefetchError;
 	const secondarySourceUnavailable = (metrics.isError && !metrics.data) || (anubis.isError && !anubis.data);
 	const metricsDegraded = metrics.data && metrics.data.available === false;
-	const lastUpdatedAt = Math.max(
-		insights.data ? insights.dataUpdatedAt : 0,
-		metrics.data ? metrics.dataUpdatedAt : 0,
-		anubis.data ? anubis.dataUpdatedAt : 0,
+	const lastUpdatedAt = Math.min(
+		insights.data ? insights.dataUpdatedAt : Number.POSITIVE_INFINITY,
+		metrics.data ? metrics.dataUpdatedAt : Number.POSITIVE_INFINITY,
+		anubis.data ? anubis.dataUpdatedAt : Number.POSITIVE_INFINITY,
 	);
 	const moveTabFocus = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
 		let nextIndex: number | undefined;
@@ -201,7 +212,7 @@ const CrowdsecDashboard = () => {
 									<span className={`badge bg-${trapStatus.tone}-lt`}>
 										<T id={trapStatus.label} />
 									</span>
-									{lastUpdatedAt > 0 && (
+									{Number.isFinite(lastUpdatedAt) && lastUpdatedAt > 0 && (
 										<span className="text-secondary small">
 											<T
 												id="crowdsec.last-updated"
@@ -315,7 +326,9 @@ const CrowdsecDashboard = () => {
 					)}
 					{tab === "overview" &&
 						(!insights.data ? (
-							<OverviewSkeleton />
+							insights.isError ? null : (
+								<OverviewSkeleton />
+							)
 						) : (
 							<>
 								{insights.data.signals.some((signal) => signal.type === "attack-spike") && (
@@ -341,20 +354,20 @@ const CrowdsecDashboard = () => {
 									/>
 									<Metric
 										label={<T id="crowdsec.kpi.local" />}
-										value={
-											insights.data.localActiveDecisions ??
-											metrics.data?.localActiveDecisions ??
-											"—"
-										}
+										value={boundedCount(
+											insights.data.localActiveDecisions,
+											insights.data.localActiveDecisionsTruncated,
+										)}
 										tone="red"
 										description={
 											metrics.data?.available === false ||
-											metrics.data?.bouncerRequests === undefined ? (
+											typeof metrics.data?.bouncerRequests !== "number" ||
+											metrics.isRefetchError ? (
 												<T id="crowdsec.kpi.local-hint" />
 											) : (metrics.data.bouncerDecisionHits ?? 0) > 0 ? (
 												<T
 													id="crowdsec.kpi.bouncer-hits"
-													data={{ count: metrics.data.bouncerDecisionHits }}
+													data={{ count: metrics.data.bouncerDecisionHits ?? 0 }}
 												/>
 											) : metrics.data.bouncerRequests > 0 ? (
 												<T
@@ -374,9 +387,9 @@ const CrowdsecDashboard = () => {
 										description={
 											<T
 												id={
-													metrics.data?.communityActiveDecisions !== undefined
+													typeof metrics.data?.communityActiveDecisions === "number"
 														? "crowdsec.kpi.community-hint"
-														: metrics.data?.available === false
+														: metrics.data
 															? "crowdsec.kpi.community-metrics-degraded"
 															: "crowdsec.kpi.community-metrics-loading"
 												}
@@ -386,7 +399,10 @@ const CrowdsecDashboard = () => {
 									/>
 									<Metric
 										label={<T id="crowdsec.kpi.honeypot" />}
-										value={anubis.data?.honeypot.activeCount ?? "—"}
+										value={boundedCount(
+											anubis.data?.honeypot.activeCount,
+											anubis.data?.honeypot.truncated,
+										)}
 										tone={trapStatus.tone}
 										description={<T id={trapStatus.label} />}
 										onClick={() => setKpi("anubis")}
@@ -494,8 +510,18 @@ const CrowdsecDashboard = () => {
 						/>
 					)}
 					{tab === "bans" && <ActiveBans />}
-					{tab === "waf" && <WafMonitoring metrics={metrics} />}
-					{tab === "system" && <SystemMetrics metrics={metrics} />}
+					{tab === "waf" && (
+						<>
+							<EnforcementTelemetry windowHours={windowHours} mode="waf" />
+							<WafMonitoring metrics={metrics} />
+						</>
+					)}
+					{tab === "system" && (
+						<>
+							<EnforcementTelemetry windowHours={windowHours} mode="enforcement" />
+							<SystemMetrics metrics={metrics} />
+						</>
+					)}
 				</div>
 			</div>
 			<KpiDetailsModal

@@ -5,10 +5,11 @@ import type { AnubisStatus, CrowdsecInsights, CrowdsecInsightsItem, CrowdsecMetr
 import { Button } from "src/components";
 import { useLocaleState } from "src/context";
 import { formatDateTime, intl, T } from "src/locale";
+import AnubisMonitoring from "./AnubisMonitoring";
 import styles from "./Dashboard.module.css";
 import { midTruncate, scenarioLabel } from "./scenarios";
 import type { DashboardTab, KpiKind } from "./shared";
-import { anubisServiceStatus, honeypotStatus } from "./shared";
+import { anubisServiceStatus, boundedCount, honeypotStatus } from "./shared";
 
 const ItemList = ({
 	title,
@@ -128,11 +129,7 @@ const KpiDetailsModal = ({
 							<T id="crowdsec.kpi.local-help" />
 						</p>
 						<div className="h1">
-							{typeof (insights?.localActiveDecisions ?? metrics?.localActiveDecisions) === "number"
-								? intl.formatNumber(
-										(insights?.localActiveDecisions ?? metrics?.localActiveDecisions) as number,
-									)
-								: "—"}
+							{boundedCount(insights?.localActiveDecisions, insights?.localActiveDecisionsTruncated)}
 						</div>
 					</>
 				)}
@@ -169,9 +166,74 @@ const KpiDetailsModal = ({
 						<p className="text-secondary">
 							<T id="crowdsec.anubis.honeypot-help" />
 						</p>
+						<dl className="row small">
+							<dt className="col-sm-5">
+								<T id="crowdsec.anubis.observed" />
+							</dt>
+							<dd className="col-sm-7">
+								{anubis?.checkedAt ? formatDateTime(anubis.checkedAt, locale) : "—"}
+								{anubis?.container.httpStatus && ` (HTTP ${anubis.container.httpStatus})`}
+							</dd>
+							<dt className="col-sm-5">
+								<T id="crowdsec.anubis.log-modified" />
+							</dt>
+							<dd className="col-sm-7">
+								{anubis?.log ? formatDateTime(anubis.log.modifiedAt, locale) : "—"}
+							</dd>
+							<dt className="col-sm-5">
+								<T id="crowdsec.anubis.retained" />
+							</dt>
+							<dd className="col-sm-7">
+								{anubis?.log ? (
+									<T
+										id="crowdsec.anubis.retained-count"
+										data={{ entries: anubis.log.entries, ips: anubis.log.uniqueIps }}
+									/>
+								) : (
+									"—"
+								)}
+							</dd>
+							<dt className="col-sm-5">
+								<T id="crowdsec.anubis.bridge" />
+							</dt>
+							<dd className="col-sm-7">
+								<T id={`crowdsec.anubis.bridge-${anubis?.bridge?.status ?? "unavailable"}`} />
+								{anubis?.bridge?.checkedAt && ` (${formatDateTime(anubis.bridge.checkedAt, locale)})`}
+							</dd>
+						</dl>
+						{anubis?.log?.truncated && (
+							<p className="small text-secondary">
+								<T id="crowdsec.anubis.log-truncated" />
+							</p>
+						)}
+						{anubis?.bridge?.checkedAt && (
+							<Alert
+								variant={["failed", "stale"].includes(anubis.bridge.status) ? "warning" : "secondary"}
+							>
+								<T
+									id="crowdsec.anubis.bridge-counts"
+									data={{
+										applied: anubis.bridge.applied ?? 0,
+										failed: anubis.bridge.failed ?? 0,
+										pending: anubis.bridge.pendingBytes ?? 0,
+									}}
+								/>
+							</Alert>
+						)}
+						<Alert variant="info">
+							<T id="crowdsec.anubis.reporting-scope" />
+						</Alert>
+						<AnubisMonitoring />
 						{typeof anubis?.honeypot.activeCount === "number" ? (
 							<div className="h2">
-								<T id="crowdsec.anubis.active" data={{ count: anubis.honeypot.activeCount }} />
+								<T
+									id={
+										anubis.honeypot.truncated
+											? "crowdsec.anubis.active-at-least"
+											: "crowdsec.anubis.active"
+									}
+									data={{ count: anubis.honeypot.activeCount }}
+								/>
 							</div>
 						) : (
 							<Alert variant="warning">
@@ -181,6 +243,11 @@ const KpiDetailsModal = ({
 						<h4>
 							<T id="crowdsec.anubis.bans" />
 						</h4>
+						{(anubis?.honeypot.itemsTruncated || anubis?.honeypot.truncated) && (
+							<p className="text-secondary">
+								<T id="crowdsec.anubis.items-limited" data={{ count: anubis.honeypot.items.length }} />
+							</p>
+						)}
 						{anubis?.honeypot.items.length ? (
 							<div className="table-responsive">
 								<table className="table table-sm align-middle mb-0">
@@ -212,7 +279,13 @@ const KpiDetailsModal = ({
 							</div>
 						) : (
 							<div className="text-secondary">
-								<T id="crowdsec.anubis.empty" />
+								<T
+									id={
+										anubis?.honeypot.decisionsAvailable === false
+											? "crowdsec.anubis.decisions-unavailable"
+											: "crowdsec.anubis.empty"
+									}
+								/>
 							</div>
 						)}
 						<h4 className="mt-4">
@@ -220,8 +293,8 @@ const KpiDetailsModal = ({
 						</h4>
 						{anubis?.recent.length ? (
 							<div>
-								{anubis.recent.map((ip) => (
-									<span key={ip} className="badge bg-secondary-lt me-1 mb-1">
+								{anubis.recent.map((ip, index) => (
+									<span key={`${ip}-${index}`} className="badge bg-secondary-lt me-1 mb-1">
 										{ip}
 									</span>
 								))}

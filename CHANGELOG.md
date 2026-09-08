@@ -4,7 +4,23 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- Added Anubis challenge outcomes for 1h/6h/24h/7d, paginated host/location configuration coverage, and a retained observation/ban-attempt ledger with IPv6 support and current-ban correlation. Installer v1.58 collects metrics without publishing port 9090 and journals bridge results. See [Anubis reporting definitions and limits](docs/anubis-reporting.md).
+- Added Anubis status timestamps, HTTP response evidence, retained honeypot log counts, and the ban bridge's last-run status, accepted/failed commands, and pending bytes. The modal distinguishes log entries from timed catches and command acceptance from traffic enforcement. See [the Anubis reporting and nginx review](docs/anubis-nginx-review-2026-09-08.md).
+- Added **Explore older alerts** to Attack activity: bounded cursor batches can browse beyond the recent-history sample, with per-batch counts, empty-batch navigation, signed expiring cursors, and explicit stops at dense timestamp or session limits. Overview sampling is unchanged. Added IPv6 search/display coverage and a real nginx test proving an IPv6 visitor decision can block a request carried over IPv4 from a trusted proxy. See [extended history and IPv6 guidance](docs/security-history.md).
+- Added windowed WAF reporting by proxy host and timestamped enforcement observations to the CrowdSec WAF and System tabs. nginx ban/challenge actions and IPv4 firewall drop counters remain separate, with explicit stale, incomplete, and unavailable states.
+- Installer v1.56 supplies a read-only host firewall observer. The image exports bounded nginx counters through a private Unix socket; the backend retains five-minute deltas for seven days in the existing application database. See [telemetry definitions, deployment requirements, and limits](docs/security-telemetry.md). These changes require both the updated image and installer and are not included in RC5.
+
+### Fixed
+
+- Honeypot bridge prefix fingerprints detect log resets that regrow beyond the previous cursor; failed entries remain pending. Reporting keeps missing metrics, stale observations, and current-ban lookup failures distinct from zero activity.
+- Installer v1.57 preserves pending honeypot entries after a CrowdSec ban-command failure, prevents overlapping bridge runs, and publishes an atomic status file through the existing read-only log mount. Incomplete log lines remain pending. Anubis reachability now uses HTTP response headers, so an oversized challenge body cannot cause a false outage.
+- Setup script v1.55 checks the public TCP listener separately from the admin health API, so a supported default 404/444 policy no longer blocks protected startup, safe updates, or restore.
+- Restore shares the maintenance lock, stops writers before saving SQLite files and sidecars, includes access credentials and custom HTML, and recovers the saved state on failure. Backups support installations without CrowdSec and fail when the consistent NPMplus database copy fails.
+- Backend API, DNS-certificate, and smoke tests use isolated temporary databases and files. Concurrent MFA recovery-code submissions can consume a code only once.
+- CrowdSec pagination reports complete bounded match totals and safe page limits. Dashboard reporting distinguishes exact, capped, unavailable, and stale data; aligns rolling activity with LAPI alert start times; separates parser events from node evaluations; and describes WAF rule triggers and bouncer API reads accurately.
+- Added restore-failure and reporting regression coverage. See [the codebase review and dashboard reporting audit](docs/codebase-review-2026-09-08.md) for findings, metric definitions, validation, and follow-up recommendations.
 
 ## v2.15.1-mangyan1.rc.5 - 2026-09-07
 

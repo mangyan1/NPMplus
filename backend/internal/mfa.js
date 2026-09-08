@@ -142,7 +142,18 @@ const internalMfa = {
 		}
 
 		if (tokenTrim.length === 8) {
-			const auth = await authModel.getPasswordAuth(userId);
+			// Compare the exact database representation on update. This is an
+			// optimistic lock over all MFA metadata, including concurrent resets
+			// and regeneration, without holding a DB lock during bcrypt work.
+			const client = authModel.knex().client.config.client;
+			const cast = client === "mysql2" ? "CAST(?? AS CHAR)" : "CAST(?? AS TEXT)";
+			const auth = await authModel
+				.query()
+				.select("*")
+				.select(authModel.knex().raw(`${cast} AS meta_snapshot`, ["meta"]))
+				.where("user_id", userId)
+				.andWhere("type", "password")
+				.first();
 			const backupCodes = auth?.meta?.backup_codes || [];
 			for (let i = 0; i < backupCodes.length; i++) {
 				const match = await bcrypt.compare(tokenTrim.toUpperCase(), backupCodes[i]);
@@ -151,13 +162,14 @@ const internalMfa = {
 					const updatedCodes = [...backupCodes];
 					updatedCodes.splice(i, 1);
 					const meta = { ...auth.meta, backup_codes: updatedCodes };
-					await authModel
+					const consumed = await authModel
 						.query()
 						.where("id", auth.id)
 						.andWhere("user_id", userId)
 						.andWhere("type", "password")
+						.whereRaw(`${cast} = ?`, ["meta", auth.meta_snapshot])
 						.patch({ meta });
-					return true;
+					return consumed === 1;
 				}
 			}
 		}

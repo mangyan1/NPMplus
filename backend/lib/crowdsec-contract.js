@@ -147,8 +147,8 @@ const normalizeCrowdsecAlerts = (payload) => {
 				as_name: optionalString(alert.source?.as_name),
 				range: optionalString(alert.source?.range),
 				rdns: optionalString(alert.source?.rdns),
-				latitude: optionalFiniteNumber(alert.source?.latitude),
-				longitude: optionalFiniteNumber(alert.source?.longitude),
+				latitude: coordinate(alert.source?.latitude, 90),
+				longitude: coordinate(alert.source?.longitude, 180),
 			},
 			events,
 		};
@@ -156,9 +156,10 @@ const normalizeCrowdsecAlerts = (payload) => {
 };
 
 const crowdsecAlertTarget = (alert) => {
-	for (const event of alert.events ?? []) {
-		for (const item of event.meta ?? []) {
-			if (["target_host", "target_fqdn", "target_uri"].includes(item.key) && item.value) return item.value;
+	for (const key of ["target_host", "target_fqdn", "target_uri"]) {
+		for (const event of alert.events ?? []) {
+			const item = event.meta?.find((item) => item.key === key && item.value);
+			if (item) return item.value;
 		}
 	}
 	return "";
@@ -191,6 +192,7 @@ const filterCrowdsecAlerts = (alerts, { search = "", scenario = "", country = ""
 			alert.source.value,
 			alert.source.country,
 			alert.source.as_name,
+			alert.source.as_number,
 			alert.source.rdns,
 			alert.machine_id,
 			alertTarget,
@@ -201,7 +203,7 @@ const filterCrowdsecAlerts = (alerts, { search = "", scenario = "", country = ""
 				country: alert.source.country,
 				ip: alert.source.ip || alert.source.value,
 				target: alertTarget,
-				asn: alert.source.as_name || alert.source.as_number,
+				asn: `${alert.source.as_name} ${alert.source.as_number}`,
 				machine: alert.machine_id,
 			}[field];
 			if (!optionalString(value).toLocaleLowerCase().includes(needle)) return false;
@@ -238,15 +240,18 @@ const parsePrometheusText = (text) => {
 const summarizeCrowdsecMetrics = (samples) => {
 	const sum = (name) =>
 		samples.filter((sample) => sample.name === name).reduce((total, sample) => total + sample.value, 0);
-	const ratio = (numerator, denominator) => (denominator > 0 ? numerator / denominator : null);
-	// CrowdSec 1.8 renamed the parser counters cs_parser_hits_* to
-	// cs_node_hits_*; prefer the new names and fall back to the old ones
-	const parserHits = sum("cs_node_hits_total") || sum("cs_parser_hits_total");
-	const parserOk = sum("cs_node_hits_ok_total") || sum("cs_parser_hits_ok_total");
+	const has = (name) => samples.some((sample) => sample.name === name);
+	const optionalSum = (name) => (has(name) ? sum(name) : null);
+	const ratio = (numerator, denominator) => (numerator !== null && denominator > 0 ? numerator / denominator : null);
+	// Parser counters count source events; node counters count parser-node
+	// evaluations and may count one event multiple times. Never mix families.
+	const parserPrefix = has("cs_parser_hits_total") ? "cs_parser" : "cs_node";
+	const parserHits = optionalSum(`${parserPrefix}_hits_total`);
+	const parserOk = optionalSum(`${parserPrefix}_hits_ok_total`);
 	const lapiCount = sum("cs_lapi_request_duration_seconds_count");
 	const parsingCount = sum("cs_parsing_time_seconds_count");
-	const appsecRequests = sum("cs_appsec_reqs_total");
-	const appsecBlocked = sum("cs_appsec_block_total");
+	const appsecRequests = optionalSum("cs_appsec_reqs_total");
+	const appsecBlocked = appsecRequests === null ? null : sum("cs_appsec_block_total");
 	const activeDecisionSamples = samples.filter((sample) => sample.name === "cs_active_decisions");
 	const hasDecisionOriginLabels = activeDecisionSamples.some((sample) => optionalString(sample.labels?.origin));
 	const decisionOriginCounts = new Map();
@@ -260,26 +265,29 @@ const summarizeCrowdsecMetrics = (samples) => {
 			.reduce((total, [, value]) => total + value, 0);
 
 	return {
-		active_decisions: activeDecisionSamples.reduce((total, sample) => total + sample.value, 0),
+		active_decisions: activeDecisionSamples.length
+			? activeDecisionSamples.reduce((total, sample) => total + sample.value, 0)
+			: null,
 		local_active_decisions: hasDecisionOriginLabels ? countOrigins(LOCAL_DECISION_ORIGINS) : null,
 		community_active_decisions: hasDecisionOriginLabels ? countOrigins(COMMUNITY_DECISION_ORIGINS) : null,
 		decision_origins: [...decisionOriginCounts.entries()]
 			.map(([name, count]) => ({ name, count }))
 			.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
-		alerts: sum("cs_alerts"),
-		appsec_metrics_present: samples.some((sample) => sample.name.startsWith("cs_appsec_")),
+		alerts: optionalSum("cs_alerts"),
+		appsec_metrics_present: appsecRequests !== null,
 		appsec_requests: appsecRequests,
 		appsec_blocked: appsecBlocked,
-		appsec_passed: Math.max(0, appsecRequests - appsecBlocked),
+		appsec_passed: appsecRequests === null ? null : Math.max(0, appsecRequests - appsecBlocked),
 		appsec_block_rate: ratio(appsecBlocked, appsecRequests),
-		bouncer_requests: sum("cs_lapi_bouncer_requests_total"),
-		// non-empty answers LAPI served to bouncers: the direct proof that
-		// decisions are actually reaching the reverse proxy for enforcement
-		bouncer_decision_hits: sum("cs_lapi_decisions_ok_total"),
-		machine_requests: sum("cs_lapi_machine_requests_total"),
+		bouncer_requests: optionalSum("cs_lapi_bouncer_requests_total"),
+		// Non-empty LAPI replies, including UI bouncer reads. This is neither
+		// blocked traffic nor proof of current proxy/firewall enforcement.
+		bouncer_decision_hits: optionalSum("cs_lapi_decisions_ok_total"),
+		machine_requests: optionalSum("cs_lapi_machine_requests_total"),
 		parser_hits: parserHits,
+		parser_metric_scope: parserPrefix === "cs_parser" ? "events" : "nodes",
 		parser_success_rate: ratio(parserOk, parserHits),
-		whitelist_hits: sum("cs_node_wl_hits_ok_total") || sum("cs_node_wl_hits_total"),
+		whitelist_hits: optionalSum("cs_node_wl_hits_ok_total"),
 		average_lapi_ms: ratio(sum("cs_lapi_request_duration_seconds_sum") * 1000, lapiCount),
 		average_parsing_ms: ratio(sum("cs_parsing_time_seconds_sum") * 1000, parsingCount),
 	};
@@ -292,9 +300,14 @@ const hasCrowdsecAdminAccess = (permission) => Boolean(permission);
 // so the dashboard keeps them out of attack counts and rankings
 const BLOCKLIST_SYNC_SCENARIO_RE = /^update : \+\d+\/-\d+ IPs$/;
 const isBlocklistSyncAlert = (alert) => BLOCKLIST_SYNC_SCENARIO_RE.test(alert?.scenario ?? "");
+const isAttackAlert = (alert) => !alert.simulated && !isBlocklistSyncAlert(alert) && alert.scenario !== "manual/web-ui";
+const coordinate = (value, limit) => {
+	const number = optionalFiniteNumber(value);
+	return number !== null && Math.abs(number) <= limit ? number : null;
+};
 
 // per-rule AppSec trigger counts, aggregated across labels and ranked;
-// feeds the WAF tab's "what actually got blocked" breakdown
+// Feeds the WAF tab's triggered-rule breakdown, including out-of-band rules.
 const summarizeAppsecRules = (samples, limit = 10) => {
 	const counts = new Map();
 	for (const sample of samples) {
@@ -313,6 +326,7 @@ export {
 	crowdsecAlertTarget,
 	filterCrowdsecAlerts,
 	hasCrowdsecAdminAccess,
+	isAttackAlert,
 	isBlocklistSyncAlert,
 	normalizeCrowdsecAlerts,
 	normalizeCrowdsecDecisions,

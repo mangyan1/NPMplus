@@ -2,7 +2,9 @@
 // fetches, and the local config/log readers the dashboard routes build on.
 // Routes own presentation; this module owns every outbound CrowdSec call.
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
+import { isIP } from "node:net";
+import nodePath from "node:path";
 import process from "node:process";
 import { fetchWithTimeout, readBoundedJson } from "../lib/bounded-fetch.js";
 import { debug, express as logger } from "../logger.js";
@@ -23,7 +25,6 @@ export const LAPI_USER_AGENT = `npmplus-ui-backend/${PACKAGE.version}`;
 const configuredTimeout = Number.parseInt(process.env.CROWDSEC_LAPI_TIMEOUT_MS || "5000", 10);
 const LAPI_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 5000;
 const LAPI_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-const HONEYPOT_IP_PATTERN = /^[0-9a-fA-F.:]+$/;
 const HONEYPOT_LOG_PATH = process.env.ANUBIS_HONEYPOT_LOG_FILE || "/data/anubis/honeypot.addrs";
 const HONEYPOT_LOG_MAX_BYTES = 256 * 1024;
 
@@ -74,22 +75,68 @@ export const readAppsecConfiguration = async () => {
 // newest-last per the writer (anubis appends), capped at the configured size
 export const readRecentHoneypotIps = async () => {
 	let content;
+	let log;
 	try {
-		content = await readFile(HONEYPOT_LOG_PATH, "utf8");
+		const file = await open(HONEYPOT_LOG_PATH, "r");
+		try {
+			const { size, mtime } = await file.stat();
+			log = { modifiedAt: mtime.toISOString(), sizeBytes: size, truncated: size > HONEYPOT_LOG_MAX_BYTES };
+			const start = Math.max(0, size - HONEYPOT_LOG_MAX_BYTES);
+			const buffer = Buffer.alloc(Math.min(size, HONEYPOT_LOG_MAX_BYTES));
+			const { bytesRead } = await file.read(buffer, 0, buffer.length, start);
+			content = buffer.toString("utf8", 0, bytesRead);
+			// The bounded tail may start halfway through an address.
+			if (start > 0) content = content.includes("\n") ? content.slice(content.indexOf("\n") + 1) : "";
+			// Do not display a still-being-written address as a completed catch.
+			content = content.slice(0, content.lastIndexOf("\n") + 1);
+		} finally {
+			await file.close();
+		}
 	} catch (err) {
 		if (err?.code === "ENOENT") return { status: "waiting", items: [] };
 		debug(logger, `Anubis honeypot log is unreadable: ${err}`);
 		return { status: "unavailable", items: [] };
 	}
-	if (content.length > HONEYPOT_LOG_MAX_BYTES) {
-		content = content.slice(-HONEYPOT_LOG_MAX_BYTES);
-	}
 	const items = content
 		.split("\n")
 		.map((line) => line.trim())
 		.filter((line) => line.length > 0 && line.length <= 45)
-		.filter((line) => HONEYPOT_IP_PATTERN.test(line));
-	return { status: "ready", items };
+		.filter((line) => isIP(line) !== 0);
+	return { status: "ready", items, log: { ...log, entries: items.length, uniqueIps: new Set(items).size } };
+};
+
+export const readHoneypotBridge = async () => {
+	try {
+		const file = await open(nodePath.join(nodePath.dirname(HONEYPOT_LOG_PATH), "honeypot-bridge.json"), "r");
+		let value;
+		try {
+			const buffer = Buffer.alloc(4097);
+			const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+			if (bytesRead > 4096) throw new Error("Bridge status too large");
+			value = JSON.parse(buffer.toString("utf8", 0, bytesRead));
+		} finally {
+			await file.close();
+		}
+		const counters = ["applied", "failed", "invalid", "pending_bytes"];
+		if (
+			!Number.isSafeInteger(value.checked_at) ||
+			value.checked_at < 0 ||
+			!["waiting", "idle", "applied", "failed"].includes(value.status) ||
+			counters.some((key) => !Number.isSafeInteger(value[key]) || value[key] < 0)
+		)
+			throw new Error("Invalid bridge status");
+		const age = Date.now() - value.checked_at;
+		return {
+			status: age > 450_000 || age < -5000 ? "stale" : value.status,
+			checkedAt: new Date(value.checked_at).toISOString(),
+			applied: value.applied,
+			failed: value.failed,
+			invalid: value.invalid,
+			pendingBytes: value.pending_bytes,
+		};
+	} catch {
+		return { status: "unavailable", checkedAt: null };
+	}
 };
 
 export const lapiFetch = async (path) => {

@@ -1,6 +1,7 @@
 lua_shared_dict crowdsec_cache 50m;
 init_by_lua_block {
         cs = require "crowdsec"
+        require("npmplus_telemetry").install(cs)
         local ok, err = cs.init("/data/crowdsec/crowdsec.conf", "crowdsec-npmplus-bouncer/v1.2.2+placeholder")
         if ok == nil then
                 ngx.log(ngx.ERR, "[Crowdsec] " .. err)

@@ -4,6 +4,7 @@ import app from "./app.js";
 import internalCertificate from "./internal/certificate.js";
 import internalIpRanges from "./internal/ip_ranges.js";
 import internalNginx from "./internal/nginx.js";
+import { startTelemetry } from "./internal/security-telemetry.js";
 import { global as logger } from "./logger.js";
 import { migrateUp } from "./migrate.js";
 import { getCompiledSchema } from "./schema/index.js";
@@ -26,6 +27,7 @@ async function appStart() {
 
 		const server = app.listen("/run/npmplus.sock", () => {
 			logger.info(`Backend PID ${process.pid} listening on unix socket...`);
+			startTelemetry();
 			if (process.env.TRUST_CLOUDFLARE === "true") {
 				internalIpRanges.initTimer();
 				void internalIpRanges.fetch();

@@ -1,11 +1,13 @@
 // smoke harness: real crowdsec router + real sqlite + fake LAPI (in-process).
 // auth is stubbed only via res.locals.access when the x-smoke-admin header is
 // present, so the unauthenticated and bad-cookie paths both stay real.
+
 import { createHmac } from "node:crypto";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { cleanup, isolatedPath } from "../test/helpers/environment.js";
 
 const SMOKEDIR = path.dirname(fileURLToPath(import.meta.url));
 const KEY_FILE = path.join(SMOKEDIR, "lapi-ui.key");
@@ -20,7 +22,17 @@ process.env.CROWDSEC_LAPI_MACHINE_KEY_FILE = MACHINE_FILE;
 process.env.CROWDSEC_BOUNCER_CONFIG_FILE = BOUNCER_CONFIG_FILE;
 process.env.AUTH_REQUEST_ANUBIS_UPSTREAM = "http://127.0.0.1:18081";
 process.env.CROWDSEC_LAPI_TIMEOUT_MS = "2000";
-process.env.ANUBIS_HONEYPOT_LOG_FILE = `${SMOKEDIR}/honeypot.addrs`;
+process.env.ANUBIS_HONEYPOT_LOG_FILE = isolatedPath("/data/anubis/honeypot.addrs");
+await mkdir("/data/anubis", { recursive: true });
+// Anubis writes complete newline-terminated batches; keep runtime state isolated.
+await writeFile(
+	process.env.ANUBIS_HONEYPOT_LOG_FILE,
+	`${(await readFile(`${SMOKEDIR}/honeypot.addrs`, "utf8")).trimEnd()}\n`,
+);
+await writeFile(
+	"/data/anubis/honeypot-bridge.json",
+	JSON.stringify({ checked_at: Date.now(), status: "failed", applied: 1, failed: 1, invalid: 0, pending_bytes: 12 }),
+);
 
 // env must be set before the router (and the fake lapi) read anything at import time
 await writeFile(KEY_FILE, "smoke-bouncer-key-1234567890abcdef");
@@ -38,6 +50,13 @@ const express = (await import("express")).default;
 const cookieParser = (await import("cookie-parser")).default;
 const crowdsecRouter = (await import("../routes/crowdsec.js")).default;
 const Database = (await import("better-sqlite3")).default;
+await (await import("../migrate.js")).migrateUp();
+const reporting = await import("../internal/anubis-reporting.js");
+await reporting.recordAddresses("", Date.now() - 120_000);
+await reporting.recordAddresses("203.0.113.9\n2001:db8::1\n", Date.now() - 60_000);
+await (await import("../models/user.js")).default
+	.query()
+	.insert({ email: "smoke@example.com", name: "Smoke", nickname: "smoke", avatar: "", roles: ["admin"] });
 
 const app = express();
 app.use(express.json());
@@ -146,7 +165,7 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 	check("invalid target never reached the lapi", (await lapiLog()).length === logBefore);
 
 	// 5. unban: machine login + lapi delete + audit row
-	const db = new Database("D:/data/npmplus/database.sqlite", { readonly: true });
+	const db = new Database(isolatedPath("/data/npmplus/database.sqlite"), { readonly: true });
 	const auditBefore = db.prepare("select count(*) n from audit_log").get().n;
 	const unban = await fetch(`${base}/decisions/delete`, {
 		method: "POST",
@@ -244,7 +263,30 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 		(anubisBody.recent ?? []).length === 3 && anubisBody.recent[0] === "203.0.113.99",
 		JSON.stringify(anubisBody.recent),
 	);
+	check(
+		"anubis reports retained log scope",
+		anubisBody.log.entries === 3 && anubisBody.log.uniqueIps === 3 && !anubisBody.log.truncated,
+		JSON.stringify(anubisBody.log),
+	);
+	check(
+		"anubis exposes failed bridge evidence independently of service reachability",
+		anubisBody.bridge.status === "failed" && anubisBody.bridge.pendingBytes === 12 && anubisBody.container.up,
+		JSON.stringify(anubisBody.bridge),
+	);
+	const report = await (await fetch(`${base}/anubis-report?window=1`, { headers: admin })).json();
+	check(
+		"Anubis history correlates current bans without claiming IPv6 is banned",
+		report.ledger.items.some((item) => item.ip === "203.0.113.9" && item.activeBan === true) &&
+			report.ledger.items.some((item) => item.ip === "2001:db8::1" && item.activeBan === false),
+		JSON.stringify(report.ledger),
+	);
+	check("Anubis reporting retains its anonymous admin gate", (await fetch(`${base}/anubis-report`)).status === 403);
 	await rm(KEY_FILE);
+	const missingReport = await (await fetch(`${base}/anubis-report?window=1`, { headers: admin })).json();
+	check(
+		"Anubis history retains observations but marks current bans unknown on LAPI failure",
+		missingReport.ledger.items.length === 2 && missingReport.ledger.items.every((item) => item.activeBan === null),
+	);
 	const anubisWithoutLapi = await fetch(`${base}/anubis`, { headers: admin });
 	const anubisWithoutLapiBody = await anubisWithoutLapi.json();
 	check(
@@ -439,6 +481,7 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 	fakeAnubis.setAnswering(true);
 
 	db.close();
+	await cleanup();
 	await (await import("./fake-anubis.mjs")).stop();
 	await (await import("./fake-metrics.mjs")).stop();
 	console.log(failures === 0 ? "ALL BACKEND SMOKE CHECKS PASSED" : `${failures} FAILURES`);

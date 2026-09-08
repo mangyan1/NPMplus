@@ -3,6 +3,9 @@ import type { AnubisStatus, CrowdsecMetrics } from "src/api/backend";
 export type DashboardTab = "overview" | "activity" | "bans" | "waf" | "system";
 export type KpiKind = "attacks" | "local" | "community" | "anubis";
 
+export const boundedCount = (value?: number | null, truncated = false) =>
+	typeof value !== "number" ? "—" : truncated ? `${value}+` : value;
+
 export interface StatusPresentation {
 	label: string;
 	tone: "green" | "orange" | "red" | "secondary";
@@ -26,12 +29,21 @@ export const honeypotStatus = (anubis?: AnubisStatus): StatusPresentation => {
 	return { label: "crowdsec.anubis.honeypot-ready", tone: "green" };
 };
 
-export const appsecStatus = (metrics?: CrowdsecMetrics): StatusPresentation => {
+export const appsecStatus = (metrics?: CrowdsecMetrics, stale = false): StatusPresentation => {
 	if (!metrics) return { label: "crowdsec.appsec.status-checking", tone: "orange" };
+	if (stale) return { label: "crowdsec.status.stale", tone: "orange" };
+	if (!metrics.available) return { label: "crowdsec.appsec.status-monitoring-unavailable", tone: "orange" };
 	if (metrics.appsecConfigured === false) return { label: "crowdsec.appsec.status-disabled", tone: "secondary" };
-	if (metrics.appsecConfigured === true && !metrics.available)
-		return { label: "crowdsec.appsec.status-monitoring-unavailable", tone: "orange" };
 	if (metrics.appsecMetricsPresent) return { label: "crowdsec.appsec.status-active", tone: "green" };
 	if (metrics.appsecConfigured === true) return { label: "crowdsec.appsec.status-ready", tone: "orange" };
 	return { label: "crowdsec.appsec.status-unknown", tone: "secondary" };
 };
+
+export const appsecTrafficAvailable = (metrics?: CrowdsecMetrics) =>
+	Boolean(
+		metrics?.available &&
+			metrics.appsecMetricsPresent &&
+			typeof metrics.appsecRequests === "number" &&
+			typeof metrics.appsecBlocked === "number" &&
+			typeof metrics.appsecPassed === "number",
+	);

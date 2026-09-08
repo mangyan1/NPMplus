@@ -4,6 +4,7 @@
 // certbot invocation, the plugin install, the credentials-file
 // handling, or the failure cleanup, these tests must go red BEFORE
 // a DNS-01 certificate can break for real.
+import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { test } from "node:test";

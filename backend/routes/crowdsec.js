@@ -1,5 +1,6 @@
 import process from "node:process";
 import express from "express";
+import { canonicalIp, readReport } from "../internal/anubis-reporting.js";
 import internalAuditLog from "../internal/audit-log.js";
 import {
 	fetchCrowdsec,
@@ -9,15 +10,18 @@ import {
 	publicError,
 	readAppsecConfiguration,
 	readCrowdsecJson,
+	readHoneypotBridge,
 	readRecentHoneypotIps,
 } from "../internal/crowdsec.js";
+import { scanAlertHistory } from "../internal/crowdsec-history.js";
 import { getHomeLocation } from "../internal/home-location.js";
+import { readTelemetry } from "../internal/security-telemetry.js";
 import { fetchWithTimeout, readBoundedText } from "../lib/bounded-fetch.js";
 import {
 	crowdsecAlertTarget,
 	filterCrowdsecAlerts,
 	hasCrowdsecAdminAccess,
-	isBlocklistSyncAlert,
+	isAttackAlert,
 	normalizeCrowdsecAlerts,
 	normalizeCrowdsecDecisions,
 	parseCrowdsecDecisionId,
@@ -30,6 +34,41 @@ import jwtdecode from "../lib/express/jwt-decode.js";
 import { debug, express as logger } from "../logger.js";
 
 const router = express.Router({ caseSensitive: true, strict: true, mergeParams: true });
+
+router
+	.route("/anubis-report")
+	.options((_, res) => res.sendStatus(204))
+	.all(jwtdecode())
+	.get(async (req, res) => {
+		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
+		const hours = queryInteger(req.query.window, 24, 1, 168);
+		const [report, payload] = await Promise.all([
+			readReport(
+				INSIGHTS_WINDOW_OPTIONS.has(hours) ? hours : 24,
+				queryInteger(req.query.page, 1, 1, 800),
+				queryInteger(req.query.host_page, 1, 1, 10000),
+			),
+			lapiFetch(
+				`/v1/decisions?scenarios_containing=${HONEYPOT_SCENARIO}&origins=${LOCAL_DECISION_ORIGINS.join(",")}&limit=501`,
+			).catch(() => null),
+		]);
+		const decisions = payload ? normalizeCrowdsecDecisions(payload) : null;
+		const active = new Set(
+			decisions
+				?.slice(0, 500)
+				.filter(
+					(item) =>
+						item.scenario === HONEYPOT_SCENARIO &&
+						!item.simulated &&
+						item.type === "ban" &&
+						item.scope.toLowerCase() === "ip",
+				)
+				.map((item) => canonicalIp(item.value)),
+		);
+		for (const item of report.ledger.items)
+			item.activeBan = active.has(item.ip) ? true : decisions && decisions.length <= 500 ? false : null;
+		return res.status(200).send(report);
+	});
 
 const LAPI_DECISION_LIMIT = 200;
 const LAPI_PAGE_MAX_ITEMS = 500;
@@ -79,7 +118,6 @@ const CROWDSEC_METRICS_URL = (() => {
 })();
 const ANUBIS_UPSTREAM = process.env.AUTH_REQUEST_ANUBIS_UPSTREAM || "";
 const ANUBIS_TIMEOUT_MS = 3000;
-const ANUBIS_MAX_RESPONSE_BYTES = 64 * 1024;
 const HONEYPOT_SCENARIO = "anubis-honeypot";
 
 const requireAdmin = async (res) => {
@@ -108,35 +146,35 @@ const readAlertsSample = async (windowHours, limit) => {
 		with_decisions: "false",
 	});
 	try {
-		return await lapiMachineFetch(`/v1/alerts?${params}`, "GET", true, {
+		const items = await lapiMachineFetch(`/v1/alerts?${params}`, "GET", true, {
 			readJson: (response) => readCrowdsecJson(response, HISTORY_MAX_RESPONSE_BYTES),
 		});
+		return { items, fallback: false };
 	} catch (err) {
 		if (err?.message !== "crowdsec.invalid-response" || limit <= INSIGHTS_FALLBACK_ALERT_LIMIT) throw err;
 		params.set("limit", String(INSIGHTS_FALLBACK_ALERT_LIMIT));
-		return lapiMachineFetch(`/v1/alerts?${params}`, "GET", true, {
+		const items = await lapiMachineFetch(`/v1/alerts?${params}`, "GET", true, {
 			readJson: (response) => readCrowdsecJson(response, INSIGHTS_FALLBACK_MAX_RESPONSE_BYTES),
 		});
+		return { items, fallback: true };
 	}
 };
 
-const alertTime = (alert) => alert.created_at || alert.start_at || alert.stop_at;
+// LAPI's since filter uses StartedAt, so charts and history use that same clock.
+const alertTime = (alert) => alert.start_at || alert.created_at || alert.stop_at;
 
-const activityBuckets = (alerts, windowHours) => {
+const activityBuckets = (alerts, windowHours, now = Date.now()) => {
 	const bucketHours = windowHours <= 24 ? 1 : 24;
 	const bucketCount = Math.ceil(windowHours / bucketHours);
-	const end = new Date();
-	end.setMinutes(0, 0, 0);
-	if (bucketHours === 24) end.setHours(0);
-	const startMs = end.getTime() - (bucketCount - 1) * bucketHours * 60 * 60 * 1000;
+	const startMs = now - windowHours * 60 * 60 * 1000;
 	const buckets = Array.from({ length: bucketCount }, (_, index) => ({
 		start: new Date(startMs + index * bucketHours * 60 * 60 * 1000).toISOString(),
 		count: 0,
 	}));
 	for (const alert of alerts) {
 		const timestamp = Date.parse(alertTime(alert));
-		if (!Number.isFinite(timestamp)) continue;
-		const index = Math.floor((timestamp - startMs) / (bucketHours * 60 * 60 * 1000));
+		if (!Number.isFinite(timestamp) || timestamp > now) continue;
+		const index = Math.min(buckets.length - 1, Math.floor((timestamp - startMs) / (bucketHours * 60 * 60 * 1000)));
 		if (index >= 0 && index < buckets.length) buckets[index].count += 1;
 	}
 	return buckets;
@@ -160,6 +198,7 @@ router
 		}
 
 		const response = {
+			checkedAt: new Date().toISOString(),
 			configured: Boolean(ANUBIS_UPSTREAM),
 			honeypot: {
 				status: ANUBIS_UPSTREAM ? "waiting" : "disabled",
@@ -177,13 +216,19 @@ router
 		//    the container state and vice versa.
 		const probes = [];
 		probes.push(
-			lapiFetch(`/v1/decisions?scenarios_containing=${HONEYPOT_SCENARIO}&limit=${LAPI_HONEYPOT_LIMIT + 1}`)
+			lapiFetch(
+				`/v1/decisions?scenarios_containing=${HONEYPOT_SCENARIO}&origins=${LOCAL_DECISION_ORIGINS.join(",")}&limit=${LAPI_PAGE_MAX_ITEMS + 1}`,
+			)
 				.then((payload) => {
-					const decisions = normalizeCrowdsecDecisions(payload);
+					const sample = normalizeCrowdsecDecisions(payload);
+					const decisions = sample
+						.slice(0, LAPI_PAGE_MAX_ITEMS)
+						.filter((decision) => decision.scenario === HONEYPOT_SCENARIO && !decision.simulated);
 					response.honeypot = {
 						...response.honeypot,
 						activeCount: decisions.length,
-						truncated: decisions.length > LAPI_HONEYPOT_LIMIT,
+						truncated: sample.length > LAPI_PAGE_MAX_ITEMS,
+						itemsTruncated: decisions.length > LAPI_HONEYPOT_LIMIT,
 						items: decisions.slice(0, LAPI_HONEYPOT_LIMIT),
 					};
 				})
@@ -214,9 +259,11 @@ router
 					ANUBIS_TIMEOUT_MS,
 				)
 					.then(async (upstreamResponse) => {
-						// discard the body but keep it bounded: it is a challenge page
-						await readBoundedText(upstreamResponse, ANUBIS_MAX_RESPONSE_BYTES);
 						response.container.up = true;
+						response.container.httpStatus = upstreamResponse.status;
+						// HTTP headers prove reachability; a large/broken body must not
+						// turn a responding service into a false network outage.
+						await upstreamResponse.body?.cancel().catch(() => {});
 					})
 					.catch((err) => {
 						debug(logger, `Anubis upstream probe failed: ${err.message}`);
@@ -229,10 +276,16 @@ router
 		// 3. recent honeypot catches from the log anubis writes on the shared
 		//    data volume. the backend never writes it, it only reads.
 		probes.push(
-			readRecentHoneypotIps().then(({ status, items }) => {
+			readRecentHoneypotIps().then(({ status, items, log }) => {
 				if (response.configured) response.honeypot.status = status;
 				// newest-last from the log writer; the view wants newest-first
 				response.recent = items.slice(-20).reverse();
+				response.log = log ?? null;
+			}),
+		);
+		probes.push(
+			readHoneypotBridge().then((bridge) => {
+				response.bridge = bridge;
 			}),
 		);
 
@@ -263,8 +316,7 @@ router
 			res.status(400).send({ error: { message: "crowdsec.page-too-deep" } });
 			return;
 		}
-		let fetchLimit = LAPI_DECISION_LIMIT + 1;
-		if (paginated) fetchLimit = search ? LAPI_PAGE_MAX_ITEMS + 1 : requestedEnd + 1;
+		const fetchLimit = (paginated ? LAPI_PAGE_MAX_ITEMS : LAPI_DECISION_LIMIT) + 1;
 		const decisionQuery = new URLSearchParams({ limit: String(fetchLimit) });
 		if (origin === "local") decisionQuery.set("origins", LOCAL_DECISION_ORIGINS.join(","));
 		if (origin === "community") decisionQuery.set("origins", COMMUNITY_DECISION_ORIGINS.join(","));
@@ -289,7 +341,7 @@ router
 			return;
 		}
 
-		const filtered = decisions.filter((decision) => {
+		const filtered = decisions.slice(0, LAPI_PAGE_MAX_ITEMS).filter((decision) => {
 			if (origin === "local" && !LOCAL_DECISION_ORIGINS.includes(decision.origin.toLocaleLowerCase()))
 				return false;
 			if (origin === "community" && !COMMUNITY_DECISION_ORIGINS.includes(decision.origin.toLocaleLowerCase()))
@@ -308,7 +360,7 @@ router
 			page,
 			page_size: pageSize,
 			has_next: hasNext,
-			matched: Math.min(filtered.length, requestedEnd),
+			matched: filtered.length,
 		});
 	});
 
@@ -432,7 +484,7 @@ router
 			HISTORY_WINDOW_HOURS_MAX,
 		);
 		const requestedEnd = page * pageSize;
-		if (requestedEnd > HISTORY_MAX_ITEMS) {
+		if (req.query.cursor === undefined && requestedEnd > HISTORY_MAX_ITEMS) {
 			res.status(400).send({ error: { message: "crowdsec.page-too-deep" } });
 			return;
 		}
@@ -442,16 +494,27 @@ router
 			country: queryString(req.query.country, 8),
 			target: queryString(req.query.target),
 		};
-		const hasFilters = Object.values(filters).some(Boolean);
-		const fetchLimit = hasFilters ? HISTORY_MAX_ITEMS + 1 : requestedEnd + 1;
-		const payload = await readAlertsSample(windowHours, fetchLimit);
+		if (req.query.cursor !== undefined) {
+			res.send(await scanAlertHistory({ windowHours, filters, cursor: req.query.cursor }));
+			return;
+		}
+		// Filtering sync/simulated/manual alerts can remove any prefix. Fetch
+		// one bounded sample so a short page cannot hide later attack records.
+		const fetchLimit = HISTORY_MAX_ITEMS + 1;
+		const sample = await readAlertsSample(windowHours, fetchLimit);
 		let alerts;
 		let normalizedCount;
 		try {
-			normalizedCount = normalizeCrowdsecAlerts(payload).length;
-			alerts = normalizeCrowdsecAlerts(payload)
+			const normalized = normalizeCrowdsecAlerts(sample.items);
+			normalizedCount = normalized.length;
+			alerts = normalized
+				.slice(0, HISTORY_MAX_ITEMS)
 				// the activity feed is an attack feed: blocklist syncs are noise here too
-				.filter((alert) => !isBlocklistSyncAlert(alert))
+				.filter(isAttackAlert)
+				.filter((alert) => {
+					const timestamp = Date.parse(alertTime(alert));
+					return timestamp >= Date.now() - windowHours * 3600_000 && timestamp <= Date.now();
+				})
 				.sort((a, b) => Date.parse(alertTime(b)) - Date.parse(alertTime(a)) || b.id - a.id);
 		} catch (err) {
 			debug(logger, `CrowdSec history contract mismatch: ${err}`);
@@ -464,11 +527,9 @@ router
 			page,
 			page_size: pageSize,
 			has_next: filtered.length > requestedEnd,
-			matched: Math.min(filtered.length, requestedEnd),
+			matched: filtered.length,
 			window_hours: windowHours,
-			truncated:
-				normalizedCount >= fetchLimit ||
-				(fetchLimit > INSIGHTS_FALLBACK_ALERT_LIMIT && normalizedCount === INSIGHTS_FALLBACK_ALERT_LIMIT),
+			truncated: normalizedCount >= fetchLimit || sample.fallback,
 		});
 	});
 
@@ -575,11 +636,11 @@ router
 		const requestedWindow = queryInteger(req.query.window_hours, INSIGHTS_WINDOW_HOURS, 1, 168);
 		const windowHours = INSIGHTS_WINDOW_OPTIONS.has(requestedWindow) ? requestedWindow : INSIGHTS_WINDOW_HOURS;
 		const localDecisionQuery = new URLSearchParams({
-			limit: String(LAPI_DECISION_LIMIT + 1),
+			limit: String(LAPI_PAGE_MAX_ITEMS + 1),
 			origins: LOCAL_DECISION_ORIGINS.join(","),
 		});
-		const [payload, decisionPayload] = await Promise.all([
-			readAlertsSample(windowHours, INSIGHTS_ALERT_LIMIT),
+		const [sample, decisionPayload] = await Promise.all([
+			readAlertsSample(windowHours, INSIGHTS_ALERT_LIMIT + 1),
 			lapiFetch(`/v1/decisions?${localDecisionQuery}`).catch((err) => {
 				debug(logger, `CrowdSec active decision count unavailable: ${err.message}`);
 				return null;
@@ -589,10 +650,17 @@ router
 		// it needs to know where the instance is; null just means the map
 		// degrades to marking the origins only
 		const home = await getHomeLocation();
-		const normalizedAlerts = normalizeCrowdsecAlerts(payload);
+		const normalizedAlerts = normalizeCrowdsecAlerts(sample.items);
 		// blocklist syncs are bookkeeping, not attacks: they never appear in
 		// attack stats, but truncation still reflects the raw sample size
-		const alerts = normalizedAlerts.filter((alert) => !isBlocklistSyncAlert(alert));
+		const now = Date.now();
+		const alerts = normalizedAlerts
+			.slice(0, INSIGHTS_ALERT_LIMIT)
+			.filter(isAttackAlert)
+			.filter((alert) => {
+				const timestamp = Date.parse(alertTime(alert));
+				return timestamp >= now - windowHours * 3600_000 && timestamp <= now;
+			});
 		const countries = {};
 		const asns = {};
 		const ips = {};
@@ -621,20 +689,25 @@ router
 				locationCounts.set(key, location);
 			}
 		}
-		const activity = activityBuckets(alerts, windowHours);
+		const activity = activityBuckets(alerts, windowHours, now);
 		const decisions = decisionPayload === null ? null : normalizeCrowdsecDecisions(decisionPayload);
 		// honeypot bans arrive as origin "cscli" but get their own dashboard card;
 		// keep them out of the local active-bans figure so the two never double-count
 		const localDecisions =
-			decisions === null ? null : decisions.filter((decision) => decision.scenario !== HONEYPOT_SCENARIO);
-		const activeDecisions = localDecisions === null ? null : Math.min(localDecisions.length, LAPI_DECISION_LIMIT);
+			decisions === null
+				? null
+				: decisions
+						.slice(0, LAPI_PAGE_MAX_ITEMS)
+						.filter((decision) => decision.scenario !== HONEYPOT_SCENARIO && !decision.simulated);
+		const activeDecisions = localDecisions === null ? null : localDecisions.length;
+		const decisionsTruncated = decisions !== null && decisions.length > LAPI_PAGE_MAX_ITEMS;
 		// a full sample means the buckets only cover the newest tail of the window,
 		// so the spike baseline is structurally deflated - never call that a spike
-		const sampled = normalizedAlerts.length >= INSIGHTS_ALERT_LIMIT;
+		const sampled = normalizedAlerts.length > INSIGHTS_ALERT_LIMIT || sample.fallback;
 		const signals = [];
 		if (!sampled && attackSpike(activity))
 			signals.push({ id: `spike-${activity.at(-1).start}`, severity: "warning", type: "attack-spike" });
-		if (activeDecisions > 0)
+		if (activeDecisions > 0 && !decisionsTruncated)
 			signals.push({
 				id: `bans-${activeDecisions}`,
 				severity: "info",
@@ -647,6 +720,7 @@ router
 			alert_count: alerts.length,
 			active_decisions: activeDecisions,
 			local_active_decisions: activeDecisions,
+			local_active_decisions_truncated: decisionsTruncated,
 			sampled,
 			activity,
 			home,
@@ -690,6 +764,7 @@ router
 			if (!response.ok) throw new Error(`HTTP ${response.status}`);
 			const text = await readBoundedText(response, METRICS_MAX_RESPONSE_BYTES);
 			const samples = parsePrometheusText(text);
+			if (!samples.some((sample) => sample.name.startsWith("cs_"))) throw new Error("No CrowdSec metric samples");
 			res.status(200).send({
 				available: true,
 				...appsecConfiguration,
@@ -704,6 +779,19 @@ router
 				...appsecConfiguration,
 			});
 		}
+	});
+
+router
+	.route("/telemetry")
+	.options((_, res) => res.sendStatus(204))
+	.all(jwtdecode())
+	.get(async (req, res) => {
+		if (!(await requireAdmin(res))) {
+			res.status(403).send({ error: { message: "access-denied" } });
+			return;
+		}
+		const requested = queryInteger(req.query.window_hours, 24, 1, 168);
+		res.send(await readTelemetry(INSIGHTS_WINDOW_OPTIONS.has(requested) ? requested : 24));
 	});
 
 export default router;

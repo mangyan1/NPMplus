@@ -203,7 +203,7 @@ not valid
 			{ name: "crowdsec", count: 2 },
 			{ name: "cscli", count: 1 },
 		],
-		alerts: 0,
+		alerts: null,
 		appsec_metrics_present: true,
 		appsec_requests: 12,
 		appsec_blocked: 3,
@@ -211,17 +211,17 @@ not valid
 		appsec_block_rate: 0.25,
 		bouncer_requests: 4,
 		bouncer_decision_hits: 3,
-		machine_requests: 0,
+		machine_requests: null,
 		parser_hits: 10,
+		parser_metric_scope: "events",
 		parser_success_rate: 0.8,
-		whitelist_hits: 0,
+		whitelist_hits: null,
 		average_lapi_ms: 500,
 		average_parsing_ms: null,
 	});
 });
 
-test("CrowdSec 1.8 parser metrics under their renamed node names are summarized", () => {
-	// 1.8 renamed cs_parser_hits_* to cs_node_hits_*
+test("parser node counters are used when source-level parser metrics are absent", () => {
 	const summary = summarizeCrowdsecMetrics(
 		parsePrometheusText(`
 cs_node_hits_total{type="parser",name="crowdsecurity/nginx-logs"} 10
@@ -319,4 +319,56 @@ test("manual ban input rejects hostile or malformed values", () => {
 	assert.deepEqual(validateManualBan({ value: "http://example.com/", duration: "4h" }), ["value"]);
 	// every invalid field is reported together
 	assert.deepEqual(validateManualBan({ value: null, duration: "0h", type: "nope" }), ["value", "duration", "type"]);
+});
+
+test("missing telemetry remains unknown and explicit zeros stay zero", () => {
+	const absent = summarizeCrowdsecMetrics([]);
+	assert.equal(absent.active_decisions, null);
+	assert.equal(absent.appsec_requests, null);
+	assert.equal(absent.appsec_passed, null);
+	assert.equal(absent.bouncer_requests, null);
+	const zero = summarizeCrowdsecMetrics(
+		parsePrometheusText("cs_appsec_reqs_total 0\ncs_node_wl_hits_ok_total 0\ncs_node_wl_hits_total 40"),
+	);
+	assert.equal(zero.appsec_requests, 0);
+	assert.equal(zero.appsec_blocked, 0);
+	assert.equal(zero.whitelist_hits, 0);
+	assert.equal(summarizeCrowdsecMetrics(parsePrometheusText("cs_node_wl_hits_total 40")).whitelist_hits, null);
+});
+
+test("parser families are neither mixed nor double counted", () => {
+	const result = summarizeCrowdsecMetrics(
+		parsePrometheusText(
+			"cs_parser_hits_total 10\ncs_parser_hits_ok_total 0\ncs_node_hits_total 30\ncs_node_hits_ok_total 25",
+		),
+	);
+	assert.equal(result.parser_hits, 10);
+	assert.equal(result.parser_success_rate, 0);
+	assert.equal(result.parser_metric_scope, "events");
+});
+
+test("out-of-range alert coordinates are not plotted", () => {
+	const [alert] = normalizeCrowdsecAlerts([{ id: 1, source: { latitude: 91, longitude: -181 } }]);
+	assert.equal(alert.source.latitude, null);
+	assert.equal(alert.source.longitude, null);
+});
+
+test("target grouping prefers hosts over URI metadata and ASN search matches numbers", () => {
+	const alerts = normalizeCrowdsecAlerts([
+		{
+			id: 1,
+			source: { as_name: "Example Network", as_number: "64500" },
+			events: [
+				{
+					meta: [
+						{ key: "target_uri", value: "/.env" },
+						{ key: "target_host", value: "app.example.com" },
+					],
+				},
+			],
+		},
+	]);
+	assert.equal(crowdsecAlertTarget(alerts[0]), "app.example.com");
+	assert.equal(filterCrowdsecAlerts(alerts, { search: "asn:64500" }).length, 1);
+	assert.equal(filterCrowdsecAlerts(alerts, { search: "64500" }).length, 1);
 });

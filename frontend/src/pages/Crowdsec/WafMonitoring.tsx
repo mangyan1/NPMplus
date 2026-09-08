@@ -6,19 +6,29 @@ import styles from "./Dashboard.module.css";
 import { MetricsSkeleton } from "./LoadingSkeleton";
 import Metric from "./Metric";
 import { midTruncate, scenarioLabel } from "./scenarios";
-import { appsecStatus } from "./shared";
+import { appsecStatus, appsecTrafficAvailable } from "./shared";
 
 const WafMonitoring = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetrics> }) => {
-	if (!metrics.data) return <MetricsSkeleton />;
+	if (!metrics.data)
+		return metrics.isError ? (
+			<Alert variant="secondary">
+				<T id="crowdsec.metrics-unavailable" />
+			</Alert>
+		) : (
+			<MetricsSkeleton />
+		);
 
-	const status = appsecStatus(metrics.data);
+	const status = appsecStatus(metrics.data, metrics.isRefetchError);
+	const trafficAvailable = appsecTrafficAvailable(metrics.data);
 	const requests = metrics.data.appsecRequests ?? 0;
 	const blocked = metrics.data.appsecBlocked ?? 0;
 	const passed = metrics.data.appsecPassed ?? Math.max(0, requests - blocked);
 	const blockRate = metrics.data.appsecBlockRate ?? (requests > 0 ? blocked / requests : null);
 	const blockedWidth = blockRate === null ? 0 : Math.min(100, Math.max(0, blockRate * 100));
 	const passedWidth = requests > 0 ? 100 - blockedWidth : 0;
-	const summary = intl.formatMessage({ id: "crowdsec.appsec.traffic-summary" }, { requests, blocked, passed });
+	const summary = trafficAvailable
+		? intl.formatMessage({ id: "crowdsec.appsec.traffic-summary" }, { requests, blocked, passed })
+		: intl.formatMessage({ id: "crowdsec.metrics-unavailable" });
 
 	return (
 		<div className={styles.wafPanel}>
@@ -62,24 +72,24 @@ const WafMonitoring = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetr
 			<div className="row g-3">
 				<Metric
 					label={<T id="crowdsec.appsec.inspected" />}
-					value={metrics.data.available ? requests : "—"}
+					value={trafficAvailable ? requests : "—"}
 					description={<T id="crowdsec.appsec.since-restart" />}
 				/>
 				<Metric
 					label={<T id="crowdsec.appsec.passed" />}
-					value={metrics.data.available ? passed : "—"}
+					value={trafficAvailable ? passed : "—"}
 					tone="green"
 					description={<T id="crowdsec.appsec.passed-help" />}
 				/>
 				<Metric
 					label={<T id="crowdsec.appsec.blocked" />}
-					value={metrics.data.available ? blocked : "—"}
+					value={trafficAvailable ? blocked : "—"}
 					tone="red"
 					description={<T id="crowdsec.appsec.blocked-help" />}
 				/>
 				<Metric
 					label={<T id="crowdsec.appsec.block-rate" />}
-					value={blockRate === null ? "—" : `${(blockRate * 100).toFixed(1)}%`}
+					value={!trafficAvailable || blockRate === null ? "—" : `${(blockRate * 100).toFixed(1)}%`}
 					tone="orange"
 					description={<T id="crowdsec.appsec.block-rate-help" />}
 				/>
@@ -96,7 +106,7 @@ const WafMonitoring = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetr
 						</span>
 					</div>
 					<div className={styles.wafTraffic} role="img" aria-label={summary}>
-						{requests > 0 ? (
+						{trafficAvailable && requests > 0 ? (
 							<>
 								<span className={styles.wafPassed} style={{ width: `${passedWidth}%` }} />
 								<span className={styles.wafBlocked} style={{ width: `${blockedWidth}%` }} />
@@ -108,11 +118,11 @@ const WafMonitoring = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetr
 					<div className="d-flex flex-wrap gap-3 mt-2 small">
 						<span className={styles.wafLegendItem}>
 							<span className={`${styles.wafLegendDot} bg-green`} />
-							<T id="crowdsec.appsec.passed" />: {intl.formatNumber(passed)}
+							<T id="crowdsec.appsec.passed" />: {trafficAvailable ? intl.formatNumber(passed) : "—"}
 						</span>
 						<span className={styles.wafLegendItem}>
 							<span className={`${styles.wafLegendDot} bg-red`} />
-							<T id="crowdsec.appsec.blocked" />: {intl.formatNumber(blocked)}
+							<T id="crowdsec.appsec.blocked" />: {trafficAvailable ? intl.formatNumber(blocked) : "—"}
 						</span>
 					</div>
 				</div>
@@ -183,6 +193,9 @@ const WafMonitoring = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetr
 
 			<section className="card" aria-labelledby="appsec-top-rules-title">
 				<div className="card-body">
+					<p className="text-secondary">
+						<T id="crowdsec.appsec.top-rules-help" />
+					</p>
 					<h3 id="appsec-top-rules-title">
 						<T id="crowdsec.appsec.top-rules" />
 					</h3>

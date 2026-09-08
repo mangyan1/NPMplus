@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.54"
+SCRIPT_VERSION="1.58"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -520,7 +520,7 @@ for _ in $(seq 1 300); do
 		[[ "$health" == none || "$health" == healthy ]] || { ready=false; break; }
 	done
 	if [[ "$ready" == true ]] && \
-		curl -fkSs --connect-timeout 2 --max-time 5 -o /dev/null https://127.0.0.1/ && \
+		timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/443' && \
 		curl -fkSs --connect-timeout 2 --max-time 5 https://127.0.0.1:81/api | \
 			grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"'; then
 		/usr/local/sbin/npmplus-boot-guard remove
@@ -1252,11 +1252,12 @@ run_restore() (
 	# configuration (image digests, LAN binding, admin secret, ports) is kept,
 	# so a restore works across servers: fresh install on the new machine, then
 	# restore the old data on top of it.
-	set -uo pipefail
+	set -euo pipefail
 
 	local source="${1:-}" ts staging answer key password picked listing extract
 	local services=()
 	local -a candidates=()
+	local -a restore_items=(tls certs access access-lists custom_nginx htpasswd lets-encrypt crowdsec nginx html)
 
 	# search everywhere an operator plausibly left an archive: the backup dir
 	# (daily cron + --backup), /tmp (the documented scp landing spot), and the
@@ -1364,19 +1365,17 @@ run_restore() (
 	echo "  The current database and CrowdSec state will be REPLACED."
 	answer=$(ask "type the word restore to continue" "")
 	[[ "$answer" == "restore" ]] || { echo "aborted" >&2; return 1; }
+	exec 9>/run/lock/npmplus-maintenance.lock
+	flock -n 9 || { echo "another NPMplus maintenance job is already running" >&2; return 1; }
 
-	# snapshot the replaced state first so a bad restore is itself recoverable
+	# Unique root-only staging; extraction completes before services are stopped.
 	ts=$(date +%F-%H%M%S)
-	staging="/var/backups/npmplus/pre-restore-$ts"
-	mkdir -p "$staging" || return 1
-	chmod 700 "$staging"
-	[[ -f "$DATA_DIR/npmplus/database.sqlite" ]] && cp -a "$DATA_DIR/npmplus/database.sqlite" "$staging/database.sqlite" 2>/dev/null || true
-	[[ -d "$CROWDSEC_DIR" ]] && cp -a "$CROWDSEC_DIR" "$staging/crowdsec" 2>/dev/null || true
-	[[ -f /opt/anubis.yaml ]] && cp -a /opt/anubis.yaml "$staging/anubis.yaml" 2>/dev/null || true
+	mkdir -p /var/backups/npmplus
+	staging=$(mktemp -d "/var/backups/npmplus/pre-restore-$ts.XXXXXX")
 
 	# extract into a staging dir first; only a complete extraction is applied
-	extract="/var/backups/npmplus/restore-extract-$ts"
-	mkdir -p "$extract" || return 1
+	extract="$staging/extract"
+	mkdir -m 700 "$extract"
 	if ! tar -xzf "$source" -C "$extract"; then
 		rm -rf "$extract"
 		echo "extraction failed - nothing was changed" >&2
@@ -1384,7 +1383,49 @@ run_restore() (
 	fi
 
 	say "stopping the stack"
-	docker compose -f "$COMPOSE_FILE" stop >/dev/null 2>&1 || true
+	local stack_stopped=false restore_started=false restore_complete=false
+	# Invoked by the EXIT trap below, including failures under errexit.
+	# shellcheck disable=SC2329
+	recover_restore() {
+		local result=$? item
+		trap - EXIT
+		if [[ "$restore_complete" != true && "$stack_stopped" == true ]]; then
+			if [[ "$restore_started" == true ]]; then
+				echo "restore failed - recovering the pre-restore snapshot" >&2
+				docker compose -f "$COMPOSE_FILE" stop >/dev/null || return 1
+				for item in npmplus "${restore_items[@]}"; do
+					rm -rf -- "${DATA_DIR:?}/${item:?}"
+					[[ ! -e "$staging/data/$item" ]] || cp -a "$staging/data/$item" "$DATA_DIR/$item" || return 1
+				done
+				if [[ -d "$staging/crowdsec" ]]; then
+					rm -rf -- "${CROWDSEC_DIR:?}"
+					cp -a "$staging/crowdsec" "$CROWDSEC_DIR" || return 1
+				fi
+				[[ ! -f "$staging/anubis.yaml" ]] || cp -a "$staging/anubis.yaml" /opt/anubis.yaml || return 1
+				if [[ -f "$staging/firewall-bouncer.yaml" ]]; then
+					cp -a "$staging/firewall-bouncer.yaml" /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml || return 1
+					systemctl restart crowdsec-firewall-bouncer || true
+				fi
+			fi
+			docker compose -f "$COMPOSE_FILE" up -d >/dev/null || true
+		fi
+		return "$result"
+	}
+	trap recover_restore EXIT
+	# Even a partly failed stop must restart the original services on exit.
+	stack_stopped=true
+	docker compose -f "$COMPOSE_FILE" stop >/dev/null
+	mkdir -m 700 "$staging/data"
+	# Both SQLite databases are quiescent: include WAL/SHM and all replaced
+	# payloads. Refuse to replace anything if a snapshot copy fails.
+	local item
+	for item in npmplus "${restore_items[@]}"; do
+		[[ ! -e "$DATA_DIR/$item" ]] || cp -a "$DATA_DIR/$item" "$staging/data/$item"
+	done
+	[[ ! -d "$CROWDSEC_DIR" ]] || cp -a "$CROWDSEC_DIR" "$staging/crowdsec"
+	[[ ! -f /opt/anubis.yaml ]] || cp -a /opt/anubis.yaml "$staging/anubis.yaml"
+	[[ ! -f /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml ]] || cp -a /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml "$staging/firewall-bouncer.yaml"
+	restore_started=true
 
 	# replace the database: prefer the consistent hot copy from the backup run -
 	# sqlite's backup API already folds the WAL content into it. without it, the
@@ -1410,8 +1451,7 @@ run_restore() (
 	# certificates, access lists and every other /data payload ride along with
 	# the data dir; the compose file, admin secret and host helpers are
 	# new-machine state and are deliberately NOT restored
-	local item
-	for item in tls certs access-lists custom_nginx htpasswd lets-encrypt crowdsec nginx; do
+	for item in "${restore_items[@]}"; do
 		[[ -e "$extract/opt/npmplus/$item" ]] || continue
 		rm -rf -- "${DATA_DIR:?}/${item:?}"
 		cp -a "$extract/opt/npmplus/$item" "$DATA_DIR/$item"
@@ -1488,7 +1528,9 @@ run_restore() (
 	published=$(docker compose -f "$COMPOSE_FILE" port npmplus 443 2>/dev/null || true)
 	for _ in $(seq 1 60); do
 		if [[ -n "$published" ]]; then
-			if curl -fkSs --connect-timeout 5 --max-time 10 -o /dev/null https://127.0.0.1/ 2>/dev/null; then
+			if timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/443' && \
+				curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"'; then
+				restore_complete=true
 				say "restore complete"
 				echo "  restored from: $source"
 				echo "  a copy of the replaced state is in $staging"
@@ -1496,8 +1538,9 @@ run_restore() (
 				return 0
 			fi
 		else
-			state=$(docker inspect --format '{{.State.Status}}' npmplus 2>/dev/null || true)
-			if [[ "$state" == "running" ]]; then
+			state=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' npmplus 2>/dev/null || true)
+			if [[ "$state" == "healthy" ]] && docker exec npmplus curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"'; then
+				restore_complete=true
 				say "restore complete (no published 443 in this compose - container verified)"
 				echo "  restored from: $source"
 				echo "  a copy of the replaced state is in $staging"
@@ -1766,8 +1809,8 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 	say "removing NPMplus data and tooling"
 	rm -rf -- "$DATA_DIR" "$CROWDSEC_DIR" /opt/anubis-data /opt/anubis.yaml
 	rm -f /etc/cron.d/npmplus-safe-update /etc/cron.d/npmplus-backup \
-		/etc/cron.d/npmplus-crowdsec-heal /etc/cron.d/anubis-honeypot
-	rm -f /usr/local/bin/npmplus-safe-update /usr/local/bin/npmplus-backup \
+		/etc/cron.d/npmplus-crowdsec-heal /etc/cron.d/anubis-honeypot /etc/cron.d/npmplus-collect-enforcement /etc/cron.d/npmplus-collect-anubis
+	rm -f /usr/local/bin/npmplus-collect-anubis /usr/local/bin/npmplus-collect-enforcement /usr/local/bin/npmplus-safe-update /usr/local/bin/npmplus-backup \
 		/usr/local/bin/npmplus-crowdsec-heal /usr/local/bin/anubis-honeypot-ban \
 		/usr/local/sbin/npmplus-wait-for-dns /usr/local/sbin/npmplus-wait-for-crowdsec-lapi \
 		/usr/local/sbin/npmplus-start-protected /usr/local/sbin/npmplus-cloudflare-origin-lock \
@@ -2312,6 +2355,40 @@ remove_native_crowdsec() {
 # the generated host tooling (safe-update, backup, key heal + their crons):
 # one definition, installed by both the interactive setup and --update
 install_host_tooling() {
+	# Read-only packet observations, delivered through the existing data mount.
+	write_root_file /usr/local/bin/npmplus-collect-enforcement 755 <<'EOF'
+#!/bin/bash
+set -euo pipefail
+[[ -f /var/lib/npmplus/installed-firewall-bouncer ]] || exit 0
+exec 8>/run/lock/npmplus-enforcement.lock
+flock -n 8 || exit 0
+directory=/opt/npmplus/crowdsec
+[[ -d "$directory" ]] || exit 0
+rules=$(iptables-save -c) || exit 1
+active=false
+systemctl is-active --quiet crowdsec-firewall-bouncer && active=true
+epoch="$(cat /proc/sys/kernel/random/boot_id):$(systemctl show crowdsec-firewall-bouncer --property=InvocationID --value)"
+[[ "$epoch" =~ ^[0-9a-f:-]+$ ]] || exit 1
+tmp=$(mktemp "$directory/firewall-telemetry.json.XXXXXX")
+trap 'rm -f -- "$tmp"' EXIT
+awk -v active="$active" -v epoch="$epoch" -v now="$(date +%s)000" '
+  /--match-set crowdsec-blacklists src/ && /-j (DROP|REJECT)( |$)/ {
+    if ($2 != "-A" || ($3 != "INPUT" && $3 != "FORWARD")) next
+    split(substr($1, 2, length($1)-2), counts, ":")
+    packets[$3] += counts[1]; bytes[$3] += counts[2]; found[$3]=1
+  }
+  END {
+    printf "{\"epoch\":\"%s\",\"collected_at\":%s,\"service_active\":%s,", epoch, now, active
+    printf "\"input_rule\":%s,\"forward_rule\":%s,", found["INPUT"] ? "true" : "false", found["FORWARD"] ? "true" : "false"
+    printf "\"counters\":{\"input_packets\":%.0f,\"forward_packets\":%.0f,\"input_bytes\":%.0f,\"forward_bytes\":%.0f}}\n", packets["INPUT"], packets["FORWARD"], bytes["INPUT"], bytes["FORWARD"]
+  }
+' <<<"$rules" >"$tmp"
+chmod 644 "$tmp"
+mv -f -- "$tmp" "$directory/firewall-telemetry.json"
+EOF
+	printf '* * * * * root /usr/local/bin/npmplus-collect-enforcement\n' >/etc/cron.d/npmplus-collect-enforcement
+	chmod 644 /etc/cron.d/npmplus-collect-enforcement
+	/usr/local/bin/npmplus-collect-enforcement || true
 say "installing monthly safe-update (snapshot -> update -> health check -> auto-revert)"
 # the cron needs the setup script at a known path; running via curl|bash has no file to copy
 if [[ -f "$0" ]] && head -1 "$0" | grep -q '^#!/bin/bash'; then
@@ -2371,14 +2448,14 @@ revert() {
 	fi
 	# --update refreshes these before touching images; roll them back as well.
 	[[ -s "$BACKUP/setup-npmplus.sh" ]] && cp -a "$BACKUP/setup-npmplus.sh" "$SETUP"
-	rm -f /usr/local/bin/npmplus-safe-update /usr/local/bin/npmplus-backup \
+	rm -f /usr/local/bin/npmplus-collect-anubis /usr/local/bin/npmplus-collect-enforcement /usr/local/bin/npmplus-safe-update /usr/local/bin/npmplus-backup \
 		/usr/local/bin/npmplus-crowdsec-heal
 	rm -f /etc/cron.d/npmplus-safe-update /etc/cron.d/npmplus-backup \
-		/etc/cron.d/npmplus-crowdsec-heal
-	for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal; do
+		/etc/cron.d/npmplus-crowdsec-heal /etc/cron.d/npmplus-collect-enforcement /etc/cron.d/npmplus-collect-anubis
+	for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal npmplus-collect-enforcement npmplus-collect-anubis; do
 		[[ -s "$BACKUP/$f" ]] && cp -a "$BACKUP/$f" "/usr/local/bin/$f"
 	done
-	for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal; do
+	for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal npmplus-collect-enforcement npmplus-collect-anubis; do
 		[[ -s "$BACKUP/cron-$f" ]] && cp -a "$BACKUP/cron-$f" "/etc/cron.d/$f"
 	done
 	rm -f /etc/systemd/system/npmplus-public.service \
@@ -2432,7 +2509,7 @@ chmod 700 "$BACKUP"
 cp -a "$COMPOSE_FILE" "$BACKUP/compose.yaml"
 cp -a /opt/anubis.yaml "$BACKUP/anubis.yaml" 2>/dev/null || rm -f "$BACKUP/anubis.yaml"
 cp -a "$SETUP" "$BACKUP/setup-npmplus.sh"
-for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal; do
+for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal npmplus-collect-enforcement npmplus-collect-anubis; do
 	rm -f "$BACKUP/$f" "$BACKUP/cron-$f"
 	cp -a "/usr/local/bin/$f" "$BACKUP/$f" 2>/dev/null || true
 	cp -a "/etc/cron.d/$f" "$BACKUP/cron-$f" 2>/dev/null || true
@@ -2481,8 +2558,10 @@ while read -r svc; do
 		exit 1
 	}
 done < <(docker compose -f "$COMPOSE_FILE" config --services)
-curl -fkSs --connect-timeout 5 --max-time 10 -o /dev/null https://127.0.0.1/ || {
-	log "pre-update check failed: public HTTPS listener is not healthy"
+# The default website may deliberately return 404/444 or reject TLS. Check
+# its listener independently of that policy, then verify the admin API below.
+timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/443' || {
+	log "pre-update check failed: public port 443 is not listening"
 	exit 1
 }
 curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"' || {
@@ -2560,7 +2639,8 @@ if docker compose -f "$COMPOSE_FILE" ps --status running --format '{{.Name}}' 2>
 fi
 
 # Health check every configured service, Docker health where present, both
-# NPMplus listeners, and CrowdSec's own LAPI. HTTP error responses must fail.
+# NPMplus listeners and CrowdSec's LAPI. The default public vhost may deny
+# unmatched requests (404/444); application health comes from the admin API.
 bouncer_http_code() {
 	printf 'header = "X-Api-Key: %s"\n' "$1" | curl -sS --connect-timeout 5 --max-time 10 \
 		-o /dev/null -w '%{http_code}' --config - 'http://127.0.0.1:8080/v1/decisions?limit=1'
@@ -2580,7 +2660,7 @@ check() {
 		health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")
 		[[ "$health" == "none" || "$health" == "healthy" ]] || { log "$svc health is $health"; return 1; }
 	done < <(docker compose -f "$COMPOSE_FILE" config --services)
-	curl -fkSs --connect-timeout 5 --max-time 10 -o /dev/null https://127.0.0.1/ || return 1
+	timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/443' || return 1
 	curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"' || return 1
 	if grep -q '^APPSEC_URL=.' /opt/npmplus/crowdsec/crowdsec.conf 2>/dev/null; then
 		timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/7422' || return 1
@@ -2632,13 +2712,15 @@ log() { echo "$(date '+%F %T') $*"; }
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 
-# hot-copy the database with better-sqlite3 so a copy is never torn mid-write;
-# the plain live file is still in the tar as a fallback if this ever fails
+# A failed online copy must never package a stale previous copy or a torn DB.
+rm -f /opt/npmplus/npmplus/database.backup.sqlite
 if ! docker exec npmplus node -e "const d=require('better-sqlite3')('/data/npmplus/database.sqlite',{readonly:true});d.backup('/data/npmplus/database.backup.sqlite').then(()=>d.close())" >/dev/null 2>&1; then
-	log "warning: consistent database copy failed, tar will contain the live file"
+	log "backup FAILED (consistent database copy)"
+	exit 1
 fi
 
-files=(opt/npmplus opt/crowdsec)
+files=(opt/npmplus)
+[[ ! -d /opt/crowdsec ]] || files+=(opt/crowdsec)
 [[ -f /opt/anubis.yaml ]] && files+=(opt/anubis.yaml)
 ts=$(date +%F-%H%M%S)
 out="$BACKUP_DIR/npmplus-$ts.tar.gz"
@@ -2795,27 +2877,108 @@ if grep -q "container_name: crowdsec" "$COMPOSE_FILE" && grep -q "container_name
 	say "installing honeypot -> crowdsec auto-ban (every 5 min via cron)"
 	write_root_file /usr/local/bin/anubis-honeypot-ban 755 <<'EOF'
 #!/bin/bash
-# bans IPs caught in anubis' honeypot - those hits are proven malicious by
-# construction, so no false positives are possible; 7d because a repeat
-# offender is simply re-banned on every new pot hit
+# Ban addresses recorded by the honeypot policy. Keep failed entries pending;
+# a readable log alone does not prove that CrowdSec accepted the bans.
 set -euo pipefail
+export LC_ALL=C
 LOG=/opt/anubis-data/anubis/honeypot.addrs
 STATE=/opt/anubis-data/anubis-honeypot.pos
+PREFIX=/opt/anubis-data/anubis-honeypot.prefix
+STATUS=/opt/anubis-data/anubis/honeypot-bridge.json
+JOURNAL=/opt/anubis-data/anubis/honeypot-attempts.log
+exec 9>/run/lock/anubis-honeypot-ban.lock
+flock -n 9 || exit 0
+applied=0 failed=0 invalid=0 pending=0 state=waiting
+record_attempt() {
+	printf '%s %s %s %s\n' "$(date +%s%3N)" "$1" "$2" "$(cat /proc/sys/kernel/random/uuid)" >>"$JOURNAL"
+	chmod 644 "$JOURNAL"
+}
+# Invoked by the EXIT trap below.
+# shellcheck disable=SC2329
+publish_status() {
+	local result=$? tmp
+	trap - EXIT
+	[[ -d "$(dirname "$STATUS")" ]] || return "$result"
+	if [[ -f "$JOURNAL" ]]; then
+		tmp=$(mktemp "${JOURNAL}.XXXXXX")
+		tail -n 2000 "$JOURNAL" >"$tmp"
+		chmod 644 "$tmp"
+		mv -f -- "$tmp" "$JOURNAL"
+	fi
+	[[ "$result" == 0 ]] || state=failed
+	tmp=$(mktemp "${STATUS}.XXXXXX") || return "$result"
+	printf '{"checked_at":%s,"status":"%s","applied":%s,"failed":%s,"invalid":%s,"pending_bytes":%s}\n' \
+		"$(date +%s)000" "$state" "$applied" "$failed" "$invalid" "$pending" >"$tmp"
+	chmod 644 "$tmp"
+	mv -f -- "$tmp" "$STATUS"
+	return "$result"
+}
+trap publish_status EXIT
 [ -s "$LOG" ] || exit 0
+[[ "$(stat -c %s "$LOG")" -le 524288 ]] || exit 1
 pos=$(cat "$STATE" 2>/dev/null || echo 0)
-size=$(stat -c %s "$LOG")
-[ "$pos" -gt "$size" ] && pos=0 # anubis resets the file at 64k
-[ "$pos" -eq "$size" ] && exit 0
-tail -c +$((pos + 1)) "$LOG" | while read -r ip; do
+[[ "$pos" =~ ^[0-9]{1,12}$ ]] || exit 1
+pos=$((10#$pos))
+batch=$(mktemp "${STATE}.batch.XXXXXX")
+# Process an immutable bounded snapshot. A fingerprint catches truncate/regrow
+# cycles that a size-only cursor would miss. Replays are safer than lost bans.
+head -c 524288 "$LOG" >"$batch"
+size=$(stat -c %s "$batch")
+[ "$pos" -gt "$size" ] && pos=0
+if [[ -s "$PREFIX" ]] && [[ "$(head -c "$pos" "$batch" | sha256sum | cut -d' ' -f1)" != "$(cat "$PREFIX")" ]]; then
+	pos=0
+fi
+state=idle
+pending=$((size - pos))
+while IFS= read -r ip; do
 	case "$ip" in
-		*[!0-9a-fA-F.:]*) ;; # not an address, skip
-		*) docker exec crowdsec cscli decisions add --ip "$ip" --duration 7d --reason anubis-honeypot >/dev/null 2>&1 || true ;;
+		''|*[!0-9a-fA-F.:]*) invalid=$((invalid + 1)) ;;
+		*)
+			if ! docker exec crowdsec cscli decisions add --ip "$ip" --duration 7d --reason anubis-honeypot >/dev/null 2>&1; then
+				failed=$((failed + 1))
+				record_attempt failed "$ip" || true
+				break
+			fi
+			applied=$((applied + 1))
+			record_attempt accepted "$ip" || true
+			;;
 	esac
-done
-echo "$size" >"$STATE"
+	pos=$((pos + ${#ip} + 1))
+done < <(tail -c +$((pos + 1)) "$batch")
+pending=$((size - pos))
+tmp=$(mktemp "${PREFIX}.XXXXXX")
+head -c "$pos" "$batch" | sha256sum | cut -d' ' -f1 >"$tmp"
+mv -f -- "$tmp" "$PREFIX"
+rm -f -- "$batch"
+tmp=$(mktemp "${STATE}.XXXXXX")
+printf '%s\n' "$pos" >"$tmp"
+mv -f -- "$tmp" "$STATE"
+[[ "$applied" == 0 && "$invalid" == 0 ]] || state=applied
+[[ "$failed" == 0 ]] || exit 1
 EOF
 	printf '*/5 * * * * root /usr/local/bin/anubis-honeypot-ban\n' >/etc/cron.d/anubis-honeypot
 	chmod 644 /etc/cron.d/anubis-honeypot
+fi
+if grep -q "container_name: npmplus-anubis" "$COMPOSE_FILE"; then
+	write_root_file /usr/local/bin/npmplus-collect-anubis 755 <<'EOF'
+#!/bin/bash
+# Read the private container metrics listener without publishing port 9090.
+set -euo pipefail
+exec 9>/run/lock/npmplus-collect-anubis.lock
+flock -n 9 || exit 0
+directory=/opt/anubis-data/anubis
+[[ -d "$directory" ]] || exit 0
+address=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{"\n"}}{{end}}' npmplus-anubis | awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ && !found { print; found=1 }')
+[[ "$address" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+tmp=$(mktemp "$directory/anubis-metrics.XXXXXX")
+trap 'rm -f -- "$tmp"' EXIT
+curl --noproxy '*' --fail --silent --show-error --max-time 5 --max-filesize 524288 "http://$address:9090/metrics" | head -c 524289 >"$tmp"
+[[ "$(stat -c %s "$tmp")" -le 524288 ]] || exit 1
+chmod 644 "$tmp"
+mv -f -- "$tmp" "$directory/anubis-metrics.prom"
+EOF
+	printf '* * * * * root /usr/local/bin/npmplus-collect-anubis\n' >/etc/cron.d/npmplus-collect-anubis
+	chmod 644 /etc/cron.d/npmplus-collect-anubis
 fi
 }
 

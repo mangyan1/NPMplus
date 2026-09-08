@@ -93,6 +93,7 @@ export interface CrowdsecInsights {
 	alertCount: number;
 	activeDecisions: number | null;
 	localActiveDecisions: number | null;
+	localActiveDecisionsTruncated?: boolean;
 	sampled: boolean;
 	activity: { start: string; count: number }[];
 	home: { latitude: number; longitude: number } | null;
@@ -106,6 +107,7 @@ export interface CrowdsecInsights {
 }
 
 export interface CrowdsecHistoryParams {
+	cursor?: string;
 	page: number;
 	pageSize: number;
 	windowHours: number;
@@ -116,6 +118,11 @@ export interface CrowdsecHistoryParams {
 }
 
 export interface CrowdsecAlertPage {
+	scanMode?: boolean;
+	nextCursor?: string | null;
+	scanned?: number;
+	start?: string;
+	end?: string;
 	items: CrowdsecAlert[];
 	page: number;
 	pageSize: number;
@@ -132,22 +139,23 @@ export interface CrowdsecMetrics {
 	appsecFailureAction?: "deny" | "passthrough" | null;
 	appsecDropUnreadableBody?: boolean | null;
 	appsecMetricsPresent?: boolean;
-	activeDecisions?: number;
+	activeDecisions?: number | null;
 	localActiveDecisions?: number | null;
 	communityActiveDecisions?: number | null;
 	decisionOrigins?: { name: string; count: number }[];
-	alerts?: number;
-	appsecRequests?: number;
-	appsecBlocked?: number;
-	appsecPassed?: number;
+	alerts?: number | null;
+	appsecRequests?: number | null;
+	appsecBlocked?: number | null;
+	appsecPassed?: number | null;
 	appsecBlockRate?: number | null;
 	appsecRules?: { name: string; count: number }[];
-	bouncerRequests?: number;
-	bouncerDecisionHits?: number;
-	machineRequests?: number;
-	parserHits?: number;
+	bouncerRequests?: number | null;
+	bouncerDecisionHits?: number | null;
+	machineRequests?: number | null;
+	parserHits?: number | null;
+	parserMetricScope?: "events" | "nodes";
 	parserSuccessRate?: number | null;
-	whitelistHits?: number;
+	whitelistHits?: number | null;
 	averageLapiMs?: number | null;
 	averageParsingMs?: number | null;
 }

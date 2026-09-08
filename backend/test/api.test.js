@@ -1,13 +1,14 @@
 // HTTP-level characterization tests: boot the real express app against a real
 // (temporary) sqlite database and pin the auth, permission and CRUD contract.
 // The nginx binary is mocked; everything else is the genuine article.
+import "./helpers/environment.js";
 import process from "node:process";
 
 process.env.COOKIE_SECRET ||= "api-test-cookie-secret";
 
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import net from "node:net";
 import { after, test } from "node:test";
 
@@ -32,18 +33,6 @@ for (const dir of [
 	mkdirSync(dir, { recursive: true });
 }
 
-// lib/config.js hardcodes /data/npmplus for the sqlite database and jwt keys;
-// a previous run (or another process) may hold the file, in which case we
-// reuse the database and reset the seeded rows after migrating
-let dbIsFresh = true;
-for (const suffix of ["", "-wal", "-shm"]) {
-	try {
-		rmSync(`/data/npmplus/database.sqlite${suffix}`, { force: true });
-	} catch {
-		dbIsFresh = false;
-	}
-}
-
 const { default: getInstance } = await import("../db.js");
 const { migrateUp } = await import("../migrate.js");
 const { default: app } = await import("../app.js");
@@ -62,19 +51,6 @@ const ADMIN_EMAIL = "admin@example.com";
 const ADMIN_PASSWORD = "Correct-Horse-1";
 const PEON_EMAIL = "peon@example.com";
 const PEON_PASSWORD = "Peon-Pass-1";
-
-await migrateUp();
-
-if (!dbIsFresh) {
-	// the database survived from a previous run: drop the previous seeds
-	const stale = await getInstance()("user").whereIn("email", [ADMIN_EMAIL, PEON_EMAIL]).select("id");
-	for (const { id } of stale) {
-		await getInstance()("user_permission").where("user_id", id).del();
-		await getInstance()("auth").where("user_id", id).del();
-		await getInstance()("user").where("id", id).del();
-	}
-	await getInstance()("proxy_host").del();
-}
 
 const insertUser = async ({ email, password, roles }) => {
 	const user = await userModel.query().insertAndFetch({ email, name: "Test", nickname: "tester", avatar: "", roles });
@@ -381,6 +357,16 @@ test("crowdsec manual-ban validation fires before the LAPI is contacted", async 
 	assert.equal(res.body.error.message, "crowdsec.invalid-ban-input");
 });
 
+test("Anubis reporting retains admin authorization and unknown metrics before collection", async () => {
+	assert.equal((await api("GET", "/api/crowdsec/anubis-report")).status, 403);
+	assert.equal((await api("GET", "/api/crowdsec/anubis-report", { cookie: peonCookie })).status, 403);
+	const report = await api("GET", "/api/crowdsec/anubis-report?window=1", { cookie: adminCookie });
+	assert.equal(report.status, 200, report.text);
+	assert.equal(report.body.metrics.status, "unavailable");
+	assert.equal(report.body.metrics.totals.issued, null);
+	assert.equal(report.body.ledger.total, 0);
+});
+
 test("crowdsec reads degrade to a stable not-wired error without a LAPI key", async () => {
 	// key-auth reads and machine-token reads report distinct wiring states,
 	// while the anubis view degrades per-probe instead of failing
@@ -497,4 +483,20 @@ test("a failed backfill leaves the avatar empty for the next login to retry", as
 	await new Promise((resolve) => setTimeout(resolve, 300));
 	const row = await userModel.query().findById(seeded.id);
 	assert.equal(row.avatar, "");
+});
+
+test("security telemetry requires admin access and represents an empty collector honestly", async () => {
+	assert.equal((await api("GET", "/api/crowdsec/telemetry")).status, 403);
+	assert.equal((await api("GET", "/api/crowdsec/telemetry", { cookie: peonCookie })).status, 403);
+	const result = await api("GET", "/api/crowdsec/telemetry?window_hours=1", { cookie: adminCookie });
+	assert.equal(result.status, 200);
+	assert.equal(result.body.window_hours, 1);
+	assert.equal(result.body.nginx.status, "unavailable");
+	assert.equal(result.body.nginx.incomplete, true);
+	assert.deepEqual(result.body.nginx.hosts, []);
+});
+
+test("extended alert history retains the admin gate", async () => {
+	assert.equal((await api("GET", "/api/crowdsec/history/alerts?cursor=")).status, 403);
+	assert.equal((await api("GET", "/api/crowdsec/history/alerts?cursor=", { cookie: peonCookie })).status, 403);
 });
