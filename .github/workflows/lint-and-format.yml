@@ -33,6 +33,8 @@ jobs:
           node validate-schema.js
           pnpm test
           python3 ../tests/installer-recovery.py
+      - name: upstream sync contracts
+        run: python3 tests/upstream-sync.py
       - name: frontend
         run: |
           cd frontend

@@ -17,6 +17,7 @@ It is based on [ZoeyVid/NPMplus](https://github.com/ZoeyVid/NPMplus) and the ori
 | Check it is running | [Status and logs](#status-and-logs) |
 | Something broke | [Troubleshooting](#troubleshooting) |
 | Feature overview | [Main features](#main-features) |
+| Maintain the fork and merge ZoeyVid updates | [Fork maintenance guide](FORK.md) |
 | Everything else (updates, boot, backups internals, diagnostics) | [Setup and operations guide](docs/setup-npmplus.md) · [Advanced reference](ADVANCED.md) |
 
 The recommended installer is the pinned **v2.15.1-mangyan1.rc.5** release candidate, which is SHA-256-verified and resolves its images to immutable digests. The maintained `develop` channel contains the newest fixes between releases and remains available for rolling test deployments on the [Releases page](https://github.com/mangyan1/NPMplus/releases).

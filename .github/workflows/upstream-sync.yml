@@ -1,20 +1,14 @@
 name: upstream sync
 
-# keeps the fork up to date with ZoeyVid/NPMplus.
-# clean merge -> proposed as a pull request for review and required checks.
-# conflict -> the conflicted files and a resolve recipe are recorded in the
-# job log and step summary (an issue is filed when issues are enabled).
-# nothing is force-pushed, ever.
-
+# Propose upstream changes for review. Only the disposable automation branch
+# may be replaced with a lease; develop and release tags are never rewritten.
 on:
   schedule:
-    # daily at 03:43 UTC, off the :00 mark to be nice to shared infra
     - cron: "43 3 * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
-  issues: write
   pull-requests: write
 
 concurrency:
@@ -23,95 +17,15 @@ concurrency:
 
 jobs:
   sync:
+    if: github.repository == 'mangyan1/NPMplus'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: develop
           fetch-depth: 0
-
-      - name: merge upstream develop
-        id: merge
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote add upstream https://github.com/ZoeyVid/NPMplus.git
-          git fetch upstream develop
-          git switch -C automation/upstream-sync origin/develop
-          if git merge --no-ff upstream/develop -m "merge upstream develop"; then
-            echo "conflict=false" >> "$GITHUB_OUTPUT"
-            if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/develop)" ]; then
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "conflicted files:"
-            git diff --name-only --diff-filter=U | tee conflict-files.txt
-            git merge --abort
-            echo "conflict=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: propose clean merge
-        if: steps.merge.outputs.conflict == 'false' && steps.merge.outputs.changed == 'true'
+      - name: propose upstream merge
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          git push --force-with-lease origin HEAD:automation/upstream-sync
-          if [ "$(gh pr list --head automation/upstream-sync --base develop --state open --json number --jq 'length')" -eq 0 ]; then
-            gh pr create --head automation/upstream-sync --base develop \
-              --title "Merge upstream develop" \
-              --body "Automated upstream merge proposal. Review the diff and required checks before merging."
-          fi
-
-      - name: report conflict
-        if: steps.merge.outputs.conflict == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          files=$(cat conflict-files.txt)
-          body=$(cat <<EOF
-          The daily upstream sync could not merge cleanly.
-
-          Conflicted files:
-          \`\`\`
-          $files
-          \`\`\`
-
-          Most likely ZoeyVid/NPMplus fixed one of the issues we also patched
-          locally (#3806-#3810). If so, the local fix commits touching those
-          files are obsolete, drop them and take upstream's version:
-
-          \`\`\`bash
-          # find the local commits touching the conflicted files
-          git log --oneline upstream/develop..develop -- <files>
-
-          # drop them by deleting their lines in the editor, then save
-          git rebase -i upstream/develop
-
-          # then merge upstream, push a review branch, and open a PR
-          git switch -c resolve/upstream-sync
-          git merge upstream/develop
-          git push --set-upstream origin resolve/upstream-sync
-          gh pr create --base develop --head resolve/upstream-sync
-          \`\`\`
-
-          Close this issue afterwards; the next scheduled run will find a clean tree.
-          EOF
-          )
-          # issues are disabled on this repository, so issue create/comment is
-          # expected to fail with "Resource not accessible by integration".
-          # the conflicted files are already listed in the job log above; failing
-          # the whole workflow on top of an unfileable issue would only add noise,
-          # so record a step summary and succeed instead.
-          existing=$(gh issue list --search 'in:title "upstream sync conflict" is:open' --json number --jq '.[0].number' 2>/dev/null || true)
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body" || true
-          else
-            gh issue create --title "upstream sync conflict with ZoeyVid/NPMplus" --body "$body" || true
-          fi
-          echo "### Upstream sync conflict" >> "$GITHUB_STEP_SUMMARY"
-          echo "The daily upstream merge hit conflicts in these files; resolve manually as described in the log above:" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cat conflict-files.txt >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          GH_REPO: ${{ github.repository }}
+        run: bash .github/scripts/upstream-sync.sh
