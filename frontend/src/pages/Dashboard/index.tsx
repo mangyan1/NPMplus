@@ -30,7 +30,7 @@ const Dashboard = () => {
 									<div className="card-body">
 										<div className="row align-items-center">
 											<div className="col-auto">
-												<span className="bg-green text-white avatar">
+												<span className="bg-green text-white avatar avatar-square">
 													<IconBolt />
 												</span>
 											</div>
@@ -57,7 +57,7 @@ const Dashboard = () => {
 									<div className="card-body">
 										<div className="row align-items-center">
 											<div className="col-auto">
-												<span className="bg-yellow text-white avatar">
+												<span className="bg-yellow text-white avatar avatar-square">
 													<IconArrowsCross />
 												</span>
 											</div>
@@ -85,7 +85,7 @@ const Dashboard = () => {
 									<div className="card-body">
 										<div className="row align-items-center">
 											<div className="col-auto">
-												<span className="bg-blue text-white avatar">
+												<span className="bg-blue text-white avatar avatar-square">
 													<IconDisc />
 												</span>
 											</div>
@@ -110,7 +110,7 @@ const Dashboard = () => {
 									<div className="card-body">
 										<div className="row align-items-center">
 											<div className="col-auto">
-												<span className="bg-red text-white avatar">
+												<span className="bg-red text-white avatar avatar-square">
 													<IconBoltOff />
 												</span>
 											</div>

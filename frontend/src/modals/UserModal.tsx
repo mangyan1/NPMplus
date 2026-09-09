@@ -115,7 +115,7 @@ const UserModal = EasyModal.create(({ id, visible, remove }: Props) => {
 								{id !== "new" && (
 									<div className="d-flex align-items-center mb-3">
 										<span
-											className="avatar avatar-lg me-3"
+											className="avatar avatar-square avatar-lg me-3"
 											style={{
 												backgroundImage: `url(${data?.avatar || "/images/default-avatar.jpg"})`,
 											}}
