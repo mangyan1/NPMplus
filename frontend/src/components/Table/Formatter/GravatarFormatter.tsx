@@ -9,7 +9,7 @@ export function GravatarFormatter({ url, name }: Props) {
 		<div className="d-flex py-1 align-items-center">
 			<span
 				title={name}
-				className="avatar avatar-2 me-2"
+				className="avatar avatar-square avatar-2 me-2"
 				style={{
 					backgroundImage: `url(${url || defaultImg})`,
 				}}

@@ -57,7 +57,7 @@ export function SiteHeader() {
 								aria-label="Open user menu"
 							>
 								<span
-									className="avatar avatar-sm"
+									className="avatar avatar-square avatar-sm"
 									style={{
 										backgroundImage: `url(${currentUser?.avatar || "/images/default-avatar.jpg"})`,
 									}}

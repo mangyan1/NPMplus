@@ -1,4 +1,8 @@
 {
+	"az": {
+		"flag": "AZ",
+		"name": "Azərbaycanca"
+	},
 	"bg": {
 		"flag": "BG",
 		"name": "Български"
