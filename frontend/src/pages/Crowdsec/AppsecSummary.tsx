@@ -47,6 +47,9 @@ const AppsecSummary = ({ metrics, onOpen }: { metrics: ReturnType<typeof useCrow
 				<div className="text-secondary small mt-2">
 					<T id="crowdsec.appsec.since-restart" />
 				</div>
+				<div className="text-secondary small mt-2">
+					<T id="crowdsec.appsec.decisions-help" />
+				</div>
 				<div className={`${styles.wafTraffic} mt-3`} role="img" aria-label={summary}>
 					{trafficAvailable && requests > 0 ? (
 						<>

@@ -28,6 +28,30 @@ as inspections. Neither request counts nor packet counts represent unique IPs.
 Do not sum the HTTP and firewall figures. The firewall observer currently covers
 IPv4 only, even on installations that also enforce IPv6 rules.
 
+## Why WAF blocks can be 2 while local decisions are 0
+
+The overview's **WAF blocked requests** value sums `cs_appsec_block_total` since
+CrowdSec started. It counts requests, including repeated requests from one IP.
+The **Local active decisions** card counts current local LAPI decision records,
+excluding community feeds, simulations, and the separately displayed honeypot
+decisions. Expired and removed decisions are no longer active.
+
+AppSec can reject the current request without creating an ongoing IP ban; longer
+remediation depends on scenarios and decision profiles. Therefore two WAF blocks
+and zero local decisions can both be correct. Neither value counts unique
+attackers, and the WAF counter alone does not prove current end-to-end enforcement.
+See CrowdSec's [metric definitions](https://docs.crowdsec.net/docs/observability/prometheus/)
+and [AppSec introduction](https://docs.crowdsec.net/docs/appsec/intro/).
+
+The local card's subtitle describes active decisions. It no longer displays
+cumulative nonempty decision replies beneath that count: those replies count API
+responses, including repeated reads and dashboard reads, rather than blocked
+requests or unique IPs. Bouncer API request statistics remain in the System tab.
+
+The overview and WAF tab explain this distinction directly. These definitions
+were checked against the backend and frontend; the owner's live server has not
+been inspected as part of this clarification.
+
 ## Collection, retention, and limits
 
 - The image instruments the pinned Lua bouncer at its AppSec HTTP response and

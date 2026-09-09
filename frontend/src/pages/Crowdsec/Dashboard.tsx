@@ -359,25 +359,7 @@ const CrowdsecDashboard = () => {
 											insights.data.localActiveDecisionsTruncated,
 										)}
 										tone="red"
-										description={
-											metrics.data?.available === false ||
-											typeof metrics.data?.bouncerRequests !== "number" ||
-											metrics.isRefetchError ? (
-												<T id="crowdsec.kpi.local-hint" />
-											) : (metrics.data.bouncerDecisionHits ?? 0) > 0 ? (
-												<T
-													id="crowdsec.kpi.bouncer-hits"
-													data={{ count: metrics.data.bouncerDecisionHits ?? 0 }}
-												/>
-											) : metrics.data.bouncerRequests > 0 ? (
-												<T
-													id="crowdsec.kpi.bouncer-pulls"
-													data={{ count: metrics.data.bouncerRequests }}
-												/>
-											) : (
-												<T id="crowdsec.kpi.bouncer-idle" />
-											)
-										}
+										description={<T id="crowdsec.kpi.local-hint" />}
 										onClick={() => setKpi("local")}
 									/>
 									<Metric

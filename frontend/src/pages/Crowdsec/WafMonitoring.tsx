@@ -54,6 +54,9 @@ const WafMonitoring = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetr
 						<p className="text-secondary mb-0">
 							<T id="crowdsec.appsec.description" />
 						</p>
+						<p className="text-secondary mt-2 mb-0">
+							<T id="crowdsec.appsec.decisions-help" />
+						</p>
 					</div>
 				</div>
 			</section>

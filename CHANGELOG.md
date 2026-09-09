@@ -14,6 +14,7 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ### Fixed
 
+- Clarified that WAF blocked requests count activity since CrowdSec started, while local decisions count currently active ban/CAPTCHA records. A blocked WAF request does not necessarily create an IP ban, so the dashboard now explains why the first count can be positive while the second is zero.
 - Updated the Debian restore smoke fixture to serve a real HTTPS health response, satisfy the strengthened container health gate, and verify the complete snapshot layout. Restore failures now print their diagnostic log in CI.
 - Honeypot bridge prefix fingerprints detect log resets that regrow beyond the previous cursor; failed entries remain pending. Reporting keeps missing metrics, stale observations, and current-ban lookup failures distinct from zero activity.
 - Installer v1.57 preserves pending honeypot entries after a CrowdSec ban-command failure, prevents overlapping bridge runs, and publishes an atomic status file through the existing read-only log mount. Incomplete log lines remain pending. Anubis reachability now uses HTTP response headers, so an oversized challenge body cannot cause a false outage.
