@@ -5,7 +5,9 @@ ARG CADDY_VERSION=v2.11.4
 ARG XCADDY_VERSION=v0.4.5
 ARG X_CRYPTO_VERSION=v0.56.0
 ARG X_NET_VERSION=v0.57.0
-ARG GRPC_VERSION=v1.83.1
+# v1.83.2 fixes GHSA-2v4p-qf9q-27wj (CVE-2026-84445): xDS servers crash on
+# requests missing both :authority and Host headers.
+ARG GRPC_VERSION=v1.83.2
 ARG CEL_GO_VERSION=v0.29.2
 
 # Caddy 2.11.4 predates cel-go 0.29's InterpretableV2 API. This two-line

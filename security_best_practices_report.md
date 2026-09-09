@@ -259,6 +259,55 @@ provider, Cloudflare, CrowdSec CAPI, the host firewall, or Docker itself. A zero
 scanner count means no match in the scanner data at that time; it is not a proof
 that undisclosed vulnerabilities do not exist.
 
+## Container Security gate triage — 2026-09-09
+
+The scheduled Container Security run
+([34336180745](https://github.com/mangyan1/NPMplus/actions/runs/34336180745))
+failed for the CrowdSec, Anubis, and Caddy scans. The NPMplus scan passed. The single
+unreviewed match in all three failing jobs was the same newly published advisory.
+
+### SEC-09-09 — gRPC-Go xDS panic advisory CVE-2026-84445 (GHSA-2v4p-qf9q-27wj)
+
+- Severity: **High** per the advisory; medium operational priority for this stack.
+- Location: `caddy/Dockerfile`, `.trivy/crowdsec.yaml`, `.trivy/anubis.yaml`
+- Evidence: the advisory was published 2026-09-08T21:21:43Z, after the previous day's
+  green run. On 2026-09-09 Trivy reported it in three scanned images: the fork Caddy
+  image (gRPC-Go v1.83.1, 1 occurrence), upstream CrowdSec 1.8.1 (v1.83.0, 8
+  occurrences), and upstream Anubis 1.27.0 (v1.81.1, 1 occurrence). Each failing job
+  reported exactly one unique high ID and no critical match.
+- Advisory detail: gRPC-Go servers constructed with `xds.NewGRPCServer()` panic and
+  the entire process terminates when a request arrives without both `:authority` and
+  `Host` headers, because the xDS routing interceptor indexes an empty authority
+  slice. Fixed in gRPC-Go 1.82.2 and 1.83.2.
+- Reachability notes: the panic requires the vulnerable path in a running xDS gRPC
+  server. Caddy's redirect configuration does not serve gRPC; CrowdSec's LAPI is a
+  plain-HTTP JSON API; Anubis's standard deployment is `net/http` on a loopback-only
+  listener. The xDS server path is not configured in this stack, but the scanners
+  cannot prove the vulnerable code is unreachable in the compiled upstream binaries,
+  so the upstream matches were accepted only through expiring exceptions rather than
+  dismissed as false positives.
+- Resolution:
+  - Caddy: the fork build now replaces gRPC-Go with v1.83.2
+    (`caddy/Dockerfile`). The caddy workflow builds and scans the candidate at
+    MEDIUM+ before publishing, so the rebuilt image ships fixed.
+  - CrowdSec: 8 occurrences accepted in `.trivy/crowdsec.yaml` with an expiring
+    exception; awaiting an upstream rebuild. Anubis 1.27.0 remains the latest stable
+    release, so the same applies there (1 occurrence in `.trivy/anubis.yaml`). Both
+    new exceptions expire with the existing baseline on 2026-10-04.
+- Verification: SARIF was uploaded before the enforcement step failed, so the ten
+  open code-scanning alerts (89-97) are the accepted upstream occurrences. They will
+  reconcile out of the open-alert view once the baseline is reapplied on the next
+  passing run. The Caddy candidate must pass its build-scan gate before the `:caddy`
+  tag moves.
+- Follow-up: when upstream CrowdSec or Anubis publishes a rebuilt image, remove the
+  corresponding `CVE-2026-84445` exception entry. Never disable the failing scan or
+  the enforcement gate to obtain a green run.
+
+References: [GHSA-2v4p-qf9q-27wj](https://github.com/advisories/GHSA-2v4p-qf9q-27wj),
+[gRPC-Go 1.83.2 release](https://github.com/grpc/grpc-go/releases/tag/v1.83.2),
+[CrowdSec releases](https://github.com/crowdsecurity/crowdsec/releases),
+[Anubis releases](https://github.com/TecharoHQ/anubis/releases).
+
 ## GoAccess browser hardening — 2026-09-05
 
 The optional, administrator-only GoAccess report now uses GoAccess's supported external-assets mode. Its executable JavaScript and stylesheet are generated as separate same-origin files, both routes require the same administrator authorization as the report, and the HTML, JavaScript, and CSS responses are marked `no-store`. The former executable-inline-script allowance was removed. The container health check also verifies all three generated files and the live WebSocket socket when GoAccess is enabled.

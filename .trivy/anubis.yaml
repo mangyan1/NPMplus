@@ -29,6 +29,9 @@ vulnerabilities:
   - id: CVE-2026-84304
     expired_at: 2026-10-04
     statement: "Anubis 1.27.0 upstream image; loopback-only listener; awaiting an upstream Go rebuild."
+  - id: CVE-2026-84445
+    expired_at: 2026-10-04
+    statement: "Anubis 1.27.0 upstream image; standard net/http deployment, not an xDS gRPC server; awaiting an upstream Go rebuild."
   - id: GHSA-hrxh-6v49-42gf
     expired_at: 2026-10-04
     statement: "Unused gRPC/xDS path in the standard Anubis deployment; awaiting an upstream rebuild."

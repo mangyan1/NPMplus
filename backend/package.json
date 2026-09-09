@@ -10,7 +10,7 @@
 		"test": "node --test test/*.test.js"
 	},
 	"dependencies": {
-		"@apidevtools/json-schema-ref-parser": "16.0.2",
+		"@apidevtools/json-schema-ref-parser": "16.0.1",
 		"ajv": "8.20.0",
 		"archiver": "8.0.0",
 		"bcryptjs": "3.0.3",
@@ -24,7 +24,7 @@
 		"liquidjs": "10.29.0",
 		"lodash": "4.18.1",
 		"multer": "2.3.0",
-		"mysql2": "3.24.4",
+		"mysql2": "3.24.3",
 		"objection": "3.1.5",
 		"openid-client": "6.8.7",
 		"otplib": "13.5.0",
