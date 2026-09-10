@@ -22,7 +22,7 @@ NPMPLUS_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:develop"
 CADDY_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:caddy"
 CROWDSEC_IMAGE_CHANNEL="docker.io/crowdsecurity/crowdsec:latest"
 DOCKER_INSTALL_URL="https://get.docker.com"
-DOCKER_INSTALL_SHA256="a2050182dbc4876e2327825e139493c17cf12303634b19cb446f7e33132f3f99"
+DOCKER_INSTALL_SHA256="36bab4d12295a539f7493d52ed8296244895d2febceff5e725dedc0b0708f77b"
 PACKAGECLOUD_INSTALL_URL="https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh"
 PACKAGECLOUD_INSTALL_SHA256="3a098063d364ab1e69516d6835d69945d0e4061c003f86a98e7cf307bb79a91e"
 
