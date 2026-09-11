@@ -106,12 +106,21 @@ durable maintenance rules therefore also live here.
 
 The 2026-09-08 tidy extracts the sync workflow into a tested script and the browser
 deployment recovery into a dedicated module. Existing dashboard modules and
-database migrations retain their paths. The latest upstream revision inspected
-was `5507ba49`; its merge simulation against `dbb85f13` had no text conflicts.
-That upstream merge was not applied or runtime-tested as part of the tidy.
+database migrations retain their paths. The latest upstream revision merged into
+develop is `0ac5ecb0` (2026-09-11, commit `4952ce4b`): the ten conflicting files
+were resolved keeping fork 401/403 auth semantics, the request_id error handler
+(plus upstream's CommandError debug payload), no-store HTML caching, and the
+source-built Caddy image; upstream's dependency bumps were rejected as younger
+than the pnpm `minimumReleaseAge` window and left for renovate.
 
-Local validation passed: eight sync regression tests, ShellCheck, changed-workflow
-actionlint, frontend Biome in CI mode, TypeScript/eight frontend tests, production
-build, 68 browser checks, and changed-file spellcheck. Desktop and 320px dashboard
-screenshots were inspected. GitHub PR creation by the revised workflow still needs
+The 2026-09-11 smoke-test fix points the installer self-check in the smoke
+workflow at the file under test via a `file://` SELF_URL, so branch/PR script
+changes no longer trip the "different content with the same SCRIPT_VERSION"
+refusal. The production stale-script guard on real installs is unchanged.
+
+Local validation passed for the merge: backend tests and schema, frontend tests,
+TypeScript and production build, byte-sorted translations, Biome on all changed
+files, installer Bash syntax, and the pinned auth-contract tests. CI on the tip
+commit is green across smoke-test, boot-resilience, lint-and-format, and the
+develop image build. GitHub PR creation by the revised workflow still needs
 verification after the changes are published.

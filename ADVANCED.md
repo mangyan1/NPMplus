@@ -37,7 +37,7 @@ If you don't need the web GUI of NPMplus, you may also have a look at caddy: htt
 - opt-in logging
 - zstd and brotli compression in addition to gzip
 - Goaccess log analytics (/goaccess) and a Swagger UI (/api/docs) for the api, both in the web UI
-- password/mfa reset (only sqlite): `printf '%s' "$NPMPLUS_NEW_PASSWORD" | docker exec -i npmplus password-reset.js USER_EMAIL --password-stdin [--disable-mfa]` (read the password into `NPMPLUS_NEW_PASSWORD` with `read -rs` first; it is never accepted in argv)
+- password/mfa reset (only sqlite): `printf '%s' "$NPMPLUS_NEW_PASSWORD" | docker exec -i npmplus password-reset.js USER_EMAIL --password-stdin [--disable-mfa]` (read the password into `NPMPLUS_NEW_PASSWORD` with `read -rs` first; it is never accepted in argv; a password reset also invalidates all of the user's existing web-UI sessions, so every device must log in again)
 - alpine based, much smaller image
 - punycode domain support
 - option to replace custom certs
