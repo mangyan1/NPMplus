@@ -182,7 +182,7 @@ export default {
 	 * @param {Access} access
 	 * @returns {Promise}
 	 */
-	getFreshToken: async (access) => {
+	getFreshToken: async (access, afterRevoke) => {
 		const Token = TokenModel();
 
 		if (access?.token.getUserId(0) && access.token.hasScope("user")) {
@@ -193,6 +193,7 @@ export default {
 					id: access.token.getUserId(0),
 				},
 				expiresIn: "1h",
+				iat: Math.floor(Date.now() / 1000) + (afterRevoke ? 1 : 0),
 			});
 
 			return {
@@ -227,6 +228,16 @@ export default {
 
 		const userId = tokenData.attrs?.id;
 		if (!userId) {
+			throw new errs.AuthError("Invalid challenge token");
+		}
+
+		const user = await userModel
+			.query()
+			.where("id", userId)
+			.andWhere("is_deleted", 0)
+			.andWhere("is_disabled", 0)
+			.first();
+		if (!user || tokenData.iat <= user.npmplus_token_valid_after) {
 			throw new errs.AuthError("Invalid challenge token");
 		}
 

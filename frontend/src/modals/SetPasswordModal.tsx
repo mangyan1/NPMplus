@@ -55,6 +55,9 @@ const SetPasswordModal = EasyModal.create(({ id, visible, remove }: Props) => {
 							<Alert variant="danger" show={Boolean(error)} onClose={() => setError(null)} dismissible>
 								{error}
 							</Alert>
+							<Alert variant="warning">
+								<T id="logout-other-devices" />
+							</Alert>
 							<div className="mb-3">
 								<Field name="new" validate={validateString(8, 100)}>
 									{({ field, form }: any) => (

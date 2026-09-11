@@ -2,6 +2,7 @@ import express from "express";
 import { rateLimit } from "express-rate-limit";
 import multer from "multer";
 import internalMfa from "../internal/mfa.js";
+import internalToken from "../internal/token.js";
 import internalTotp from "../internal/totp.js";
 import internalUser from "../internal/user.js";
 import Access from "../lib/access.js";
@@ -50,7 +51,7 @@ router
 	 *
 	 * Retrieve all users
 	 */
-	.get(async (req, res, next) => {
+	.get(async (req, res, _next) => {
 		const data = await validator(
 			{
 				additionalProperties: false,
@@ -142,7 +143,7 @@ router
 	 *
 	 * Retrieve a specific user
 	 */
-	.get(async (req, res, next) => {
+	.get(async (req, res, _next) => {
 		const data = await validator(
 			{
 				required: ["user_id"],
@@ -175,7 +176,7 @@ router
 	 *
 	 * Update and existing user
 	 */
-	.put(async (req, res, next) => {
+	.put(async (req, res, _next) => {
 		const payload = apiValidator(getValidationSchema("/users/{userID}", "put"), req.body);
 		payload.id = req.params.user_id;
 		const result = await internalUser.update(res.locals.access, payload);
@@ -187,7 +188,7 @@ router
 	 *
 	 * Update and existing user
 	 */
-	.delete(async (req, res, next) => {
+	.delete(async (req, res, _next) => {
 		const result = await internalUser.delete(res.locals.access, {
 			id: req.params.user_id,
 		});
@@ -212,10 +213,22 @@ router
 	 *
 	 * Update password for a user
 	 */
-	.put(async (req, res, next) => {
+	.put(async (req, res, _next) => {
 		const payload = apiValidator(getValidationSchema("/users/{userID}/auth", "put"), req.body);
 		payload.id = req.params.user_id;
 		const result = await internalUser.setPassword(res.locals.access, payload);
+		if (Number(req.params.user_id) === res.locals.access.token.getUserId(0)) {
+			// the password change stamps token_valid_after, so a self-change must
+			// issue a fresh token to stay logged in
+			const data = await internalToken.getFreshToken(res.locals.access, true);
+			res.cookie("__Host-Http-token", data.token, {
+				signed: true,
+				httpOnly: true,
+				secure: true,
+				sameSite: "Strict",
+				expires: new Date(data.expires),
+			});
+		}
 		res.status(200).send(result);
 	});
 
@@ -237,7 +250,7 @@ router
 	 *
 	 * Set some or all permissions for a user
 	 */
-	.put(async (req, res, next) => {
+	.put(async (req, res, _next) => {
 		const payload = apiValidator(getValidationSchema("/users/{userID}/permissions", "put"), req.body);
 		payload.id = req.params.user_id;
 		const result = await internalUser.setPermissions(res.locals.access, payload);
@@ -354,6 +367,14 @@ router
 		try {
 			const { code } = apiValidator(getValidationSchema("/users/{userID}/mfa/totp/enable", "post"), req.body);
 			const result = await internalMfa.enableTotp(res.locals.access, req.params.user_id, code);
+			const data = await internalToken.getFreshToken(res.locals.access, true);
+			res.cookie("__Host-Http-token", data.token, {
+				signed: true,
+				httpOnly: true,
+				secure: true,
+				sameSite: "Strict",
+				expires: new Date(data.expires),
+			});
 			res.status(200).send(result);
 		} catch (err) {
 			debug(logger, `${req.method.toUpperCase()} ${req.path}: ${err}`);
@@ -383,6 +404,14 @@ router
 		try {
 			const { code } = apiValidator(getValidationSchema("/users/{userID}/mfa/backup-codes", "post"), req.body);
 			const result = await internalMfa.regenerateBackupCodes(res.locals.access, req.params.user_id, code);
+			const data = await internalToken.getFreshToken(res.locals.access, true);
+			res.cookie("__Host-Http-token", data.token, {
+				signed: true,
+				httpOnly: true,
+				secure: true,
+				sameSite: "Strict",
+				expires: new Date(data.expires),
+			});
 			res.status(200).send(result);
 		} catch (err) {
 			debug(logger, `${req.method.toUpperCase()} ${req.path}: ${err}`);
@@ -403,13 +432,20 @@ router
 	 *
 	 * Revoke all of a user's sessions (self or admin)
 	 */
-	.delete(async (req, res, next) => {
+	.delete(async (req, res, _next) => {
 		await internalUser.revokeSessions(res.locals.access, req.params.user_id);
 		if (Number(req.params.user_id) === res.locals.access.token.getUserId(0)) {
 			res.clearCookie("__Host-Http-token", {
 				httpOnly: true,
 				secure: true,
 				sameSite: "Strict",
+			});
+			// tell the login page not to bounce to OIDC again: the user just
+			// revoked their own sessions and may want to log in locally
+			res.cookie("__Host-npmplus_oidc_no_redirect", "true", {
+				secure: true,
+				sameSite: "Strict",
+				maxAge: 60 * 60 * 1000,
 			});
 		}
 		res.status(200).send(true);
@@ -438,7 +474,7 @@ router
 			storage: multer.memoryStorage(),
 			limits: { fileSize: 1024 * 1024, files: 1, fields: 0, parts: 1, fieldNameSize: 32 },
 		}).single("avatar"),
-		async (req, res, next) => {
+		async (req, res, _next) => {
 			const result = await internalUser.setAvatar(res.locals.access, req.params.user_id, req.file);
 			res.status(200).send(result);
 		},
@@ -449,7 +485,7 @@ router
 	 *
 	 * Remove the custom avatar, falling back to gravatar
 	 */
-	.delete(async (req, res, next) => {
+	.delete(async (req, res, _next) => {
 		const result = await internalUser.deleteAvatar(res.locals.access, req.params.user_id);
 		res.status(200).send(result);
 	});

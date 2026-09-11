@@ -158,6 +158,9 @@ const MfaModal = EasyModal.create(({ id, visible, remove }: Props) => {
 		if (step === "setup" && setupData) {
 			return (
 				<div className="py-2">
+					<Alert variant="warning">
+						<T id="logout-other-devices" />
+					</Alert>
 					<p className="text-muted mb-3">
 						<T id="totp.setup-instructions" />
 					</p>
@@ -324,6 +327,9 @@ const MfaModal = EasyModal.create(({ id, visible, remove }: Props) => {
 		if (step === "verify") {
 			return (
 				<div className="py-2">
+					<Alert variant="warning">
+						<T id="logout-other-devices" />
+					</Alert>
 					<p className="text-muted mb-3">
 						<T id="mfa.regenerate-instructions" />
 					</p>

@@ -1,6 +1,7 @@
 import { createGuardrails, generateSecret, generateURI, verify } from "otplib";
 import errs from "../lib/error.js";
 import authModel from "../models/auth.js";
+import userModel from "../models/user.js";
 import internalAuditLog from "./audit-log.js";
 import internalUser from "./user.js";
 
@@ -101,6 +102,11 @@ const internalTotp = {
 			.andWhere("user_id", userId)
 			.andWhere("type", "password")
 			.patch({ meta });
+
+		await userModel
+			.query()
+			.where("id", userId)
+			.patch({ npmplus_token_valid_after: Math.floor(Date.now() / 1000) });
 
 		await internalAuditLog.add(access, {
 			action: "updated",

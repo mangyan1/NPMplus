@@ -14,7 +14,10 @@ const up = async (knex) => {
 	logger.info(`[${migrateName}] Migrating Up...`);
 
 	await knex.schema.table("user", (user) => {
-		user.bigInteger("npmplus_token_valid_after").notNull().unsigned().defaultTo(0);
+		user.bigInteger("npmplus_token_valid_after")
+			.notNull()
+			.unsigned()
+			.defaultTo(Math.floor(Date.now() / 1000));
 	});
 
 	logger.info(`[${migrateName}] user Table altered`);

@@ -46,7 +46,7 @@ try {
 
 	const auth = db
 		.prepare(
-			"SELECT auth.id, auth.meta FROM auth JOIN user ON user.id = auth.user_id WHERE auth.type = 'password' AND auth.is_deleted = 0 AND user.is_deleted = 0 AND user.email = ?",
+			"SELECT auth.id, auth.user_id, auth.meta FROM auth JOIN user ON user.id = auth.user_id WHERE auth.type = 'password' AND auth.is_deleted = 0 AND user.is_deleted = 0 AND user.email = ?",
 		)
 		.get(EMAIL);
 
@@ -55,6 +55,10 @@ try {
 			db.prepare("UPDATE auth SET secret = ?, modified_on = datetime('now','localtime') WHERE id = ?").run(
 				bcrypt.hashSync(PASSWORD, 13),
 				auth.id,
+			);
+			db.prepare("UPDATE user SET npmplus_token_valid_after = ? WHERE id = ?").run(
+				Math.floor(Date.now() / 1000),
+				auth.user_id,
 			);
 			console.log(`Password for user ${EMAIL} has been reset.`);
 		}
