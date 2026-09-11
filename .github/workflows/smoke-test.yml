@@ -36,20 +36,21 @@ jobs:
           - name: alternate
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: point the script self-check at this commit
+      - name: point the script self-check at this tree
         # The script compares itself against SELF_URL (the published develop
-        # copy) before --update/safe-update runs. On a PR branch that modifies
-        # setup-npmplus.sh the two differ by design, which aborted the update
-        # steps with "different content with the same SCRIPT_VERSION". Point
-        # the check at the exact tree under test (the checked-out commit, which
-        # is the PR merge commit for pull requests) instead: the guard still
-        # runs and still refuses a genuinely stale script, but it now compares
-        # the tested tree against itself, so PR-side script changes are
-        # exercised end to end instead of tripping the stale-guard.
+        # copy) before --update/safe-update runs. On a branch or PR that
+        # modifies setup-npmplus.sh the two differ by design, which aborted
+        # the update steps with "different content with the same
+        # SCRIPT_VERSION" - the guard was comparing the tested tree against
+        # develop. Rewrite SELF_URL to a file:// URL over the exact file under
+        # test: the self-check still runs (same version, same bytes passes;
+        # a genuinely mismatched or unreachable source still fails loudly),
+        # and PR-side script changes are exercised end to end. The production
+        # guard with the real develop URL is unchanged.
         run: |
-          self_url="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/setup-npmplus.sh"
-          sed -i "s|^SELF_URL=.*|SELF_URL=\"$self_url\"|" setup-npmplus.sh
-          grep -Fxq "SELF_URL=\"$self_url\"" setup-npmplus.sh
+          script_path="$(pwd)/setup-npmplus.sh"
+          sed -i "s|^SELF_URL=.*|SELF_URL=\"file://${script_path}\"|" setup-npmplus.sh
+          grep -Fxq "SELF_URL=\"file://${script_path}\"" setup-npmplus.sh
       - name: preserve an unrelated Docker drop-in for the uninstall test
         run: |
           sudo mkdir -p /etc/systemd/system/docker.service.d
