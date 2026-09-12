@@ -308,6 +308,53 @@ References: [GHSA-2v4p-qf9q-27wj](https://github.com/advisories/GHSA-2v4p-qf9q-2
 [CrowdSec releases](https://github.com/crowdsecurity/crowdsec/releases),
 [Anubis releases](https://github.com/TecharoHQ/anubis/releases).
 
+## Container Security re-verification — 2026-09-11
+
+A fresh local scan with the CI-pinned Trivy 0.74.0 image re-verified every container the
+installer deploys, against the published digests, with and without the
+`--ignore-unfixed` filter to match the enforcement gate exactly.
+
+### Results
+
+- **Caddy (fork-built)**: zero high/critical findings across 17 OS packages and 146 Go
+  modules. The gRPC-Go 1.83.2 rebuild resolved every CVE-R01 match. One UNKNOWN-severity
+  `GO-2026-5932` notice (unmaintained `openpgp` module, no fix) remains, below the
+  enforcement gate.
+- **CrowdSec 1.8.1**: 26 high occurrences, 10 unique IDs, all covered by the expiring
+  `.trivy/crowdsec.yaml` baseline. The upstream image is unchanged since the
+  2026-09-03 v1.8.1 build (digest `sha256:0f2523fa...`).
+- **Anubis 1.27.0**: 12 high, all covered by the expiring `.trivy/anubis.yaml`
+  baseline. `v1.28.0-pre1` still ships vulnerable gRPC 1.82.1 and is not a fix.
+- **NPMplus develop**: 2 high (packaging-tool matches per CVE-R04), both covered.
+- **Coverage check**: zero uncovered findings on any image — every current
+  high/critical match maps to a documented exception, and no documented exception
+  remains that does not match a finding except the removed stale entry below.
+- GitHub code-scanning open alerts: 0. The scheduled gate run passed all four scans on
+  2026-09-11 (run 34585201402).
+
+### Housekeeping applied
+
+- Removed the stale `CVE-2026-59890` entry from `.trivy/npmplus.yaml`: current Trivy
+  databases no longer report that setuptools match, so the exception documented a
+  finding that no longer exists. The two remaining entries stay unchanged.
+- Refreshed the scan table above with the 2026-09-11 digests and occurrence counts,
+  and recorded the Caddy resolution in CVE-R01 with build-info evidence.
+- Confirmed the AppSec posture matches the project decision: the stack runs
+  `crowdsecurity/appsec-default` (base-config + vpatch-* + generic-*, remediation
+  `ban`) plus the `ZoeyVid/npmplus` collection for log-based detection; no
+  bot-challenge AppSec config is deployed, so the WAF layer cannot challenge or block
+  legitimate crawlers — the crawler layer is solely Anubis with its own allow-list.
+
+### Standing risks (unchanged policy)
+
+1. The exception baseline expires **2026-10-04**. Upstream CrowdSec and Anubis images
+   are still unrebuilt. If no rebuilt image exists by then, the daily gate goes red on
+   known, triaged findings. Handling: triage the diff, extend only with a reviewed
+   decision, never disable CrowdSec, AppSec, the firewall bouncer, Anubis, or the
+   enforcement gate to obtain a green run.
+2. `CVE-2026-32286` (CrowdSec/`cscli` PostgreSQL protocol) still has no published fix;
+   the standard deployment uses SQLite and does not exercise the driver.
+
 ## GoAccess browser hardening — 2026-09-05
 
 The optional, administrator-only GoAccess report now uses GoAccess's supported external-assets mode. Its executable JavaScript and stylesheet are generated as separate same-origin files, both routes require the same administrator authorization as the report, and the HTML, JavaScript, and CSS responses are marked `no-store`. The former executable-inline-script allowance was removed. The container health check also verifies all three generated files and the live WebSocket socket when GoAccess is enabled.
@@ -396,23 +443,25 @@ Scanner counts are inventory signals, not proof that every CVE is exploitable. A
 
 | Target scanned | Exact image/index digest | All scanner occurrences | High/critical detail | Assessment |
 | --- | --- | ---: | --- | --- |
-| NPMplus application | `sha256:9d9fe40b804d1ddf59919318f29d418d4673940d1cc37cafd41002b43bc4cd2b` | 3 (3 unique IDs) | 2 high, 0 critical | Two Python packaging-tool matches; not exposed through the web application. See CVE-R04. |
-| NPMplus Caddy | `sha256:2dcac425385b78408dbad163e32414e6a11795a8fb73c0e142abc17e489d7fa2` | 42 (31 unique IDs) | 18 fixable occurrences: 1 Trivy-critical and 17 high, representing 16 unique IDs | Highest remediation priority because Caddy is the public port-80 edge. See CVE-R01. |
-| CrowdSec 1.8.1/latest | `sha256:0f2523fa61ef507f15d953045cface490cc880670c62f2755ced17524107f71a` | 66 (26 unique IDs) | 18 high occurrences: 16 fixable and 2 currently without a fixed version, representing 9 unique IDs | Upstream image issue; practical exposure is reduced by loopback binding and default SQLite use. See CVE-R02. |
-| Anubis 1.27.0 | `sha256:8828275668b7bc675679f100970f9714f731388fbbf66ae94de8aca952e3fc4a` | 12 (12 unique IDs) | 11 high, 0 critical | Upstream image issue; loopback-only but indirectly handles untrusted requests through `auth_request`. See CVE-R03. |
+| NPMplus application | `sha256:7a6c6af7f1b4de7a52b85d54e59176a0fd8a8d7ea22f2debf86b88850ad6419c` | 3 (3 unique IDs) | 2 high, 0 critical | Two Python packaging-tool matches; not exposed through the web application. See CVE-R04. |
+| NPMplus Caddy (rebuilt 2026-09-02, re-verified 2026-09-11) | `sha256:fa9cf2b1c657cfe09e9cbebbf11fd22f28be92ace80f6cc020e837cfb9294ab1` | 1 (1 unique ID) | 0 high, 0 critical | **Resolved.** The source rebuild now ships gRPC-Go 1.83.2, `x/crypto` 0.56.0, `x/net` 0.57.0, `x/text` 0.41.0, and Go stdlib 1.26.8 (Trivy build-info verified). Zero high/critical findings; one UNKNOWN-severity unmaintained-`openpgp` module notice (GO-2026-5932, no fix, below the enforcement gate). See CVE-R01. |
+| CrowdSec 1.8.1/latest | `sha256:0f2523fa61ef507f15d953045cface490cc880670c62f2755ced17524107f71a` | 82 (28 unique IDs) | 26 high occurrences (10 unique IDs); one (`CVE-2026-32286`) has no fix yet | Upstream image issue; practical exposure is reduced by loopback binding and default SQLite use. Every current high/critical match is covered by the expiring `.trivy/crowdsec.yaml` baseline. See CVE-R02. |
+| Anubis 1.27.0 | `sha256:8828275668b7bc675679f100970f9714f731388fbbf66ae94de8aca952e3fc4a` | 14 (14 unique IDs) | 12 high, 0 critical | Upstream image issue; loopback-only but indirectly handles untrusted requests through `auth_request`. All 12 unique high IDs are covered by the expiring `.trivy/anubis.yaml` baseline. See CVE-R03. |
 
-The all-severity totals above include low, medium, unknown, duplicate, and no-fix matches. The detailed findings prioritize high/critical issues. A scan limited to fixable high/critical findings reported zero results for the repository filesystem itself.
+Scan table refreshed 2026-09-11 with Trivy 0.74.0 (the same CI-pinned `aquasec/trivy@sha256:62b1e65...` image), all severities included, against the published images at re-verification. The detailed findings prioritize high/critical issues. A scan limited to fixable high/critical findings reported zero results for the repository filesystem itself.
 
 ### CVE-R01 — Public Caddy image contains stale Go and Alpine components
 
 - Severity: **High operational priority**. Trivy labels one module match critical; GitHub's reviewed advisory labels that CVE high.
+- Status: **Resolved 2026-09-11 verification.** The fork's source rebuild (`caddy/Dockerfile`, built 2026-09-02, published digest `sha256:fa9cf2b1c657...`) now scans clean: zero high/critical findings across 17 Alpine OS packages and 146 Go modules. Trivy build-info confirms gRPC-Go v1.83.2, `x/crypto` v0.56.0, `x/net` v0.57.0, `x/text` v0.41.0, and Go stdlib v1.26.8. The only remaining entry is GO-2026-5932 (UNKNOWN severity, unmaintained `openpgp` module, no fix available), which sits below the HIGH/CRITICAL enforcement gate. A `strings` probe still shows a literal `grpc-go/1.81.0` token in the binary — that is an upstream Caddy source-code string, not the linked module version; Trivy's build-info is the authoritative source and records 1.83.2.
 - Location: `caddy/Dockerfile:2`, `caddy/Dockerfile:4`, `.github/workflows/caddy.yml:1`
-- Evidence: the image contains Alpine OpenSSL 3.5.7-r0, Go stdlib 1.26.3, `golang.org/x/net` 0.55.0, `golang.org/x/text` 0.37.0, `golang.org/x/crypto` 0.52.0, and gRPC-Go 1.81.0. Fixed releases are available for these components. The pinned official `caddy:2.11.4` image is still the current Caddy release and was built in June 2026, before the affected Go fixes.
-- Unique high/critical IDs: `CVE-2026-14456`, `CVE-2026-27145`, `CVE-2026-33818`, `CVE-2026-39821`, `CVE-2026-39822`, `CVE-2026-42504`, `CVE-2026-46600`, `CVE-2026-56852`, `CVE-2026-56853`, `CVE-2026-56854`, `CVE-2026-56858`, `CVE-2026-56859`, `CVE-2026-56860`, `CVE-2026-56862`, `CVE-2026-84304`, and `GHSA-hrxh-6v49-42gf`.
-- Impact: the stdlib, HTTP/2, TLS, DNS, URL, and template advisories can cause denial of service or unsafe parsing if the affected code path is present and reached by attacker-controlled traffic. Caddy is Internet-facing in this stack, so these cannot be dismissed solely because they are transitive dependencies.
-- Reachability/false-positive note: `CVE-2026-56854` concerns SSH source-address authorization. This deployment does not configure an SSH server, so the scanner's critical rating is not evidence of a critical remote Caddy exploit. The gRPC xDS authorization portion of `GHSA-hrxh-6v49-42gf` is also not configured here, although the advisory's HTTP/2 resource-exhaustion path may still matter when server transport code is linked and reachable.
-- Recommended fix: rebuild the Caddy image with a patched Alpine package set and a Caddy binary compiled with patched Go stdlib and module versions. As of this scan, Caddy 2.11.4 remains the latest stable release, so simply resolving the same tag again does not fix the binary. Prefer a reviewed patch build or the next stable Caddy release; do not silently track Caddy `master` in production.
-- Temporary mitigation: keep normal connection/request limits in front of public services and omit the optional Caddy container if its port-80 redirect is not needed. HTTPS on the main NPMplus listener remains available; this is not a recommendation to disable CrowdSec or AppSec.
+- Historical evidence (2026-09-04 scan, superseded): the then-current image contained Alpine OpenSSL 3.5.7-r0, Go stdlib 1.26.3, `golang.org/x/net` 0.55.0, `golang.org/x/text` 0.37.0, `golang.org/x/crypto` 0.52.0, and gRPC-Go 1.81.0, with 18 fixable high/critical occurrences representing 16 unique IDs.
+- Historical unique high/critical IDs: `CVE-2026-14456`, `CVE-2026-27145`, `CVE-2026-33818`, `CVE-2026-39821`, `CVE-2026-39822`, `CVE-2026-42504`, `CVE-2026-46600`, `CVE-2026-56852`, `CVE-2026-56853`, `CVE-2026-56854`, `CVE-2026-56858`, `CVE-2026-56859`, `CVE-2026-56860`, `CVE-2026-56862`, `CVE-2026-84304`, and `GHSA-hrxh-6v49-42gf`.
+- Resolution detail: the rebuild pins Caddy 2.11.4 source with `--replace` directives for gRPC-Go v1.83.2 (fixing GHSA-2v4p-qf9q-27wj / CVE-2026-84445 among others), `x/crypto` v0.56.0, `x/net` v0.57.0, `x/text` v0.41.0, plus the cel-go 0.29 compatibility patch, compiled on Go 1.26.8 against patched Alpine 3.24.1 packages. The caddy workflow re-scans every candidate at MEDIUM+ before publishing, so the published tag cannot regress silently.
+- Historical impact (2026-09-04, resolved by the rebuild): the stdlib, HTTP/2, TLS, DNS, URL, and template advisories could have caused denial of service or unsafe parsing if the affected code path was present and reached by attacker-controlled traffic. Caddy is Internet-facing in this stack, so those matches could not be dismissed solely because they were transitive dependencies.
+- Historical reachability/false-positive note: `CVE-2026-56854` concerns SSH source-address authorization. This deployment does not configure an SSH server, so the scanner's critical rating was not evidence of a critical remote Caddy exploit. The gRPC xDS authorization portion of `GHSA-hrxh-6v49-42gf` is also not configured here.
+- Completed fix: the image was rebuilt with a patched Alpine package set and a Caddy binary compiled with patched Go stdlib and module versions, as recorded above. The follow-up discipline remains: do not silently track Caddy `master` in production, and keep the caddy workflow's build-scan gate in force.
+- Residual mitigation: keep normal connection/request limits in front of public services and omit the optional Caddy container if its port-80 redirect is not needed. HTTPS on the main NPMplus listener remains available; this is not a recommendation to disable CrowdSec or AppSec.
 
 References: [Go release history](https://go.dev/doc/devel/release), [Caddy releases](https://github.com/caddyserver/caddy/releases), [CVE-2026-56854 / GHSA-gjhq-gjfw-99mq](https://github.com/advisories/GHSA-gjhq-gjfw-99mq), [gRPC GHSA-hrxh-6v49-42gf](https://github.com/advisories/GHSA-hrxh-6v49-42gf).
 
@@ -420,23 +469,23 @@ References: [Go release history](https://go.dev/doc/devel/release), [Caddy relea
 
 - Severity: **Medium operational priority**, with upstream high-severity matches.
 - Location: `setup-npmplus.sh:23`, `setup-npmplus.sh:1003`, `setup-npmplus.sh:1240`
-- Evidence: CrowdSec 1.8.1/latest contains 18 high occurrences representing 9 unique IDs. The fixable matches are OpenSSL in the Alpine layer; `x/net` and `x/text` in the `yq` helper; and `CVE-2026-84304` in CrowdSec, `cscli`, and six notification plugin binaries. `CVE-2026-32286` appears in the CrowdSec and `cscli` PostgreSQL protocol dependency and currently has no fixed version reported.
-- Unique high IDs: `CVE-2026-14456`, `CVE-2026-25681`, `CVE-2026-27136`, `CVE-2026-32286`, `CVE-2026-33814`, `CVE-2026-39821`, `CVE-2026-46600`, `CVE-2026-56852`, and `CVE-2026-84304`.
-- Impact: `CVE-2026-84304` is a gRPC HTTP/2 DATA-frame memory-exhaustion issue. The remaining findings include parser/DoS issues in support tooling and the PostgreSQL protocol package.
+- Evidence (re-verified 2026-09-11): CrowdSec 1.8.1/latest contains 26 high occurrences representing 10 unique IDs (82 total findings across all severities, 28 unique). The fixable matches are OpenSSL 3.5.7-r0 in the Alpine layer (`CVE-2026-14456`, fixed in 3.5.8-r0); `x/net` 0.48.0 and `x/text` 0.32.0 in the `yq` helper (6 IDs); and gRPC-Go 1.83.0 in the CrowdSec binary itself plus `cscli` and six notification plugin binaries (`CVE-2026-84304` x8 and `CVE-2026-84445` x8, fixed in 1.83.1/1.83.2). `CVE-2026-32286` appears in the CrowdSec/`cscli` PostgreSQL protocol dependency and still has no fixed version reported.
+- Unique high IDs: `CVE-2026-14456`, `CVE-2026-25681`, `CVE-2026-27136`, `CVE-2026-32286`, `CVE-2026-33814`, `CVE-2026-39821`, `CVE-2026-46600`, `CVE-2026-56852`, `CVE-2026-84304`, and `CVE-2026-84445`. All ten are carried in the expiring `.trivy/crowdsec.yaml` baseline; the enforcement scan reported zero uncovered findings on 2026-09-11.
+- Impact: `CVE-2026-84304` is a gRPC HTTP/2 DATA-frame memory-exhaustion issue; `CVE-2026-84445` (GHSA-2v4p-qf9q-27wj) crashes xDS-constructed gRPC servers on requests missing both `:authority` and `Host`. The remaining findings include parser/DoS issues in support tooling and the PostgreSQL protocol package. CrowdSec's LAPI is a plain-HTTP JSON API and no xDS gRPC server is configured, so the crash path is not exercised by this stack.
 - Reachability/false-positive note: the installer binds CrowdSec API/AppSec/metrics ports to loopback, `yq` is used as local tooling rather than a public web server, optional notification plugins are not enabled by this installer, and the standard generated deployment uses CrowdSec's local SQLite database rather than PostgreSQL. Those facts reduce exposure, but do not remove the need for an upstream rebuild.
-- Recommended fix: consume a patched CrowdSec release/image when upstream publishes it and keep the immutable-digest update behavior. Repacking only the Alpine layer would fix OpenSSL but cannot repair Go dependencies compiled into CrowdSec, `cscli`, plugins, or `yq`.
+- Recommended fix: consume a patched CrowdSec release/image when upstream publishes it and keep the immutable-digest update behavior. The upstream image has not been rebuilt since the 2026-09-03 v1.8.1 release build (digest `sha256:0f2523fa...` unchanged through 2026-09-11); repacking only the Alpine layer would fix OpenSSL but cannot repair Go dependencies compiled into CrowdSec, `cscli`, plugins, or `yq`. The baseline expires 2026-10-04: when the gate goes red on an unrebuilt image, triage the diff rather than renewing blindly or disabling the gate.
 - Temporary mitigation: retain the current loopback-only bindings and do not expose ports 6060, 7422, or 8080 to the LAN/Internet.
 
 References: [CrowdSec releases](https://github.com/crowdsecurity/crowdsec/releases), [CVE-2026-84304 / GHSA-vp52-pcj8-j9qc](https://github.com/advisories/GHSA-vp52-pcj8-j9qc), [CVE-2026-32286 / GHSA-jqcq-xjh3-6g23](https://github.com/advisories/GHSA-jqcq-xjh3-6g23).
 
 ### CVE-R03 — Latest Anubis image predates recent Go security rebuilds
 
-- Severity: **Medium operational priority**, with 11 high scanner matches.
+- Severity: **Medium operational priority**, with 12 high scanner matches.
 - Location: `setup-npmplus.sh:349`, `setup-npmplus.sh:1017`, `setup-npmplus.sh:1264`
-- Evidence: Anubis 1.27.0 contains Go stdlib 1.26.5, `x/text` 0.38.0, and gRPC-Go 1.81.1. Trivy reports 11 high and one medium fixable advisory. The high IDs are `CVE-2026-33818`, `CVE-2026-39821`, `CVE-2026-46600`, `CVE-2026-56852`, `CVE-2026-56853`, `CVE-2026-56858`, `CVE-2026-56859`, `CVE-2026-56860`, `CVE-2026-56862`, `CVE-2026-84304`, and `GHSA-hrxh-6v49-42gf`.
+- Evidence (re-verified 2026-09-11): Anubis 1.27.0 contains Go stdlib 1.26.5, `x/text` 0.38.0, and gRPC-Go 1.81.1. Trivy reports 12 high and two medium fixable advisories (14 total, 14 unique IDs). The high IDs are `CVE-2026-33818`, `CVE-2026-39821`, `CVE-2026-46600`, `CVE-2026-56852`, `CVE-2026-56853`, `CVE-2026-56858`, `CVE-2026-56859`, `CVE-2026-56860`, `CVE-2026-56862`, `CVE-2026-84304`, `CVE-2026-84445`, and `GHSA-hrxh-6v49-42gf`. All twelve are carried in the expiring `.trivy/anubis.yaml` baseline; the enforcement scan reported zero uncovered findings on 2026-09-11.
 - Impact: the relevant classes are crafted-input CPU/memory exhaustion, HTTP/2 denial of service, URL/XML/template parsing problems, and gRPC authorization/transport issues if the matching paths are linked and exercised.
 - Reachability/false-positive note: Anubis is bound to `127.0.0.1:8923`, but Nginx can send attacker-controlled request metadata to it via `auth_request`, so loopback binding is not by itself a complete reachability dismissal. The stack does not configure gRPC or xDS for Anubis, reducing the likelihood of the gRPC findings.
-- Recommended fix: update to an upstream Anubis image rebuilt with Go 1.26.6 or newer and patched modules. Version 1.27.0 is still the latest stable release as of the scan; the installer already selects the latest validated release and immutable digest, so upstream must publish a rebuilt tag or new release.
+- Recommended fix: update to an upstream Anubis image rebuilt with Go 1.26.6 or newer and patched modules. Version 1.27.0 is still the latest stable release as of 2026-09-11 (the v1.28.0-pre1 pre-release still carries vulnerable gRPC 1.82.1 and is not a fix); the installer already selects the latest validated release and immutable digest, so upstream must publish a rebuilt tag or new release. The baseline expires 2026-10-04: when the gate goes red on an unrebuilt image, triage the diff rather than renewing blindly or disabling the gate.
 - Temporary mitigation: continue enabling Anubis only per host, keep its listener loopback-only, and use normal proxy request/connection limits.
 
 References: [Anubis releases](https://github.com/TecharoHQ/anubis/releases), [Go release history](https://go.dev/doc/devel/release), [CVE-2026-84304 / GHSA-vp52-pcj8-j9qc](https://github.com/advisories/GHSA-vp52-pcj8-j9qc).
@@ -445,7 +494,7 @@ References: [Anubis releases](https://github.com/TecharoHQ/anubis/releases), [Go
 
 - Severity: **Low practical risk** despite two high and one medium scanner labels.
 - Location: `Dockerfile:267`, `Dockerfile:268`
-- Evidence: Trivy reports `setuptools` 70.3.0 for `CVE-2025-47273` and `CVE-2026-59890`, plus `msgpack` 1.1.2 for `GHSA-6v7p-g79w-8964`. Runtime inspection shows no installed `setuptools` distribution and no installed standalone `msgpack` distribution. The matching MessagePack code is vendored inside pip 26.2.1 under `pip/_vendor/msgpack`.
+- Evidence (re-verified 2026-09-11): Trivy reports `setuptools` 70.3.0 for `CVE-2025-47273` and `msgpack` 1.1.2 for `GHSA-6v7p-g79w-8964` in the current develop image — two high and one medium occurrence, three unique IDs. The former `CVE-2026-59890` setuptools match no longer appears in current scans (scanner-database change), and its exception entry was removed from `.trivy/npmplus.yaml` on 2026-09-11. Runtime inspection shows no installed `setuptools` distribution and no installed standalone `msgpack` distribution. The matching MessagePack code is vendored inside pip 26.2.1 under `pip/_vendor/msgpack`.
 - Impact: the setuptools path-traversal issue requires use of its package download machinery; that package is not installed. The MessagePack issue requires local pip code to reuse a malformed `Unpacker` after catching an error. Neither is reachable from an NPMplus HTTP request.
 - False-positive note: the setuptools entries are stale/metadata scanner matches rather than an importable runtime package. The msgpack code exists, but only inside the administrative pip tool, so this is not a web application CVE.
 - Recommended fix: update pip after it vendors MessagePack 1.2.1. Keep runtime Certbot DNS plugin installation upstream-compatible; the packaging-tool findings remain under the reviewed, expiring `.trivy/npmplus.yaml` baseline.
