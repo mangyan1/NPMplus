@@ -7,12 +7,12 @@ import { useLocaleState } from "src/context";
 import { useCrowdsecAlertHistory } from "src/hooks";
 import { formatDateTime, intl, T } from "src/locale";
 import { showManualBanModal } from "src/modals";
+import AttackDetails from "./AttackDetails";
 import { TableSkeleton } from "./LoadingSkeleton";
 
 const alertTarget = (alert: CrowdsecAlert) => {
-	for (const event of alert.events)
-		for (const item of event.meta)
-			if (["target_host", "target_fqdn", "target_uri"].includes(item.key)) return item.value;
+	for (const key of ["target_host", "target_fqdn", "target_uri", "uri"])
+		for (const event of alert.events) for (const item of event.meta) if (item.key === key) return item.value;
 	return "";
 };
 const alertSource = (alert: CrowdsecAlert) => alert.source.ip || alert.source.value || alert.source.rdns || "—";
@@ -253,26 +253,7 @@ const AttackHistory = ({
 											{open && (
 												<tr>
 													<td colSpan={6} className="bg-secondary-lt">
-														<div className="small py-2">
-															<div className="mb-2">{item.message}</div>
-															{item.events.map((event, index) => (
-																<div key={`${item.id}-${index}`} className="mb-2">
-																	{event.timestamp && (
-																		<div className="text-secondary">
-																			{formatDateTime(event.timestamp, locale)}
-																		</div>
-																	)}
-																	{event.meta.map((meta) => (
-																		<div key={meta.key}>
-																			<span className="text-secondary">
-																				{meta.key}:
-																			</span>{" "}
-																			{meta.value}
-																		</div>
-																	))}
-																</div>
-															))}
-														</div>
+														<AttackDetails alert={item} />
 													</td>
 												</tr>
 											)}

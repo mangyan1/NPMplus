@@ -1,7 +1,8 @@
 import cn from "clsx";
-import type { ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
+import styles from "./Button.module.css";
 
-interface Props {
+interface Props extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "color" | "onClick"> {
 	children: ReactNode;
 	className?: string;
 	type?: "button" | "submit";
@@ -38,6 +39,7 @@ function Button({
 	fullWidth,
 	isLoading,
 	disabled,
+	...buttonProps
 }: Props) {
 	const myOnClick = () => {
 		if (!isLoading) onClick?.();
@@ -46,16 +48,25 @@ function Button({
 	const cns = cn(
 		"btn",
 		className,
-		actionType && `btn-${actionType}`,
-		variant && `btn-${variant}`,
+		variant === "outline" && styles.outline,
+		variant === "outline" || variant === "ghost"
+			? `btn-${variant}-${color || actionType || "secondary"}`
+			: actionType && `btn-${actionType}`,
+		variant && variant !== "outline" && variant !== "ghost" && `btn-${variant}`,
 		size && `btn-${size}`,
-		color && `btn-${color}`,
+		color && variant !== "outline" && variant !== "ghost" && `btn-${color}`,
 		fullWidth && "w-100",
 		isLoading && "btn-loading",
 	);
 
 	return (
-		<button type={type || "button"} className={cns} onClick={myOnClick} disabled={disabled}>
+		<button
+			{...buttonProps}
+			type={type || "button"}
+			className={cns}
+			onClick={myOnClick}
+			disabled={disabled || isLoading}
+		>
 			{children}
 		</button>
 	);

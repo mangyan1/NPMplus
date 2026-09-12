@@ -8,7 +8,10 @@ export const fetchWithTimeout = (url, options = {}, timeoutMs = DEFAULT_TIMEOUT_
 
 export const readBoundedBuffer = async (response, maxBytes) => {
 	const declaredLength = Number.parseInt(response.headers.get("content-length") || "0", 10);
-	if (declaredLength > maxBytes) throw new Error(`Response exceeds ${maxBytes} bytes`);
+	if (declaredLength > maxBytes) {
+		await response.body?.cancel();
+		throw new Error(`Response exceeds ${maxBytes} bytes`);
+	}
 	if (!response.body) return Buffer.alloc(0);
 
 	const reader = response.body.getReader();

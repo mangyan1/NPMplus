@@ -312,6 +312,24 @@ test("manual ban input accepts ips, cidr ranges, and valid durations", () => {
 });
 
 test("manual ban input rejects hostile or malformed values", () => {
+	for (const value of [
+		"999.999.999.999",
+		"192.0.2.1/99",
+		"2001:db8::1/999",
+		"192.0.2.1/33",
+		"2001:db8::1/129",
+		"fe80::1%eth0",
+		"192.0.2.1/",
+		"192.0.2.1/24/1",
+		"::::",
+		"[2001:db8::1]",
+	]) {
+		assert.deepEqual(validateManualBan({ value, duration: "1h" }), ["value"], value);
+	}
+	for (const value of ["0.0.0.0/0", "192.0.2.1/32", "::/0", "2001:db8::1/128", "::ffff:192.0.2.1"]) {
+		assert.deepEqual(validateManualBan({ value, duration: "30d" }), [], value);
+	}
+	assert.deepEqual(validateManualBan({ value: "192.0.2.1", duration: "9999999999999999999d" }), ["duration"]);
 	assert.deepEqual(validateManualBan({ value: "not an ip", duration: "4h" }), ["value"]);
 	assert.deepEqual(validateManualBan({ value: "192.0.2.10", duration: "forever" }), ["duration"]);
 	assert.deepEqual(validateManualBan({ value: "192.0.2.10", duration: "4h", type: "delete" }), ["type"]);
@@ -371,4 +389,42 @@ test("target grouping prefers hosts over URI metadata and ASN search matches num
 	assert.equal(crowdsecAlertTarget(alerts[0]), "app.example.com");
 	assert.equal(filterCrowdsecAlerts(alerts, { search: "asn:64500" }).length, 1);
 	assert.equal(filterCrowdsecAlerts(alerts, { search: "64500" }).length, 1);
+});
+
+test("preserves bounded AppSec rule evidence without query credentials or payloads", () => {
+	const [alert] = normalizeCrowdsecAlerts([
+		{
+			id: 1,
+			events: [
+				{
+					meta: [
+						{ key: "rule_name", value: "crowdsecurity/vpatch-env-access" },
+						{ key: "uri", value: "/.env?token=secret#private" },
+						{ key: "target_uri", value: "/login?password=secret" },
+						{ key: "http_user_agent", value: "sqlmap/1.8" },
+						{ key: "data", value: "payload-secret" },
+						{ key: "authorization", value: "credential-secret" },
+						{ key: "cookie", value: "session-secret" },
+					],
+				},
+			],
+		},
+	]);
+	assert.deepEqual(alert.events[0].meta, [
+		{ key: "rule_name", value: "crowdsecurity/vpatch-env-access" },
+		{ key: "uri", value: "/.env" },
+		{ key: "target_uri", value: "/login" },
+		{ key: "http_user_agent", value: "sqlmap/1.8" },
+	]);
+	const [bounded] = normalizeCrowdsecAlerts([
+		{
+			id: 2,
+			events: Array.from({ length: 20 }, () => ({
+				meta: Array.from({ length: 100 }, () => ({ key: "rule_name", value: "a".repeat(1000) })),
+			})),
+		},
+	]);
+	assert.equal(bounded.events.length, 10);
+	assert.equal(bounded.events[0].meta.length, 32);
+	assert.equal(bounded.events[0].meta[0].value.length, 512);
 });

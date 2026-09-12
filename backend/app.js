@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import cookieParser from "cookie-parser";
 import express from "express";
-import errs from "./lib/error.js";
 import { debug, express as logger } from "./logger.js";
 import mainRoutes from "./routes/main.js";
 
@@ -69,12 +68,8 @@ app.use((err, req, res, _) => {
 		payload.error.message_i18n = err.message_i18n;
 	}
 
-	if (err instanceof errs.CommandError) {
-		payload.debug = {
-			stack: err.stack?.split("\n") ?? null,
-			previous: err.previous,
-		};
-	}
+	// Subprocess failures can contain credentials and paths. Keep diagnostics
+	// server-side, including when the public message is deliberately generic.
 
 	// Not every error is worth logging - but this is good for now until it gets annoying.
 	if (typeof err.stack !== "undefined" && err.stack) {

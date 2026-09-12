@@ -10,6 +10,7 @@ import { readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import Ajv from "ajv/dist/2020.js";
+import { assertTokenSession } from "../internal/token-session.js";
 import { access as logger } from "../logger.js";
 import proxyHostModel from "../models/proxy_host.js";
 import TokenModel from "../models/token.js";
@@ -45,6 +46,7 @@ export default function (tokenString) {
 		}
 
 		tokenData = await Token.load(tokenString);
+		await assertTokenSession(tokenData.sid);
 
 		// At this point we need to load the user from the DB and make sure they:
 		// - exist (and not soft deleted)

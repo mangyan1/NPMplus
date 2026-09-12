@@ -4,6 +4,7 @@ import Alert from "react-bootstrap/Alert";
 import { getAnubisReport } from "src/api/backend/getAnubisReport";
 import { useLocaleState } from "src/context";
 import { formatDateTime, intl, T } from "src/locale";
+import HoneypotEvidence from "./HoneypotEvidence";
 import { MetricsSkeleton } from "./LoadingSkeleton";
 
 const Pages = ({ page, total, change }: { page: number; total: number; change: (page: number) => void }) => (
@@ -204,6 +205,7 @@ const AnubisMonitoring = () => {
 										</td>
 										<td>
 											<T id={`crowdsec.anubis-report.event-${item.kind}`} />
+											<HoneypotEvidence ip={item.ip} />
 										</td>
 										<td>
 											<T

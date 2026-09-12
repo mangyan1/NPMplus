@@ -95,6 +95,8 @@ const alerts = [
 					{ key: "source_ip", value: "198.51.100.7" },
 					{ key: "method", value: "GET" },
 					{ key: "target_uri", value: "/.env" },
+					{ key: "http_user_agent", value: "sqlmap/1.8 <img src=x onerror=alert(1)>" },
+					{ key: "rule_name", value: "crowdsecurity/vpatch-env-access" },
 				],
 			},
 		],
@@ -215,6 +217,12 @@ const api = async (route) => {
 	}
 	if (apiPath === "/crowdsec/decisions" && request.method() === "POST") {
 		const ban = request.postDataJSON();
+		if (ban.value === "999.999.999.999")
+			return route.fulfill({
+				status: 400,
+				contentType: "application/json",
+				body: JSON.stringify({ error: { message: "crowdsec.invalid-ban-input", fields: ["value"] } }),
+			});
 		decisions.unshift({
 			id: 100,
 			uuid: "manual-100",
@@ -322,6 +330,7 @@ const api = async (route) => {
 			appsecBlocked: 3,
 			appsecPassed: 9,
 			appsecBlockRate: 0.25,
+			appsecRules: [{ name: "crowdsecurity/vpatch-env-access", count: 3 }],
 			bouncerRequests: 20,
 			bouncerDecisionHits: 12,
 			machineRequests: 8,
@@ -358,7 +367,7 @@ const api = async (route) => {
 				page: 1,
 				items: [
 					{ id: "attempt", time: iso(-60000), ip: "2001:db8::1234", kind: "accepted", activeBan: true },
-					{ id: "seen", time: iso(-120000), ip: "2001:db8::1234", kind: "observed", activeBan: null },
+					{ id: "seen", time: iso(-120000), ip: "198.51.100.7", kind: "observed", activeBan: null },
 				],
 			},
 			coverage: {
@@ -401,9 +410,16 @@ const api = async (route) => {
 const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM || undefined });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 const browserErrors = [];
+let expectedManualBanError = false;
 page.on("console", (message) => {
 	if (message.type() !== "error") return;
 	if ((metricsFailure || anubisReportFailure) && message.text().includes("503")) return;
+	if (
+		expectedManualBanError &&
+		message.text().includes("400") &&
+		message.location().url.endsWith("/api/crowdsec/decisions")
+	)
+		return;
 	browserErrors.push(message.text());
 	console.log(`  [console error] ${message.text().slice(0, 160)}`);
 });
@@ -566,6 +582,23 @@ check(
 	(await anubisModal.innerText()).includes("/api: Anubis not selected"),
 );
 await anubisModal.locator("summary").filter({ hasText: "Honeypot observation" }).click();
+await anubisModal.getByText("Detection evidence", { exact: true }).first().click();
+await anubisModal
+	.getByText("No alert context kept for this ban (alerts are pruned after their retention)", { exact: true })
+	.waitFor();
+check(
+	"honeypot evidence explains unavailable request fingerprints",
+	(await anubisModal.innerText()).includes("no request path, User-Agent"),
+);
+await anubisModal.getByText("Detection evidence", { exact: true }).first().click();
+await anubisModal.getByText("Detection evidence", { exact: true }).nth(1).click();
+await anubisModal.getByRole("region", { name: "Alert 99", exact: true }).waitFor();
+check(
+	"honeypot evidence loads same-IP alerts without claiming the same request",
+	(await anubisModal.innerText()).includes("They may describe separate activity"),
+);
+await anubisModal.getByText("Detection evidence", { exact: true }).nth(1).click();
+
 check(
 	"Anubis history separates observation time and accepted IPv6 bans",
 	(await anubisModal.innerText()).includes("2001:db8::1234") &&
@@ -628,6 +661,10 @@ check(
 await page.getByLabel("Proxy host", { exact: true }).selectOption("");
 const wafText = await page.locator("#crowdsec-tab-panel").innerText();
 check(
+	"WAF rules explain attack type and aggregate limits",
+	wafText.includes("sensitive configuration file") && wafText.includes("not individual attacker records"),
+);
+check(
 	"WAF tab shows protection state and traffic outcomes",
 	/web application firewall/i.test(wafText) &&
 		/inspected requests/i.test(wafText) &&
@@ -683,6 +720,35 @@ const attackRows = await page.locator("#crowdsec-alert-history tbody tr").count(
 check("attack history lives inside the dashboard", attackRows === 1, `${attackRows} rows`);
 
 const historyPanel = page.locator("#crowdsec-alert-history");
+await historyPanel.locator('button[aria-expanded="false"]').first().click();
+const attackEvidence = historyPanel.getByRole("region", { name: "Alert 99", exact: true });
+await attackEvidence.waitFor();
+check(
+	"attack details identify recorded rule, type, and spoofable tool claim",
+	(await attackEvidence.innerText()).includes("sqlmap") &&
+		(await attackEvidence.innerText()).includes("can be spoofed") &&
+		(await attackEvidence.innerText()).includes("sensitive configuration file"),
+);
+check(
+	"attack details render hostile User-Agent as text",
+	(await attackEvidence.locator("img").count()) === 0 && (await attackEvidence.innerText()).includes("<img src=x"),
+);
+check(
+	"attack details show sampling and avoid claiming enforcement",
+	(await attackEvidence.innerText()).includes("1 retained event") &&
+		(await attackEvidence.innerText()).includes("does not prove"),
+);
+await page.screenshot({ path: ".smoke/ui-attack-evidence.png", fullPage: true, animations: "disabled" });
+const evidenceViewport = page.viewportSize();
+await page.setViewportSize({ width: 320, height: 900 });
+check(
+	"attack evidence fits phone width",
+	await attackEvidence.evaluate((el) => el.getBoundingClientRect().width <= 320),
+);
+await attackEvidence.screenshot({ path: ".smoke/ui-attack-evidence-mobile.png", animations: "disabled" });
+await page.setViewportSize(evidenceViewport);
+await historyPanel.locator('button[aria-expanded="true"]').first().click();
+
 await page.getByRole("button", { name: "Explore older alerts", exact: true }).click();
 await historyPanel.getByText("0 matches in this batch", { exact: true }).waitFor();
 check(
@@ -754,7 +820,53 @@ check(
 		.getByRole("button", { name: "Add IP ban" })
 		.evaluate((button) => button.scrollWidth <= button.clientWidth),
 );
-await page.screenshot({ path: ".smoke/ui-security-dashboard-320.png", fullPage: true });
+await page.locator("#crowdsec-active-bans .btn-loading").waitFor({ state: "hidden" });
+await page.screenshot({ path: ".smoke/ui-security-dashboard-320.png", fullPage: true, animations: "disabled" });
+
+check(
+	"mobile decisions expose targets, expiry and unban without horizontal scrolling",
+	await localTable.evaluate((table) => {
+		const rows = [...table.querySelectorAll("tr")];
+		return rows.every((row) =>
+			[...row.querySelectorAll("td")].every((cell) => {
+				const rect = cell.getBoundingClientRect();
+				return rect.left >= 0 && rect.right <= window.innerWidth && cell.scrollWidth <= cell.clientWidth;
+			}),
+		);
+	}),
+);
+check(
+	"phone toolbar scrolls away so decisions retain reading space",
+	await page.locator(".sticky-top").evaluate((toolbar) => getComputedStyle(toolbar).position === "static"),
+);
+const bansRefresh = page.locator("#crowdsec-active-bans").getByRole("button", { name: "Refresh", exact: true });
+check(
+	"outline refresh and pagination use contrasting Tabler variants",
+	await bansRefresh.evaluate(
+		(button) => button.classList.contains("btn-outline-secondary") && !button.classList.contains("btn-secondary"),
+	),
+);
+await page.setViewportSize({ width: 1280, height: 900 });
+await page.getByRole("button", { name: "Enable dark mode", exact: true }).click();
+await page.setViewportSize({ width: 320, height: 720 });
+await page.waitForTimeout(250);
+await page.screenshot({ path: ".smoke/ui-security-bans-dark-320.png", fullPage: true, animations: "disabled" });
+await page.setViewportSize({ width: 1280, height: 900 });
+await page.screenshot({ path: ".smoke/ui-security-bans-dark.png", fullPage: true, animations: "disabled" });
+await page.getByRole("button", { name: "Enable light mode", exact: true }).click();
+
+await page.getByRole("button", { name: "Add IP ban", exact: true }).click();
+const manualDialog = page.getByRole("dialog");
+await manualDialog.locator("#manual-ban-target").fill("999.999.999.999");
+expectedManualBanError = true;
+await manualDialog.getByRole("button", { name: "Add IP ban", exact: true }).click();
+await manualDialog.locator('[aria-invalid="true"]').waitFor();
+check(
+	"invalid ban stays open with target-specific validation",
+	(await manualDialog.locator("#manual-ban-target").getAttribute("aria-invalid")) === "true",
+);
+await manualDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+expectedManualBanError = false;
 
 await page.setViewportSize({ width: 1280, height: 900 });
 metricsMissing = true;

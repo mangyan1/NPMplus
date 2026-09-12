@@ -1,5 +1,6 @@
 import { IconWorld } from "@tabler/icons-react";
 import {
+	AZ,
 	BG,
 	CN,
 	CZ,
@@ -25,6 +26,7 @@ import {
 } from "country-flag-icons/react/3x2";
 
 const localeFlags = {
+	AZ,
 	BG,
 	CN,
 	CZ,
@@ -63,8 +65,7 @@ function Flag({ className, countryCode }: FlagProps) {
 		const FlagElement = localeFlags[countryCode as keyof typeof localeFlags];
 		return <FlagElement title={countryCode} className={className} width={20} />;
 	}
-	console.error(`No flag for country ${countryCode} found!`);
-	return null;
+	return <IconWorld className={className} width={20} />;
 }
 
 export { Flag };

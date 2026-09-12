@@ -15,11 +15,12 @@ import { useCrowdsecAlerts, useCrowdsecDecisions, useUnbanCrowdsecDecision } fro
 import { formatDateTime, intl, T } from "src/locale";
 import { showDeleteConfirmModal, showManualBanModal } from "src/modals";
 import { showError } from "src/notifications";
+import styles from "./ActiveBans.module.css";
+import AttackDetails from "./AttackDetails";
 import { TableSkeleton } from "./LoadingSkeleton";
 import { decisionTarget } from "./utils";
 
 const AlertContext = ({ decision }: { decision: CrowdsecDecision }) => {
-	const { locale } = useLocaleState();
 	const query = useCrowdsecAlerts(decision.id, decision.scope, decision.value, true);
 	if (query.isFetching && !query.data) return <div className="text-secondary small py-2">…</div>;
 	if (query.isError && !query.data)
@@ -37,22 +38,7 @@ const AlertContext = ({ decision }: { decision: CrowdsecDecision }) => {
 	return (
 		<div className="py-2">
 			{query.data.map((alert: CrowdsecAlert) => (
-				<div key={alert.id} className="mb-3">
-					<div>
-						<span className="badge bg-cyan me-2">{alert.scenario}</span>
-						{alert.message}
-					</div>
-					<div className="text-secondary small">
-						{alert.startAt ? formatDateTime(alert.startAt, locale) : null}
-					</div>
-					{alert.events
-						.flatMap((event) => event.meta)
-						.map((item, index) => (
-							<div key={`${item.key}-${index}`} className="small">
-								<span className="text-secondary">{item.key}:</span> {item.value}
-							</div>
-						))}
-				</div>
+				<AttackDetails key={alert.id} alert={alert} />
 			))}
 		</div>
 	);
@@ -151,7 +137,7 @@ const ActiveBans = () => {
 						</Alert>
 					)}
 					<div className="table-responsive">
-						<table className="table table-vcenter table-striped">
+						<table className={`table table-vcenter table-striped ${styles.table}`}>
 							<thead>
 								<tr>
 									<th aria-label={intl.formatMessage({ id: "crowdsec.details" })} />
@@ -205,8 +191,16 @@ const ActiveBans = () => {
 														/>
 													</button>
 												</td>
-												<td className="text-break">{decisionTarget(decision)}</td>
-												<td className="text-break">
+												<td
+													className="text-break"
+													data-label={intl.formatMessage({ id: "crowdsec.target" })}
+												>
+													{decisionTarget(decision)}
+												</td>
+												<td
+													className="text-break"
+													data-label={intl.formatMessage({ id: "crowdsec.reason" })}
+												>
 													{decision.scenario}
 													{decision.simulated && (
 														<span
@@ -219,9 +213,14 @@ const ActiveBans = () => {
 														</span>
 													)}
 												</td>
-												<td>{decision.origin}</td>
-												<td>{decision.type}</td>
+												<td data-label={intl.formatMessage({ id: "crowdsec.origin" })}>
+													{decision.origin}
+												</td>
+												<td data-label={intl.formatMessage({ id: "crowdsec.action" })}>
+													{decision.type}
+												</td>
 												<td
+													data-label={intl.formatMessage({ id: "crowdsec.expires" })}
 													title={
 														decision.duration
 															? intl.formatMessage(
@@ -266,7 +265,7 @@ const ActiveBans = () => {
 							</tbody>
 						</table>
 					</div>
-					<div className="d-flex align-items-center justify-content-between pt-3 border-top">
+					<div className="d-flex flex-wrap gap-2 align-items-center justify-content-between pt-3 border-top">
 						<span className="text-secondary">
 							<T id="crowdsec.history.page" data={{ page }} />
 							{deferredSearch && (

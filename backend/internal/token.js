@@ -5,6 +5,7 @@ import authModel from "../models/auth.js";
 import TokenModel from "../models/token.js";
 import userModel from "../models/user.js";
 import mfa from "./mfa.js";
+import { assertTokenSession, issueSessionToken } from "./token-session.js";
 import totp from "./totp.js";
 
 const ERROR_MESSAGE_INVALID_AUTH = "Invalid email or password";
@@ -16,7 +17,7 @@ const issueUserToken = async (user, { skipMfa = false } = {}) => {
 	const Token = TokenModel();
 	const hasMfa = await mfa.isAnyEnabled(user.id);
 	if (hasMfa && !skipMfa) {
-		const challengeToken = await Token.create({
+		const challengeToken = await issueSessionToken(Token, {
 			iss: "api",
 			attrs: { id: user.id },
 			scope: ["mfa-challenge"],
@@ -30,7 +31,7 @@ const issueUserToken = async (user, { skipMfa = false } = {}) => {
 		};
 	}
 
-	const signed = await Token.create({
+	const signed = await issueSessionToken(Token, {
 		iss: "api",
 		attrs: { id: user.id },
 		scope: ["user"],
@@ -85,7 +86,7 @@ export default {
 				}
 			} else {
 				// Return challenge token instead of full token
-				const challengeToken = await Token.create({
+				const challengeToken = await issueSessionToken(Token, {
 					iss: "api",
 					attrs: {
 						id: user.id,
@@ -102,7 +103,7 @@ export default {
 			}
 		}
 
-		const signed = await Token.create({
+		const signed = await issueSessionToken(Token, {
 			iss: "api",
 			attrs: {
 				id: user.id,
@@ -186,15 +187,19 @@ export default {
 		const Token = TokenModel();
 
 		if (access?.token.getUserId(0) && access.token.hasScope("user")) {
-			const signed = await Token.create({
-				iss: "api",
-				scope: ["user"],
-				attrs: {
-					id: access.token.getUserId(0),
+			const signed = await issueSessionToken(
+				Token,
+				{
+					iss: "api",
+					scope: ["user"],
+					attrs: {
+						id: access.token.getUserId(0),
+					},
+					expiresIn: "1h",
+					iat: Math.floor(Date.now() / 1000) + (afterRevoke ? 1 : 0),
 				},
-				expiresIn: "1h",
-				iat: Math.floor(Date.now() / 1000) + (afterRevoke ? 1 : 0),
-			});
+				afterRevoke ? null : access.token.get("sid"),
+			);
 
 			return {
 				token: signed.token,
@@ -221,6 +226,7 @@ export default {
 			throw new errs.AuthError("Invalid or expired challenge token", undefined, err);
 		}
 
+		await assertTokenSession(tokenData.sid);
 		// Check scope
 		if (tokenData.scope?.[0] !== "mfa-challenge") {
 			throw new errs.AuthError("Invalid challenge token");
@@ -247,14 +253,18 @@ export default {
 			throw new errs.AuthError(ERROR_MESSAGE_INVALID_CODE, ERROR_MESSAGE_INVALID_CODE_I18N);
 		}
 
-		const signed = await Token.create({
-			iss: "api",
-			attrs: {
-				id: userId,
+		const signed = await issueSessionToken(
+			Token,
+			{
+				iss: "api",
+				attrs: {
+					id: userId,
+				},
+				scope: ["user"],
+				expiresIn: "1h",
 			},
-			scope: ["user"],
-			expiresIn: "1h",
-		});
+			tokenData.sid,
+		);
 
 		return {
 			token: signed.token,

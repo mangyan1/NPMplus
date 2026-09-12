@@ -164,3 +164,32 @@ live VM traffic. These develop changes have not been deployed to the owner's VM 
 - [Pinned Lua bouncer source](https://github.com/crowdsecurity/lua-cs-bouncer/blob/59f3521e3918377fc1eb97d59a4056b6e9f5782f/lib/crowdsec.lua)
   is the build-time response-hook contract. Recheck the hook and integration test
   whenever the bouncer revision changes.
+
+
+## Attack evidence details
+
+Attack activity and active-ban details show the detector identifier, a suggested
+attack category derived from that identifier, detection window, source network,
+and up to ten retained events. Native AppSec `rule_name` and `uri` metadata now
+survive the API allowlist. Query strings and fragments are removed from URI
+metadata, values remain limited to 512 characters, and each event is limited to
+32 metadata entries. Raw payloads, cookies, and authorization fields remain excluded.
+
+Tool hints use only explicit claims in a recorded `http_user_agent` (for example
+sqlmap, Nmap, Nikto, Nuclei, or curl). User-Agents are spoofable, HTTP libraries
+also have legitimate uses, and unknown clients remain unknown. Neither a rule
+match nor a tool hint proves a successful exploit, attacker identity, or actual
+client-side blocking. WAF top rules remain cumulative aggregate matches, not
+individual requests or attacker counts.
+
+Honeypot history offers an on-demand, bounded same-IP CrowdSec alert lookup.
+Those alerts may represent different activity; compare their timestamps and
+rules. The honeypot address ledger itself contains no request path, User-Agent,
+or payload, and its timestamps describe collection observations. Richer direct
+honeypot attribution requires a separate request logging integration; it cannot
+be reconstructed from existing address-only records. No additional collector or
+per-IP Prometheus labels are introduced by this UI change.
+
+Metadata contracts were checked against the official
+[CrowdSec AppSec event generator](https://github.com/crowdsecurity/crowdsec/blob/master/pkg/acquisition/modules/appsec/utils.go)
+and [generated event documentation](https://doc.crowdsec.net/docs/v1.6/appsec/alerts_and_scenarios/).

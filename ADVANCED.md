@@ -134,6 +134,15 @@ On first use, the setup form requires the one-time setup token. Read it on the D
 13. Please report all (migration) issues you may have
 
 # Crowdsec
+
+The dashboard's map destination is looked up through ipwho.is by default. This
+sends the server's public source IP and NPMplus User-Agent to that provider;
+attack records and CrowdSec credentials are not sent. Set `HOME_GEOLOCATION=false`
+in the NPMplus container environment to disable this lookup, or set both
+`HOME_LATITUDE` and `HOME_LONGITUDE` to use explicit coordinates without an external
+request. Automatic results are cached for a day, failures back off for an hour,
+and responses are limited to 16 KiB.
+
 <!--Note: Using Immich behind NPMplus with enabled appsec causes issues, see here: [#1241](https://github.com/ZoeyVid/NPMplus/discussions/1241) <br>-->
 Note: If you don't [disable sharing in crowdsec](https://docs.crowdsec.net/docs/next/configuration/crowdsec_configuration/#sharing), you may need to mention that [this](https://docs.crowdsec.net/docs/central_api/intro/#signal-meta-data) is sent to crowdsec in your privacy policy.
 1. Install crowdsec and the ZoeyVid/npmplus collection for example by using crowdsec container at the end of the compose.yaml, you may also want to install [this](https://app.crowdsec.net/hub/author/crowdsecurity/collections/http-dos), but be warned of false positives

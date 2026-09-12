@@ -26,6 +26,7 @@ const ManualBanModal = EasyModal.create(({ visible, remove, onCreated, initialTa
 	const [duration, setDuration] = useState("4h");
 	const [type, setType] = useState("ban");
 	const [reason, setReason] = useState("");
+	const [invalidFields, setInvalidFields] = useState<string[]>([]);
 	// translation id + values, not a pre-formatted string: the alert renders
 	// through <T>, and formatting here would feed the message back in as an id
 	const [error, setError] = useState<{ id: string; data?: Record<string, string> } | null>(null);
@@ -33,6 +34,7 @@ const ManualBanModal = EasyModal.create(({ visible, remove, onCreated, initialTa
 	const onSubmit = async () => {
 		if (createBan.isPending) return;
 		setError(null);
+		setInvalidFields([]);
 		try {
 			await createBan.mutateAsync({ value: value.trim(), duration, type, reason: reason.trim() });
 			onCreated?.();
@@ -40,7 +42,20 @@ const ManualBanModal = EasyModal.create(({ visible, remove, onCreated, initialTa
 		} catch (err: any) {
 			const fields = err?.payload?.error?.fields;
 			if (Array.isArray(fields) && fields.length > 0) {
-				setError({ id: "crowdsec.ban-invalid", data: { fields: fields.join(", ") } });
+				const labels: Record<string, string> = {
+					value: "crowdsec.ban-target",
+					duration: "crowdsec.ban-duration",
+					type: "crowdsec.ban-action",
+					reason: "crowdsec.ban-reason",
+				};
+				const knownFields = fields.filter(
+					(field): field is string => typeof field === "string" && Object.hasOwn(labels, field),
+				);
+				setInvalidFields(knownFields);
+				setError({
+					id: "crowdsec.ban-invalid",
+					data: { fields: knownFields.map((field) => intl.formatMessage({ id: labels[field] })).join(", ") },
+				});
 			} else {
 				setError({ id: err?.message || "error.unknown" });
 			}
@@ -59,13 +74,15 @@ const ManualBanModal = EasyModal.create(({ visible, remove, onCreated, initialTa
 					{error && <T id={error.id} data={error.data} />}
 				</Alert>
 				<Form>
-					<Form.Group className="mb-3">
+					<Form.Group className="mb-3" controlId="manual-ban-target">
 						<Form.Label>
 							<T id="crowdsec.ban-target" />
 						</Form.Label>
 						<Form.Control
 							type="text"
 							value={value}
+							isInvalid={invalidFields.includes("value")}
+							aria-invalid={invalidFields.includes("value")}
 							autoComplete="off"
 							placeholder={intl.formatMessage({ id: "crowdsec.ban-target.placeholder" })}
 							onChange={(event) => setValue(event.target.value)}
@@ -74,11 +91,15 @@ const ManualBanModal = EasyModal.create(({ visible, remove, onCreated, initialTa
 							<T id="crowdsec.ban-target.help" />
 						</Form.Text>
 					</Form.Group>
-					<Form.Group className="mb-3">
+					<Form.Group className="mb-3" controlId="manual-ban-duration">
 						<Form.Label>
 							<T id="crowdsec.ban-duration" />
 						</Form.Label>
-						<Form.Select value={duration} onChange={(event) => setDuration(event.target.value)}>
+						<Form.Select
+							value={duration}
+							isInvalid={invalidFields.includes("duration")}
+							onChange={(event) => setDuration(event.target.value)}
+						>
 							{DURATION_OPTIONS.map((option) => (
 								<option key={option} value={option}>
 									{option}
@@ -86,22 +107,27 @@ const ManualBanModal = EasyModal.create(({ visible, remove, onCreated, initialTa
 							))}
 						</Form.Select>
 					</Form.Group>
-					<Form.Group className="mb-3">
+					<Form.Group className="mb-3" controlId="manual-ban-action">
 						<Form.Label>
 							<T id="crowdsec.ban-action" />
 						</Form.Label>
-						<Form.Select value={type} onChange={(event) => setType(event.target.value)}>
+						<Form.Select
+							value={type}
+							isInvalid={invalidFields.includes("type")}
+							onChange={(event) => setType(event.target.value)}
+						>
 							<option value="ban">ban</option>
 							<option value="captcha">captcha</option>
 						</Form.Select>
 					</Form.Group>
-					<Form.Group className="mb-3">
+					<Form.Group className="mb-3" controlId="manual-ban-reason">
 						<Form.Label>
 							<T id="crowdsec.ban-reason" />
 						</Form.Label>
 						<Form.Control
 							type="text"
 							value={reason}
+							isInvalid={invalidFields.includes("reason")}
 							autoComplete="off"
 							placeholder={intl.formatMessage({ id: "crowdsec.ban-reason.placeholder" })}
 							onChange={(event) => setReason(event.target.value)}

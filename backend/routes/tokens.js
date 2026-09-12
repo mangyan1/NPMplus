@@ -2,6 +2,7 @@ import process from "node:process";
 import express from "express";
 import { rateLimit } from "express-rate-limit";
 import internalToken from "../internal/token.js";
+import { revokeTokenSession } from "../internal/token-session.js";
 import { backfillGravatarAvatar } from "../internal/user.js";
 import errs from "../lib/error.js";
 import jwtdecode from "../lib/express/jwt-decode.js";
@@ -23,6 +24,7 @@ const limiter = rateLimit({
 	legacyHeaders: false,
 	ipv6Subnet: 48,
 	skipSuccessfulRequests: true,
+	skip: (req) => req.method === "DELETE",
 	validate: { trustProxy: false },
 });
 
@@ -123,7 +125,11 @@ router
 	 *
 	 * Delete the Token
 	 */
-	.delete((req, res, next) => {
+	.delete(async (req, res) => {
+		await revokeTokenSession(req.signedCookies?.["__Host-Http-token"]);
+		await revokeTokenSession(req.signedCookies?.["__Host-Http-challenge_token"]);
+		res.clearCookie("__Host-Http-challenge_token", { httpOnly: true, secure: true, sameSite: "Strict" });
+		res.clearCookie("__Host-npmplus_oidc_totp_required", { secure: true, sameSite: "Strict" });
 		res.clearCookie("__Host-Http-token", {
 			httpOnly: true,
 			secure: true,

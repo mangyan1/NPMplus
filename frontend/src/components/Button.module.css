@@ -1,0 +1,7 @@
+button.outline:disabled {
+	/* Disabled pagination must remain readable in both themes. */
+	opacity: 1;
+	color: var(--tblr-secondary);
+	border-color: var(--tblr-border-color);
+	background: transparent;
+}

@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 const optionalString = (value) => (typeof value === "string" ? value : "");
 const optionalFiniteNumber = (value) => {
 	if (value === null || value === "" || typeof value === "undefined") return null;
@@ -6,10 +8,18 @@ const optionalFiniteNumber = (value) => {
 };
 
 // manual ban input: an ip or a cidr range, the same targets crowdsec accepts
-const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
-const IPV6_RE = /^\[?[0-9a-fA-F:]+\]?$/;
-const CIDR_RE = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$|^(\[?[0-9a-fA-F:]+\]?\/\d{1,3})$/;
-const DURATION_RE = /^[1-9][0-9]*(ns|us|µs|ms|s|m|h|d)$/;
+const PREFIX_RE = /^(0|[1-9]\d{0,2})$/;
+const DURATION_RE = /^([1-9][0-9]{0,18})(ns|us|µs|ms|s|m|h|d)$/;
+const DURATION_NANOSECONDS = {
+	ns: 1n,
+	us: 1000n,
+	µs: 1000n,
+	ms: 1000000n,
+	s: 1000000000n,
+	m: 60000000000n,
+	h: 3600000000000n,
+	d: 86400000000000n,
+};
 const BAN_TYPES = new Set(["ban", "captcha"]);
 const REASONS_RE = /^[\w .,:;#@-]{1,64}$/;
 const PROMETHEUS_LINE_SPLIT_RE = /\r?\n/;
@@ -27,16 +37,23 @@ const parseCrowdsecDecisionId = (value) => {
 
 const validateManualBan = ({ value, duration, type = "ban", reason = "" }) => {
 	const errors = [];
-	if (typeof value !== "string" || !(IPV4_RE.test(value) || IPV6_RE.test(value) || CIDR_RE.test(value))) {
+	const parts = typeof value === "string" ? value.split("/") : [];
+	const family = parts[0] && !parts[0].includes("%") ? isIP(parts[0]) : 0;
+	if (
+		!family ||
+		parts.length > 2 ||
+		(parts.length === 2 && (!PREFIX_RE.test(parts[1]) || Number(parts[1]) > (family === 4 ? 32 : 128)))
+	) {
 		errors.push("value");
 	}
-	if (typeof duration !== "string" || !DURATION_RE.test(duration)) {
+	const parsedDuration = typeof duration === "string" ? DURATION_RE.exec(duration) : null;
+	if (!parsedDuration || BigInt(parsedDuration[1]) * DURATION_NANOSECONDS[parsedDuration[2]] > 9223372036854775807n) {
 		errors.push("duration");
 	}
 	if (typeof type !== "string" || !BAN_TYPES.has(type)) {
 		errors.push("type");
 	}
-	if (reason && !REASONS_RE.test(reason)) {
+	if (typeof reason !== "string" || (reason && !REASONS_RE.test(reason))) {
 		errors.push("reason");
 	}
 	return errors;
@@ -58,9 +75,12 @@ const EVENT_META_KEYS = new Set([
 	"http_user_agent",
 	"service",
 	"log_type",
+	"rule_name",
+	"uri",
 ]);
 
 const EVENT_LIMIT = 10;
+const URI_SUFFIX_RE = /[?#]/;
 
 const normalizeEvent = (event) => {
 	if (!event || typeof event !== "object") return null;
@@ -72,7 +92,11 @@ const normalizeEvent = (event) => {
 			const value = typeof item.value === "string" ? item.value : "";
 			if (!EVENT_META_KEYS.has(key) || !value) continue;
 			// hard cap each value: long user agents or uris must not bloat the page
-			meta.push({ key, value: value.slice(0, 512) });
+			// Request query strings and fragments can carry credentials. Native
+			// AppSec events call this field uri; log-based events use target_uri.
+			const safeValue = key === "uri" || key === "target_uri" ? value.split(URI_SUFFIX_RE, 1)[0] : value;
+			meta.push({ key, value: safeValue.slice(0, 512) });
+			if (meta.length >= 32) break;
 		}
 	}
 	const timestamp = typeof event.timestamp === "string" ? event.timestamp : "";
@@ -156,7 +180,7 @@ const normalizeCrowdsecAlerts = (payload) => {
 };
 
 const crowdsecAlertTarget = (alert) => {
-	for (const key of ["target_host", "target_fqdn", "target_uri"]) {
+	for (const key of ["target_host", "target_fqdn", "target_uri", "uri"]) {
 		for (const event of alert.events ?? []) {
 			const item = event.meta?.find((item) => item.key === key && item.value);
 			if (item) return item.value;

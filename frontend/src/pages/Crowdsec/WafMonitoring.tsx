@@ -2,10 +2,10 @@ import { IconShield, IconShieldOff } from "@tabler/icons-react";
 import Alert from "react-bootstrap/Alert";
 import type { useCrowdsecMetrics } from "src/hooks";
 import { intl, T } from "src/locale";
+import { RuleDetails } from "./AttackDetails";
 import styles from "./Dashboard.module.css";
 import { MetricsSkeleton } from "./LoadingSkeleton";
 import Metric from "./Metric";
-import { midTruncate, scenarioLabel } from "./scenarios";
 import { appsecStatus, appsecTrafficAvailable } from "./shared";
 
 const WafMonitoring = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetrics> }) => {
@@ -197,7 +197,7 @@ const WafMonitoring = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetr
 			<section className="card" aria-labelledby="appsec-top-rules-title">
 				<div className="card-body">
 					<p className="text-secondary">
-						<T id="crowdsec.appsec.top-rules-help" />
+						<T id="crowdsec.appsec.top-rules-help" /> <T id="crowdsec.evidence.waf-aggregate" />
 					</p>
 					<h3 id="appsec-top-rules-title">
 						<T id="crowdsec.appsec.top-rules" />
@@ -212,14 +212,7 @@ const WafMonitoring = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetr
 									key={rule.name}
 									className="list-group-item px-0 d-flex justify-content-between gap-2"
 								>
-									<span className="text-break" title={rule.name}>
-										{scenarioLabel(rule.name)}
-										{rule.name !== scenarioLabel(rule.name) && (
-											<span className="text-secondary small ms-1">
-												({midTruncate(rule.name, 28)})
-											</span>
-										)}
-									</span>
+									<RuleDetails name={rule.name} />
 									<span className="badge bg-secondary-lt flex-shrink-0">
 										{intl.formatNumber(rule.count)}
 									</span>
