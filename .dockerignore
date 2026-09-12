@@ -20,6 +20,12 @@ frontend/dist
 **/.playwright-mcp
 .backup-debug
 .local-*
+security_*_report.md
+docs/*security-review*.md
+docs/*security-report*.md
+docs/anubis-nginx-review-*.md
+docs/codebase-review-*.md
+docs/security-dashboard-review-*.md
 output
 backend/.smoke
 **/playwright-report

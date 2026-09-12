@@ -1,7 +1,6 @@
 # Extended alert history and IPv6 offenders
 
-Unreleased develop addition, 2026-09-08. This follows the third recommendation in
-the [reporting audit](codebase-review-2026-09-08.md). RC5 does not include it.
+Unreleased develop addition, 2026-09-08. RC5 does not include it.
 
 ## Browse older alerts
 

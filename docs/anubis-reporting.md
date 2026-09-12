@@ -1,6 +1,6 @@
 # Anubis outcomes, coverage, and honeypot history
 
-Implemented for develop on 2026-09-08 after the [reporting review](anubis-nginx-review-2026-09-08.md).
+Implemented for develop on 2026-09-08.
 Open **CrowdSec → Overview → Honeypot decisions**. The modal now includes challenge
 outcomes, expandable host configuration, and observation/ban history. Existing
 reachability, bridge status, retained log counts, and active decisions remain available.

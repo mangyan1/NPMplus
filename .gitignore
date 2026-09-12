@@ -12,6 +12,14 @@ CLAUDE.md
 .backup-debug/
 .local-*/
 
+# internal audits belong in .local-security-reports/, outside published docs
+/security_*_report.md
+/docs/*security-review*.md
+/docs/*security-report*.md
+/docs/anubis-nginx-review-*.md
+/docs/codebase-review-*.md
+/docs/security-dashboard-review-*.md
+
 # generated output and local tool caches
 /output/
 node_modules/

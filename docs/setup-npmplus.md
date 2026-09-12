@@ -373,8 +373,7 @@ The Security overview's **Honeypot decisions** modal separates Anubis reachabili
 log readiness, CrowdSec decisions, and the honeypot bridge's last run. Installer
 v1.57 and the accompanying image add bridge status and pending-ban evidence; older
 tooling displays "Not observed". Allow one five-minute cron interval after updating.
-See [Anubis reporting definitions and the nginx CVE review](anubis-nginx-review-2026-09-08.md)
-for limits, operational checks, and the remaining dashboard recommendations.
+See [Anubis reporting](anubis-reporting.md) for reporting definitions and limitations.
 
 Installer v1.58 and its accompanying image also add **Anubis outcomes**, expandable
 host/location configuration coverage, and timestamped observation/ban history in
