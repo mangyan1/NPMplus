@@ -242,7 +242,7 @@ test("animated forbidden selection persists and generates a fixed 403 without re
 	const read = await api("GET", "/api/settings/default-site", { cookie: adminCookie });
 	assert.equal(read.body.value, "forbidden");
 	const config = readFileSync("/usr/local/nginx/conf/conf.d/default.conf", "utf8");
-	assert.match(config, /location \/ \{\s*return 403;/);
+	assert.match(config, /content_by_lua_block \{\s*return ngx\.exit\(ngx\.HTTP_FORBIDDEN\)/);
 	assert.match(config, /error_page 403 \/forbidden\.html;/);
 	assert.match(config, /location = \/forbidden\.html \{\s*root \/usr\/local\/nginx\/html;\s*internal;/);
 	assert.doesNotMatch(config, /return 503|root \/data\/html/);

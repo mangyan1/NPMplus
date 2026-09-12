@@ -6,6 +6,10 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ### Added
 
+- Run enabled CrowdSec/AppSec access checks before generating the built-in forbidden page, retaining original request methods and bodies. Added Docker coverage using the actual NPMplus bouncer with controlled LAPI/AppSec fixtures to the boot-resilience workflow.
+
+- Restricted the built-in forbidden page with a stylesheet-hash Content Security Policy and framing denial, with regression coverage for hash drift and isolation from Custom HTML.
+
 - Added a built-in Animated forbidden page (403) option under Settings > Default Site, with self-contained shield animations, a motion toggle, and reduced-motion support. Existing default-site selections and custom HTML remain available.
 
 - Updated operator and maintenance documentation for release versus develop updates, one-time session renewal, Argon2 hash migration and rollback compatibility, and attack-evidence limits. The website now identifies its rolling develop installer; README guidance no longer directs current develop installations back to RC5.

@@ -3,3 +3,6 @@
 *.patch text eol=lf
 Dockerfile text eol=lf
 backend/index.js text eol=lf
+
+# Keep the forbidden page stylesheet bytes stable for its CSP hash.
+rootfs/usr/local/nginx/html/forbidden.html text eol=lf

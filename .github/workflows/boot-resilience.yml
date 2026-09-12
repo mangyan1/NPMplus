@@ -9,6 +9,7 @@ on:
       - "frontend/**"
       - "Dockerfile"
       - "setup-npmplus.sh"
+      - "tests/forbidden-protection.py"
       - ".github/workflows/boot-resilience.yml"
   workflow_dispatch:
 
@@ -26,6 +27,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: build the image from this commit
         run: docker build -t npmplus:ci .
+      - name: verify unknown-host CrowdSec and AppSec enforcement
+        env:
+          NPMPLUS_TEST_IMAGE: npmplus:ci
+        run: python3 tests/forbidden-protection.py
       - name: start the stack
         run: |
           mkdir -p /tmp/npmplus-ci-data

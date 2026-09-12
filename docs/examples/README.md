@@ -16,3 +16,14 @@ See the [operations guide](../setup-npmplus.md).
 
 For your own design, copy the source into **Custom HTML**, customize it, and set
 its HTTP status code to **403**. Custom HTML remains available independently.
+
+When CrowdSec is enabled, the forbidden response is generated after its access
+checks so the bouncer and AppSec can inspect the original method, URI, and body.
+Bouncer denials take precedence over the decorative page. The error-page internal
+redirect retains the standard internal-request exclusion to avoid double checks.
+This does not enable CrowdSec or AppSec on deployments where they are disabled.
+HTTP/TLS rejections and ACME challenge handling remain separate routes.
+
+The page's own 403 response has a restrictive CSP and framing denial. If changing
+its stylesheet, update the CSP hash in backend/templates/default.conf; the backend
+regression test checks the match. Custom HTML does not inherit this policy.
