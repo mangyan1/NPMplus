@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
-import { setTimeout } from "node:timers/promises";
 import errs from "../lib/error.js";
 import { parseDatePeriod } from "../lib/helpers.js";
+import { issuedAfter } from "../lib/token-time.js";
 import authModel from "../models/auth.js";
 import TokenModel from "../models/token.js";
 import userModel from "../models/user.js";
@@ -13,14 +13,6 @@ const ERROR_MESSAGE_INVALID_AUTH = "Invalid email or password";
 const ERROR_MESSAGE_INVALID_AUTH_I18N = "error.invalid-auth";
 const ERROR_MESSAGE_INVALID_CODE = "Invalid verification code";
 const ERROR_MESSAGE_INVALID_CODE_I18N = "error.invalid-code";
-
-// Revocation timestamps use whole seconds. Wait out that second rather than
-// issuing a future-dated token that could survive another immediate revocation.
-const issuedAfter = async (cutoff) => {
-	const delay = (Number(cutoff || 0) + 1) * 1000 - Date.now();
-	if (delay > 0) await setTimeout(delay);
-	return Math.floor(Date.now() / 1000);
-};
 
 const issueUserToken = async (user, { skipMfa = false } = {}) => {
 	const Token = TokenModel();
