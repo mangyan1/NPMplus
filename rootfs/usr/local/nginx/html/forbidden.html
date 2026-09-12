@@ -6,73 +6,72 @@
   <meta name="robots" content="noindex, nofollow, noarchive">
   <meta name="color-scheme" content="dark">
   <meta name="referrer" content="no-referrer">
-  <title>403 — Access forbidden</title>
+  <title>403 &mdash; Access forbidden</title>
   <style>
-    :root { --bg: #101114; --ink: #f4eee9; --muted: #b0aaa6; --accent: #ff916f; --line: #353233; }
+    :root { --bg: #111315; --surface: #191c1f; --ink: #f2eee9; --muted: #a4a6a7; --accent: #ff986b; --line: #34373a; }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--ink); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body::before { content: ""; position: fixed; inset: 0; pointer-events: none; background: linear-gradient(#ffffff03 1px, transparent 1px), linear-gradient(90deg, #ffffff03 1px, transparent 1px); background-size: 64px 64px; mask-image: linear-gradient(transparent, #000 45%, transparent); }
-    .page { min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; max-width: 1240px; margin: auto; padding: 34px 48px 26px; }
-    .masthead { min-height: 40px; padding-right: 150px; display: flex; align-items: center; gap: 11px; color: var(--muted); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; }
-    .mark { width: 19px; height: 19px; border: 1px solid var(--accent); transform: rotate(45deg); display: grid; place-items: center; }
-    .mark::after { content: ""; width: 5px; height: 5px; background: var(--accent); }
-    main { flex: 1; display: grid; grid-template-columns: 1fr 1.1fr; align-items: center; gap: 48px; padding: 76px 0 92px; }
-    .visual { position: relative; aspect-ratio: 1; width: 100%; max-width: 420px; display: grid; place-items: center; isolation: isolate; }
-    .visual::before { content: ""; position: absolute; inset: 5%; border-radius: 50%; background: radial-gradient(circle, #ff704526, transparent 66%); animation: breathe 6s ease-in-out infinite; z-index: -1; }
-    .orbit { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-    .orbit-base { fill: none; stroke: var(--line); stroke-width: 1; }
-    .orbit-track { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 36 1032; stroke-linecap: round; transform-origin: 200px 200px; animation: orbit 22s linear infinite; }
-    .orbit-inner { fill: none; stroke: #ff916f50; stroke-width: 1; stroke-dasharray: 3 14; transform-origin: 200px 200px; animation: orbit 80s linear infinite reverse; }
-    .shield { width: 38%; overflow: visible; filter: drop-shadow(0 12px 24px #0008); animation: float 6s ease-in-out infinite; }
-    .shield-face { fill: #1b1718; stroke: var(--accent); stroke-width: 1.3; }
-    .shield-inset { fill: none; stroke: #ff916f35; stroke-width: 1; }
-    .lock { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .coordinate { position: absolute; font: 10px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--muted); letter-spacing: .12em; background: var(--bg); padding: 5px 10px; }
-    .coordinate.top { top: -3px; }
-    .coordinate.bottom { bottom: -3px; color: var(--accent); }
-    .eyebrow { margin: 0 0 24px; color: var(--accent); font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .12em; text-transform: uppercase; display: flex; align-items: center; gap: 12px; }
-    .eyebrow::before { content: ""; width: 26px; height: 1px; background: var(--accent); }
-    h1 { font-weight: 500; font-size: clamp(48px, 6vw, 82px); line-height: 1.04; letter-spacing: -.055em; margin: 0 0 26px; }
-    h1 span { display: block; color: var(--accent); }
-    .description { color: var(--muted); font-size: 16px; line-height: 1.8; max-width: 37ch; margin: 0; }
-    .instruction { margin: 30px 0 0; padding: 0 0 0 16px; border-left: 1px solid var(--accent); font-size: 13px; line-height: 1.8; color: var(--muted); max-width: 40ch; }
+    .page { width: min(100%, 1320px); min-height: 100vh; min-height: 100svh; margin: auto; padding: 32px 56px 24px; display: flex; flex-direction: column; }
+    .masthead { display: flex; align-items: center; gap: 12px; min-height: 44px; padding-right: 150px; font-size: 14px; font-weight: 600; letter-spacing: -.02em; }
+    .brand-mark { width: 26px; height: 30px; color: var(--accent); flex: none; }
+    main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 64px; padding: 64px 0 80px; }
+    .code { margin: 0 0 20px; font-size: clamp(100px, 14vw, 190px); font-weight: 650; line-height: .85; letter-spacing: -.085em; color: var(--accent); }
+    h1 { font-size: clamp(32px, 3.3vw, 46px); line-height: 1.12; font-weight: 500; letter-spacing: -.045em; margin: 0 0 24px; }
+    .description { max-width: 36ch; color: var(--muted); font-size: 16px; line-height: 1.8; margin: 0; }
+    .instruction { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 20px; display: flex; align-items: flex-start; gap: 12px; max-width: 370px; font-size: 13px; line-height: 1.7; color: var(--muted); }
+    .instruction svg { width: 18px; height: 18px; flex: none; margin-top: 3px; color: var(--accent); }
+    .instruction p { margin: 0; }
     .instruction strong { display: block; color: var(--ink); font-weight: 500; }
-    .copy { animation: arrive .8s ease-out both; }
-    footer { border-top: 1px solid var(--line); padding-top: 20px; display: flex; justify-content: space-between; gap: 16px; color: var(--muted); font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .04em; }
-    footer span:last-child { color: var(--accent); }
+    .visual { width: 100%; max-width: 460px; aspect-ratio: 1; position: relative; display: grid; place-items: center; justify-self: center; isolation: isolate; }
+    .visual::before { content: ""; position: absolute; inset: 12%; border-radius: 50%; background: radial-gradient(circle, #ff986b0d, transparent 70%); }
+    .ring { position: absolute; border: 1px solid var(--line); border-radius: 50%; pointer-events: none; }
+    .ring-outer { inset: 2%; }
+    .ring-inner { inset: 15%; border-color: #34373a; }
+    .ring-core { inset: 26%; border-color: #ff986b26; background: var(--surface); }
+    .orbit { position: absolute; inset: 2%; border: 2px solid transparent; border-top-color: var(--accent); border-radius: 50%; animation: orbit 12s linear infinite; will-change: transform; }
+    .orbit::after { content: ""; position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); top: 14%; right: 14%; box-shadow: 0 0 0 5px #ff986b12; }
+    .orbit-secondary { inset: 15%; border-top-color: transparent; border-bottom-color: #a4a6a780; animation-duration: 20s; animation-direction: reverse; }
+    .orbit-secondary::after { display: none; }
+    .shield { width: 30%; position: relative; }
+    .ticks { position: absolute; inset: 0; width: 100%; height: 100%; color: #72767a; }
+    .visual-label { position: absolute; bottom: -27px; font: 10px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .16em; color: var(--muted); }
+    .status { display: inline-flex; align-items: center; gap: 9px; }
+    .status::before { content: ""; width: 5px; height: 5px; background: var(--accent); border-radius: 50%; }
+    footer { border-top: 1px solid var(--line); padding-top: 20px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; color: var(--muted); font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
     .motion-switch { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-    .motion-toggle { position: absolute; top: 38px; right: max(48px, calc((100vw - 1144px) / 2)); z-index: 1; display: flex; gap: 8px; align-items: center; padding: 7px 10px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; cursor: pointer; min-height: 34px; }
+    .motion-toggle { position: absolute; top: 32px; right: max(56px, calc((100vw - 1208px) / 2)); display: flex; gap: 8px; align-items: center; padding: 10px 12px; min-height: 44px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; cursor: pointer; }
     .motion-toggle:hover { color: var(--ink); border-color: var(--muted); }
     .motion-switch:focus-visible + .motion-toggle { outline: 2px solid var(--accent); outline-offset: 4px; }
     .motion-toggle::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
     .motion-switch:checked + .motion-toggle::before { background: var(--accent); }
     .state-on, .motion-switch:checked + .motion-toggle .state-off { display: none; }
     .motion-switch:checked + .motion-toggle .state-on { display: inline; }
-    .motion-switch:not(:checked) ~ .page .visual *, .motion-switch:not(:checked) ~ .page .visual::before { animation-play-state: paused; }
+    .motion-switch:not(:checked) ~ .page .orbit { animation-play-state: paused; }
+    .motion-notice { display: none; margin: 18px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; max-width: 38ch; }
     @keyframes orbit { to { transform: rotate(360deg); } }
-    @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
-    @keyframes breathe { 0%, 100% { opacity: .55; transform: scale(.95); } 50% { opacity: 1; transform: scale(1.05); } }
-    @keyframes arrive { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-    @media (max-width: 700px) {
+    @media (max-width: 760px) {
       .page { padding: 24px 24px 20px; }
-      .masthead { font-size: 10px; letter-spacing: .1em; }
-      .motion-toggle { top: 26px; right: 24px; min-height: 40px; }
-      main { grid-template-columns: 1fr; gap: 36px; padding: 48px 0; }
-      .visual { width: min(66vw, 280px); justify-self: center; }
-      .copy { max-width: 440px; width: 100%; justify-self: center; }
-      h1 { font-size: clamp(48px, 11vw, 70px); }
-      .eyebrow { margin-bottom: 18px; }
+      .masthead { font-size: 12px; gap: 8px; padding-right: 125px; }
+      .brand-mark { width: 22px; }
+      .motion-toggle { top: 24px; right: 24px; padding: 10px; }
+      main { grid-template-columns: 1fr; gap: 54px; padding: 48px 0; }
+      .copy { width: 100%; max-width: 440px; justify-self: center; }
+      .code { font-size: clamp(100px, 24vw, 160px); }
+      h1 { font-size: 34px; }
       .description { font-size: 15px; }
-      .instruction { margin-top: 24px; }
-      footer { font-size: 10px; flex-wrap: wrap; }
+      .visual { width: min(72vw, 320px); margin-bottom: 27px; }
+      footer { font-size: 10px; }
     }
     @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation: none !important; }
+      .orbit { animation: none; will-change: auto; }
       .motion-switch, .motion-toggle { display: none; }
+      .motion-notice { display: block; }
       .masthead { padding-right: 0; }
     }
     @media (forced-colors: active) {
-      .shield-face, .shield-inset, .lock, .orbit-base, .orbit-inner, .orbit-track { stroke: CanvasText; }
+      .ring, .motion-toggle { border-color: CanvasText; }
+      .orbit { border-top-color: Highlight; }
+      .shield path, .shield rect, .brand-mark path { stroke: CanvasText; }
     }
   </style>
 </head>
@@ -80,32 +79,34 @@
   <input class="motion-switch" id="motion" type="checkbox" checked aria-label="Enable animations">
   <label class="motion-toggle" for="motion" aria-hidden="true">Motion <span class="state-on">on</span><span class="state-off">off</span></label>
   <div class="page">
-    <header class="masthead"><span class="mark" aria-hidden="true"></span> Private gateway</header>
+    <header class="masthead">
+      <svg class="brand-mark" viewBox="0 0 28 32" fill="none" aria-hidden="true"><path d="m14 2 11 5v8c0 7-5 12-11 15C8 27 3 22 3 15V7Z" stroke="currentColor" stroke-width="1.5"/><path d="M14 10v10m-4-5h8" stroke="currentColor" stroke-width="1.5"/></svg>
+      Private gateway
+    </header>
     <main>
-      <div class="visual" aria-hidden="true">
-        <svg class="orbit" viewBox="0 0 400 400">
-          <circle class="orbit-base" cx="200" cy="200" r="170" />
-          <circle class="orbit-base" cx="200" cy="200" r="130" opacity=".5" />
-          <circle class="orbit-inner" cx="200" cy="200" r="147" />
-          <circle class="orbit-track" cx="200" cy="200" r="170" />
-          <path d="M200 19v12M200 369v12M19 200h12M369 200h12" stroke="#b0aaa6" stroke-width="1" />
-        </svg>
-        <svg class="shield" viewBox="0 0 120 140">
-          <path class="shield-face" d="M60 8 108 27v37c0 30-19 53-48 68C31 117 12 94 12 64V27Z" />
-          <path class="shield-inset" d="m60 17 40 16v31c0 25-16 46-40 59-24-13-40-34-40-59V33Z" />
-          <g class="lock"><rect x="44" y="60" width="32" height="27" rx="4" /><path d="M50 60V49a10 10 0 0 1 20 0v11M60 71v6" /></g>
-        </svg>
-        <span class="coordinate top">ACCESS CONTROL</span>
-        <span class="coordinate bottom">403 / FORBIDDEN</span>
-      </div>
       <div class="copy">
-        <p class="eyebrow">403 · Restricted address</p>
-        <h1>Access<span>forbidden.</span></h1>
-        <p class="description">There is no public site available at this address. This gateway only serves its configured domains.</p>
-        <p class="instruction"><strong>Looking for a website?</strong>Check the address and use the site's correct domain. If you believe this is a mistake, contact the site owner.</p>
+        <p class="code" aria-hidden="true">403</p>
+        <h1>Access forbidden.</h1>
+        <p class="description">This address is outside the gateway's configured domains. There is no public website here.</p>
+        <div class="instruction">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+          <p><strong>Check your destination.</strong>Use the website's correct domain. If this seems wrong, contact the site owner.</p>
+        </div>
+        <p class="motion-notice">Animations are paused to respect your device's reduced-motion setting.</p>
+      </div>
+      <div class="visual" aria-hidden="true">
+        <div class="ring ring-outer"></div><div class="ring ring-inner"></div><div class="ring ring-core"></div>
+        <div class="orbit"></div><div class="orbit orbit-secondary"></div>
+        <svg class="ticks" viewBox="0 0 400 400" fill="none" stroke="currentColor"><path d="M200 0v14m0 372v14M0 200h14m372 0h14M58 58l8 8m268 268 8 8M58 342l8-8M334 66l8-8"/></svg>
+        <svg class="shield" viewBox="0 0 120 140" fill="none">
+          <path d="M60 8 108 27v37c0 30-19 53-48 68C31 117 12 94 12 64V27Z" fill="#222529" stroke="#ff986b" stroke-width="1.5"/>
+          <path d="m60 17 40 16v31c0 25-16 46-40 59-24-13-40-34-40-59V33Z" stroke="#ff986b40"/>
+          <g stroke="#f2eee9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="44" y="60" width="32" height="27" rx="4"/><path d="M50 60V49a10 10 0 0 1 20 0v11M60 71v6"/></g>
+        </svg>
+        <span class="visual-label">PRIVATE BY DESIGN</span>
       </div>
     </main>
-    <footer><span>Unknown host · Request denied</span><span>No public endpoint</span></footer>
+    <footer><span class="status">403 / Request denied</span><span>Unknown host &middot; No public endpoint</span></footer>
   </div>
 </body>
 </html>
