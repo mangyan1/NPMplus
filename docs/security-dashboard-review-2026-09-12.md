@@ -34,6 +34,19 @@ Browser verification
 includes desktop/390px/320px, light/dark ban controls, malformed-ban feedback,
 mobile rows, and the existing outage/authorization-related fixture flows.
 
+## Publication and integration follow-up
+
+The six fixes and attack-evidence panels were committed in `8639e5a7` and are
+included in `develop`. Upstream integration `c891f43f` subsequently added Argon2id
+password migration, guarded migration against concurrent password resets, and
+corrected token issuance in the revocation second. Its 118 backend tests, 10
+frontend tests, browser/API smoke, candidate image scan, installer variants, and
+reboot checks passed before merge. See the [maintenance record](../FORK.md#documentation-and-current-verification)
+and [upgrade notes](setup-npmplus.md#september-12-develop-upgrade).
+
+The initial review and its test counts below are historical evidence; these
+follow-up checks do not establish live attack detection or blocking on the owner's server.
+
 ## Original review summary
 
 Two medium-severity security issues were reproduced: ordinary logout leaves a copied session usable and renewable, and command failures expose internal diagnostics. The latter regresses the previous SEC-006 resolution. One additional low-severity hardening gap exists in the map's external geolocation reader.

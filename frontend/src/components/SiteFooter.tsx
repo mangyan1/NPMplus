@@ -42,7 +42,34 @@ export function SiteFooter() {
 								>
 									mangyan1
 								</a>
+								{version && (
+									<>
+										{" "}
+										(
+										<a
+											href={`https://github.com/${githubRepository}/${githubLinkType}/${githubTag}`}
+											className="link-secondary"
+											target="_blank"
+											rel="noopener"
+										>
+											{version}
+										</a>
+										)
+									</>
+								)}
 							</li>
+							{versionData?.updateAvailable && versionData?.latest && (
+								<li className="list-inline-item">
+									<a
+										href={`https://github.com/${githubRepository}/commit/${versionData.latest}`}
+										className="link-warning fw-bold"
+										target="_blank"
+										rel="noopener"
+									>
+										<T id="update-available" data={{ latestVersion: versionData.latest }} />
+									</a>
+								</li>
+							)}
 							<li className="list-inline-item">
 								<a href="https://jc21.com" rel="noreferrer" target="_blank" className="link-secondary">
 									jc21.com
@@ -64,29 +91,6 @@ export function SiteFooter() {
 									Tabler
 								</a>
 							</li>
-							<li className="list-inline-item">
-								<a
-									href={`https://github.com/${githubRepository}/${githubLinkType}/${githubTag}`}
-									className="link-secondary"
-									target="_blank"
-									rel="noopener"
-								>
-									{" "}
-									{version}{" "}
-								</a>
-							</li>
-							{versionData?.updateAvailable && versionData?.latest && (
-								<li className="list-inline-item">
-									<a
-										href={`https://github.com/${githubRepository}/commit/${versionData.latest}`}
-										className="link-warning fw-bold"
-										target="_blank"
-										rel="noopener"
-									>
-										<T id="update-available" data={{ latestVersion: versionData.latest }} />
-									</a>
-								</li>
-							)}
 						</ul>
 					</div>
 				</div>

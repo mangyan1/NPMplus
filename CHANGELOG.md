@@ -6,6 +6,10 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ### Added
 
+- Added a built-in Animated forbidden page (403) option under Settings > Default Site, with self-contained shield animations, a motion toggle, and reduced-motion support. Existing default-site selections and custom HTML remain available.
+
+- Updated operator and maintenance documentation for release versus develop updates, one-time session renewal, Argon2 hash migration and rollback compatibility, and attack-evidence limits. The website now identifies its rolling develop installer; README guidance no longer directs current develop installations back to RC5.
+
 - Integrated upstream develop through `3d5ac185`: Argon2id password hashing with legacy bcrypt migration and compatible MFA recovery codes, ECH updates without moreutils, and accurate CrowdSec bouncer identification. Retained reviewed dependency versions, bcrypt cost 6 for nginx basic-auth compatibility, central Express error handling, and CrowdSec telemetry instrumentation. Guarded legacy password migration against concurrent resets and fixed immediate-login/refresh timing after session revocation without future-dated tokens.
 
 - Added attack evidence panels in CrowdSec history and active bans, with suggested attack types, retained WAF rule names and request paths, detection windows, sample limits, and explicitly spoofable User-Agent tool hints. Honeypot observations can load bounded same-IP alert context; WAF rule summaries distinguish aggregate matches from per-request evidence. Query strings and fragments are removed from request URI metadata.

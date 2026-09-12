@@ -20,7 +20,7 @@ It is based on [ZoeyVid/NPMplus](https://github.com/ZoeyVid/NPMplus) and the ori
 | Maintain the fork and merge ZoeyVid updates | [Fork maintenance guide](FORK.md) |
 | Everything else (updates, boot, backups internals, diagnostics) | [Setup and operations guide](docs/setup-npmplus.md) · [Advanced reference](ADVANCED.md) |
 
-The recommended installer is the pinned **v2.15.1-mangyan1.rc.5** release candidate, which is SHA-256-verified and resolves its images to immutable digests. The maintained `develop` channel contains the newest fixes between releases and remains available for rolling test deployments on the [Releases page](https://github.com/mangyan1/NPMplus/releases).
+The recommended installer is the pinned **v2.15.1-mangyan1.rc.5** release candidate, which is SHA-256-verified and resolves its images to immutable digests. The maintained `develop` channel contains the newest fixes between releases and remains available for rolling test deployments from the [develop branch](https://github.com/mangyan1/NPMplus/tree/develop).
 
 ## Before you start
 
@@ -97,7 +97,7 @@ sudo /opt/npmplus/setup-npmplus.sh
 - **Restore a backup from an archive** - put old data back onto this machine (see [Migrate to a new server](#migrate-to-a-new-server)).
 - **Uninstall** - final backup, clear description, typed confirmation.
 
-To move to a newer release later, use the installation command shown on that release's page. A `develop` installation should first switch to the current release candidate using the [pinned installer](https://github.com/mangyan1/NPMplus/releases) before its next maintenance.
+To move to a newer release, use the installer and checksum on that release's page. To stay on rolling `develop`, download the current branch installer and use its safe update. RC5 predates the September 12 security and attack-evidence changes; switching from current `develop` to RC5 is a downgrade, not a routine update. See [channel selection and upgrade behavior](docs/setup-npmplus.md#september-12-develop-upgrade).
 
 Advanced opt-ins that an ordinary menu update deliberately preserves - enabling AppSec, protected startup, or the Cloudflare origin lock on an existing installation - each need one explicit command: see [Updating](docs/setup-npmplus.md#updating) in the operations guide.
 
@@ -161,7 +161,8 @@ When requesting help, share the command output but remove public IP addresses, d
 - HTTP/3, modern TLS, mTLS, OIDC, `auth_request`, load balancing, and multiple access lists.
 - Integrated CrowdSec and Anubis security dashboard: a compact overview with clickable KPI details, an attack-mix donut grouped by attack type with a per-interval activity strip, a WAF verdict card, attacker filters (IP/scenario/country/ASN/target), a lightweight animated attack map (no WebGL or map-tile downloads), bouncer enforcement status, paginated local alerts and bans, engine metrics, optional browser alerts, manual bans, exact-decision unban, and audit logging. Community blocklists stay enforced but are summarized as metrics instead of flooding the page with remote IP entries.
 - Dedicated AppSec WAF monitoring shows whether protection is configured, inspected/passed/blocked request totals, block rate, and the active compatibility policy.
-- Security headers, strict browser policy, protected session cookies, rate limits, and safer defaults.
+- Attack details on current `develop` show matched scenarios/WAF rules, suggested attack types, detection windows, retained request paths, and explicitly spoofable User-Agent tool hints. Honeypot history can retrieve related alerts for the same IP; it cannot identify a tool from an address alone. See [attack evidence and limits](docs/security-telemetry.md#attack-evidence-details).
+- Security headers, strict browser policy, protected session cookies, server-side logout revocation, Argon2id login-password hashing with legacy bcrypt migration, rate limits, and safer defaults. These authentication changes are in current `develop`, not RC5.
 - Daily container CVE monitoring, pull-request image gates, and a patched Caddy build from the stable release source.
 - Support for Let's Encrypt and other ACME certificate authorities.
 - Optional GoAccess statistics and API documentation in the dashboard.

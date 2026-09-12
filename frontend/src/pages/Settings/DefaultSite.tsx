@@ -145,6 +145,24 @@ export default function DefaultSite() {
 											<input
 												type="radio"
 												name={field.name}
+												value="forbidden"
+												className="form-selectgroup-input"
+												checked={field.value === "forbidden"}
+												onChange={(e) => form.setFieldValue(field.name, e.target.value)}
+											/>
+											<div className="form-selectgroup-label d-flex align-items-center p-3">
+												<div className="me-3">
+													<span className="form-selectgroup-check" />
+												</div>
+												<div>
+													<T id="settings.default-site.forbidden" />
+												</div>
+											</div>
+										</label>
+										<label className="form-selectgroup-item flex-fill">
+											<input
+												type="radio"
+												name={field.name}
 												value="redirect"
 												className="form-selectgroup-input"
 												checked={field.value === "redirect"}
@@ -181,6 +199,11 @@ export default function DefaultSite() {
 								</div>
 							)}
 						</Field>
+						{values.value === "forbidden" && (
+							<p className="text-secondary">
+								<T id="settings.default-site.forbidden.description" />
+							</p>
+						)}
 						{values.value === "redirect" && (
 							<Field name="redirect" validate={validateString(1, 255)}>
 								{({ field, form }: any) => (
@@ -274,7 +297,6 @@ export default function DefaultSite() {
 								type="submit"
 								actionType="primary"
 								className="ms-auto bg-teal"
-								data-bs-dismiss="modal"
 								isLoading={isSubmitting}
 								disabled={isSubmitting}
 							>

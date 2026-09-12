@@ -8,7 +8,7 @@ process.env.COOKIE_SECRET ||= "api-test-cookie-secret";
 
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { after, test } from "node:test";
 
@@ -228,6 +228,25 @@ test("admin updates a setting and reads it back", async (t) => {
 	const read = await api("GET", "/api/settings/default-site", { cookie: adminCookie });
 	assert.equal(read.status, 200);
 	assert.equal(read.body.value, "congratulations");
+});
+
+test("animated forbidden selection persists and generates a fixed 403 without replacing custom HTML", async (t) => {
+	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
+	const custom = "<p>Existing custom page</p>";
+	writeFileSync("/data/html/index.html", custom);
+	const put = await api("PUT", "/api/settings/default-site", {
+		cookie: adminCookie,
+		body: { value: "forbidden", meta: { html: custom, status: 503 } },
+	});
+	assert.equal(put.status, 200, put.text);
+	const read = await api("GET", "/api/settings/default-site", { cookie: adminCookie });
+	assert.equal(read.body.value, "forbidden");
+	const config = readFileSync("/usr/local/nginx/conf/conf.d/default.conf", "utf8");
+	assert.match(config, /location \/ \{\s*return 403;/);
+	assert.match(config, /error_page 403 \/forbidden\.html;/);
+	assert.match(config, /location = \/forbidden\.html \{\s*root \/usr\/local\/nginx\/html;\s*internal;/);
+	assert.doesNotMatch(config, /return 503|root \/data\/html/);
+	assert.equal(readFileSync("/data/html/index.html", "utf8"), custom);
 });
 
 test("admin creates a user with password auth", async () => {

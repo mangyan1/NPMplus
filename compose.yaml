@@ -104,7 +104,7 @@ services:
 #      - "INITIAL_ADMIN_EMAIL=<initial@email.tld>" # email to use instead of admin@example.org on first start of NPMplus for the initial user
 #      - "INITIAL_ADMIN_PASSWORD_FILE=/run/secrets/npmplus_initial_admin_password" # preferred: mount a root-readable secret file instead of putting a password in compose
 #      - "INITIAL_SETUP_TOKEN_FILE=/run/secrets/npmplus_initial_setup_token" # optional custom setup-wizard token, minimum 32 characters; otherwise NPMplus generates one
-#      - "INITIAL_DEFAULT_PAGE=444" # default page to set on first start of NPMplus for the initial user, default congratulations, can be one of: 404, 444, redirect, congratulations or html
+#      - "INITIAL_DEFAULT_PAGE=444" # default page to set on first start of NPMplus for the initial user, default congratulations, can be one of: 404, 444, redirect, congratulations, forbidden or html
 #      - "DISABLE_GRAVATAR=true" # disables usage of gravatar images, users need to update theier profile for this to apply, default false
 #      - "COOKIE_SECRET_FILE=/run/secrets/npmplus_cookie_secret" # preferred: persistent cookie signing secret from a mounted secret file
 #      - "ENABLE_PRERUN=true" # see readme, default off

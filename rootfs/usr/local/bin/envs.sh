@@ -680,8 +680,8 @@ if [ -n "$INITIAL_ADMIN_EMAIL" ] && ! echo "$INITIAL_ADMIN_EMAIL" | grep -q "@.*
     sleep inf
 fi
 
-if [ -n "$INITIAL_DEFAULT_PAGE" ] && ! echo "$INITIAL_DEFAULT_PAGE" | grep -q "^\(404\|444\|redirect\|congratulations\|html\)$"; then
-    echo "INITIAL_DEFAULT_PAGE needs to be 404, 444, redirect, congratulations or html."
+if [ -n "$INITIAL_DEFAULT_PAGE" ] && ! echo "$INITIAL_DEFAULT_PAGE" | grep -q "^\(404\|444\|redirect\|congratulations\|forbidden\|html\)$"; then
+    echo "INITIAL_DEFAULT_PAGE needs to be 404, 444, redirect, congratulations, forbidden or html."
     sleep inf
 fi
 

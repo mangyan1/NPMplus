@@ -64,6 +64,57 @@ sudo /opt/npmplus/setup-npmplus.sh
 
 Download the new versioned installer and checksum first when moving to a newer release. Rolling `develop` users should similarly download the latest raw script before maintenance. The explicit `sudo bash setup-npmplus.sh --update` form remains available for automation.
 
+
+### September 12 develop upgrade
+
+The security fixes, richer attack evidence, and upstream Argon2id integration are
+included in `develop` through merge commit `c891f43f`. They are not included in
+`v2.15.1-mangyan1.rc.5`. A release-pinned installer stays on its release channel;
+it does not automatically acquire later `develop` code.
+
+To stay on rolling `develop`, or deliberately move an installer-managed release
+installation to that channel, download the current branch installer, inspect it,
+and run its update action:
+
+```bash
+wget -qO setup-npmplus.sh https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh
+less setup-npmplus.sh
+sudo bash setup-npmplus.sh --update
+```
+
+Proceed only after a successful download. The updater resolves the published
+image channels to immutable digests, updates Compose, and recreates services with
+persistent data. A plain `docker compose pull` can retain the old pinned digest.
+Git source conflicts are resolved before image publication and do not occur on
+an installed instance. Local configuration, networking, or service-health issues
+can still prevent an update; use the safe updater's snapshot and rollback flow.
+This procedure assumes an installer-managed stack, not an unrelated manual deployment.
+
+After updating:
+
+- When upgrading from before `8639e5a7`, sign in once again: old session cookies
+  lack the new database-backed session
+  identity. Logout invalidates that session, including refreshed copies; other
+  device sessions remain active unless you revoke all sessions.
+- Existing login passwords remain valid. A successful legacy bcrypt login migrates
+  its stored hash to Argon2id; new passwords and CLI password resets use Argon2id.
+  Both legacy bcrypt and new Argon2 recovery codes remain usable once. Nginx
+  basic-auth access lists continue to use bcrypt.
+- A login or token replacement in the revocation second may wait up to about one
+  second. Tokens are not future-dated to bypass revocation.
+- Check container health, sign-in, a proxied application, and the Security page.
+  Missing telemetry is unknown, not proof of zero attacks or successful blocking.
+
+Do not downgrade only the image after hashes have migrated: an older bcrypt-only
+image cannot verify Argon2 passwords. Use the matching pre-update data snapshot
+with the rollback/recovery procedure. No release tag is moved by this upgrade.
+
+### Protection opt-ins
+
+The version-pinned commands below target RC5. Rolling `develop` users should use
+the branch installer above with the same update flags instead of downloading an
+older release installer.
+
 An ordinary update preserves the existing AppSec setting. To opt an existing installer-managed CrowdSec deployment into AppSec, run the safe update once with the explicit flag:
 
 ```bash
@@ -178,14 +229,25 @@ The rollback snapshot is stored root-only in `/var/backups/npmplus-last-good`. I
 
 Backup archives created before upgrading to v1.16 can still contain an older Compose file with the initial password. Keep those archives mode `0600`; if one was copied or disclosed, change the administrator password in the UI and remove the exposed copy.
 
+## Unknown-host page
+
+Select **Settings > Default Site > Animated forbidden page (403)** and save.
+The built-in animated page returns HTTP 403 without pasting HTML or entering a
+status code. It supports reduced motion and a visitor-controlled motion toggle.
+See the [page guide](examples/README.md) for customization and the source.
+
+Existing settings remain unchanged until you save this option. Configured proxy
+hosts and CrowdSec block pages are unaffected. Existing HTTP and TLS rejection
+rules still apply, so a rejected connection cannot display this page.
+
 ## Security dashboard
 
-The local unreleased follow-up adds **WAF by proxy host** and **Observed enforcement**
+Current `develop` includes **WAF by proxy host** and **Observed enforcement**
 in the WAF and System tabs. It requires the updated image plus installer v1.56.
 See [reporting definitions, collection limits, and deployment steps](security-telemetry.md).
 RC5 does not include this addition.
 
-The subsequent local **Explore older alerts** control can browse beyond the recent
+The **Explore older alerts** control can browse beyond the recent
 history sample in bounded batches. See [extended history and IPv6 offender guidance](security-history.md)
 for its limits and how IPv6 visitors can be blocked through a trusted proxy even
 when the origin uses IPv4.
@@ -205,6 +267,13 @@ The header reports CrowdSec availability, AppSec state, Anubis reachability, and
 Each proxy host and custom location has a positive **CrowdSec AppSec protection** switch. It is on by default and takes effect when AppSec is configured globally. Turn it off only for the affected host or location when a legitimate upload, API, or webhook has a confirmed compatibility problem. This exception disables WAF inspection for that route only; CrowdSec IP decisions and firewall-bouncer enforcement remain active.
 
 The activity strip and the donut include per-interval tooltips and screen-reader summaries. On busy instances the dashboard samples the alert window and labels the sampled figures as a lower bound instead of presenting the cap as a real total. Dashboard tabs support the standard arrow, Home, and End keys; they use one row on wider screens and a scrollbar-free two-column wrapping grid on phones. Long identifiers wrap safely, reduced-motion preferences disable map animation, and loading, empty, stale, partial-failure, and blocked-notification states are shown explicitly. The toolbar remains visible while its content scrolls, and the normal NPMplus page header and footer remain part of the page.
+
+Attack history and active-ban details include recorded rule names, suggested attack
+types, detection windows, retained request metadata, and User-Agent tool hints when
+available. Honeypot history offers **Detection evidence** with a bounded same-IP
+alert lookup. Related alerts may describe separate activity; a tool claim is
+spoofable, and a detection does not prove exploitation or client-side blocking.
+See [attack evidence and limits](security-telemetry.md#attack-evidence-details).
 
 ## Secrets and certificate plugins
 

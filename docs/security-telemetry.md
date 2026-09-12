@@ -161,7 +161,7 @@ live VM traffic. These develop changes have not been deployed to the owner's VM 
   distinguishes HTTP and firewall measurement units.
 - [CrowdSec nginx remediation component](https://docs.crowdsec.net/u/bouncers/nginx/)
   documents AppSec and remediation behavior.
-- [Pinned Lua bouncer source](https://github.com/crowdsecurity/lua-cs-bouncer/blob/59f3521e3918377fc1eb97d59a4056b6e9f5782f/lib/crowdsec.lua)
+- [Pinned Lua bouncer source](https://github.com/crowdsecurity/lua-cs-bouncer/blob/ec94d512927cf70be865686e4eb928d128189633/lib/crowdsec.lua)
   is the build-time response-hook contract. Recheck the hook and integration test
   whenever the bouncer revision changes.
 

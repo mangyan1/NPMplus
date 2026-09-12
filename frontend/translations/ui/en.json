@@ -596,6 +596,8 @@
 	"settings.default-site.444": "No Response (444)",
 	"settings.default-site.congratulations": "Congratulations Page",
 	"settings.default-site.description": "What to show when Nginx is hit with an unknown Host",
+	"settings.default-site.forbidden": "Animated forbidden page (403)",
+	"settings.default-site.forbidden.description": "Show an animated access-forbidden page with HTTP 403. Includes a motion toggle and respects reduced-motion preferences. No HTML to paste.",
 	"settings.default-site.html": "Custom HTML",
 	"settings.default-site.html.placeholder": "<!-- Enter your custom HTML content here -->",
 	"settings.default-site.redirect": "Redirect",

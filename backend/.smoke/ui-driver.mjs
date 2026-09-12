@@ -133,6 +133,7 @@ const proxyHosts = [
 	},
 ];
 
+let defaultSite = { id: "default-site", value: "congratulations", meta: { html: "<p>Custom fixture</p>" } };
 let failures = 0;
 let appsecConfigured = true;
 let metricsMissing = false;
@@ -152,6 +153,10 @@ const api = async (route) => {
 	const apiPath = url.pathname.replace(/^\/api/, "");
 	const respond = (data) =>
 		route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(data) });
+	if (apiPath === "/settings/default-site") {
+		if (request.method() === "PUT") defaultSite = { ...defaultSite, ...request.postDataJSON() };
+		return respond(defaultSite);
+	}
 	if (apiPath === "/crowdsec/telemetry") {
 		const counters = { checks: 51, inspected: 48, errors: 2, unreadable: 1, bans: 9, wafBans: 7, challenges: 3 };
 		return respond({
@@ -955,6 +960,31 @@ await page.screenshot({ path: ".smoke/ui-proxy-host-protection-mobile.png", full
 await appsecToggle.uncheck();
 check("proxy-host AppSec protection can be turned off", !(await appsecToggle.isChecked()));
 await proxyModal.getByRole("button", { name: /close/i }).click();
+await page.goto("http://127.0.0.1:5173/settings");
+const forbiddenOption = page.getByRole("radio", { name: "Animated forbidden page (403)", exact: true });
+await forbiddenOption.locator("..").click();
+await Promise.all([
+	page.waitForResponse(
+		(response) => response.url().includes("/settings/default-site") && response.request().method() === "PUT",
+	),
+	page.getByRole("button", { name: "Save", exact: true }).click(),
+]);
+check("forbidden selection saves its built-in value", defaultSite.value === "forbidden");
+await page.reload();
+await forbiddenOption.waitFor();
+check("forbidden selection survives reload", await forbiddenOption.isChecked());
+check("built-in page needs no HTML editor", (await page.locator("textarea#html").count()) === 0);
+await page.getByRole("radio", { name: "Custom HTML", exact: true }).locator("..").click();
+check("custom HTML is preserved", (await page.locator("textarea#html").inputValue()) === "<p>Custom fixture</p>");
+await forbiddenOption.locator("..").click();
+for (const width of [1440, 390, 320]) {
+	await page.setViewportSize({ width, height: 900 });
+	check(
+		`default-site choices fit ${width}px`,
+		await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+	);
+	await page.screenshot({ path: `.smoke/ui-default-site-${width}.png`, fullPage: true });
+}
 check("changed dashboard and host flows have no browser errors", browserErrors.length === 0, browserErrors.join(" | "));
 console.log(failures === 0 ? "ALL UI SMOKE CHECKS PASSED" : `${failures} FAILURES`);
 await browser.close();

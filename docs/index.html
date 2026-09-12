@@ -534,7 +534,7 @@
         <article>
           <h3>Security visibility</h3>
           <p>The dashboard separates local attacks from community intelligence and groups the attack mix by attack type, so remote CAPI entries stay enforced without dominating the interface.</p>
-          <p>CrowdSec, AppSec, Anubis, honeypot status, local bans, audit history, and a lightweight origin map stay together in one operator view.</p>
+          <p>Current develop builds add attack details with matched rules, suggested attack types, request paths, and tool hints from recorded User-Agents. Those hints can be spoofed; honeypot addresses alone cannot identify a tool or prove a request was blocked.</p>
         </article>
       </div>
     </section>
@@ -549,7 +549,7 @@
           <pre><code>wget -qO setup-npmplus.sh \
   https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh &amp;&amp;
 sudo bash setup-npmplus.sh</code></pre>
-          <p>Prefer to inspect scripts first? Open the installer source before running the command.</p>
+          <p>This command selects rolling develop. RC5 does not include the latest security and attack-detail changes. Inspect the installer before running it; existing sessions require one fresh sign-in after the security upgrade. <a href="https://github.com/mangyan1/NPMplus/blob/develop/docs/setup-npmplus.md#september-12-develop-upgrade">Read the upgrade and rollback notes</a>.</p>
           <div class="command-links">
             <a href="https://github.com/mangyan1/NPMplus/blob/develop/README.md#before-you-start">Beginner installation guide</a>
             <a href="https://github.com/mangyan1/NPMplus/blob/develop/setup-npmplus.sh">Review setup-npmplus.sh</a>

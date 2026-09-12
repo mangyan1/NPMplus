@@ -42,6 +42,7 @@
 							"minLength": 1,
 							"enum": [
 								"congratulations",
+								"forbidden",
 								"404",
 								"444",
 								"redirect",

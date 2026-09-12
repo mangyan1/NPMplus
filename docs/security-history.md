@@ -52,6 +52,19 @@ Use the returned `next_cursor` with the same filters for the next batch. The
 response adds `scan_mode`, `scanned`, `start`, `end`, and `next_cursor`. Non-admin
 and anonymous callers remain denied before any LAPI request.
 
+## Read attack details
+
+Expand an alert in **Attack activity**, or expand an alert associated with an
+**Active bans** row. Current `develop` shows the exact scenario, a suggested attack
+category, source network, detection window, and up to ten retained event records.
+Recorded WAF rule names and request paths are preserved; URI query strings and
+fragments are omitted. User-Agent hints describe a claimed client such as sqlmap
+or curl, not a verified attacker identity. Unknown tools remain unknown.
+
+The displayed event count and retained sample can differ. A rule match is not
+proof of a successful exploit or an enforced IP ban. WAF top-rule counters are
+aggregate matches, not individual attacker records. See [evidence limits](security-telemetry.md#attack-evidence-details).
+
 ## IPv6 visitors with an IPv4 origin
 
 CrowdSec's nginx remediation component supports both IPv4 and IPv6 addresses.

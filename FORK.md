@@ -106,21 +106,32 @@ durable maintenance rules therefore also live here.
 
 The 2026-09-08 tidy extracts the sync workflow into a tested script and the browser
 deployment recovery into a dedicated module. Existing dashboard modules and
-database migrations retain their paths. The latest upstream revision merged into
-develop is `0ac5ecb0` (2026-09-11, commit `4952ce4b`): the ten conflicting files
-were resolved keeping fork 401/403 auth semantics, the request_id error handler
-(plus upstream's CommandError debug payload), no-store HTML caching, and the
-source-built Caddy image; upstream's dependency bumps were rejected as younger
-than the pnpm `minimumReleaseAge` window and left for renovate.
+database migrations retain their paths.
 
-The 2026-09-11 smoke-test fix points the installer self-check in the smoke
-workflow at the file under test via a `file://` SELF_URL, so branch/PR script
-changes no longer trip the "different content with the same SCRIPT_VERSION"
-refusal. The production stale-script guard on real installs is unchanged.
+The September 12 integration merges upstream `3d5ac185` through
+[PR #16](https://github.com/mangyan1/NPMplus/pull/16), landed on `develop` as
+`c891f43f`. Five conflicts were resolved: user routes, frontend manifest and
+lockfile, and both CrowdSec nginx configurations. It preserves central Express
+error handling, 401/403 semantics, server-side logout revocation, no-store HTML,
+CrowdSec telemetry instrumentation, reviewed dependency versions, and nginx
+basic-auth bcrypt cost 6. Public CommandError debug payloads were removed by the
+security fixes in `8639e5a7`; do not reintroduce them during a later merge.
 
-Local validation passed for the merge: backend tests and schema, frontend tests,
-TypeScript and production build, byte-sorted translations, Biome on all changed
-files, installer Bash syntax, and the pinned auth-contract tests. CI on the tip
-commit is green across smoke-test, boot-resilience, lint-and-format, and the
-develop image build. GitHub PR creation by the revised workflow still needs
-verification after the changes are published.
+Upstream Argon2id login passwords and recovery codes are integrated. A conditional
+legacy-hash update prevents a stale login from overwriting a password reset.
+Token issuance waits out the revocation second rather than issuing future-dated
+tokens. Preserve the migration, concurrent recovery-code, immediate-login, and
+logout regression tests when updating shared authentication code.
+
+Local validation passed: 118 backend tests, 10 frontend tests, production build,
+schema, real-router/browser smoke, 8 Linux sync contracts, and 15 Linux recovery
+tests. A disposable container check verified Argon2 password reset, session
+revocation, and MFA clearing. PR checks, the candidate image vulnerability scan,
+installer variants, and reboot resilience all passed before merging. The
+[post-merge upstream sync](https://github.com/mangyan1/NPMplus/actions/runs/34697402798)
+succeeded. This records a tested merge, not a guarantee for later upstream revisions.
+
+The installer smoke workflow points its self-check at the file under test via a
+`file://` SELF_URL; the production stale-script guard remains enabled. Channel
+selection and password-hash rollback compatibility are documented in the
+[operations guide](docs/setup-npmplus.md#september-12-develop-upgrade).

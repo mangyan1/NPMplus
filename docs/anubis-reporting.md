@@ -5,6 +5,20 @@ Open **CrowdSec → Overview → Honeypot decisions**. The modal now includes ch
 outcomes, expandable host configuration, and observation/ban history. Existing
 reachability, bridge status, retained log counts, and active decisions remain available.
 
+## Detection evidence
+
+On current `develop`, expand **Detection evidence** beside a honeypot history
+event to load bounded recent CrowdSec alerts for that IP. Compare timestamps and
+rule names: an alert for the same address may describe a different request.
+Lookup errors remain unavailable, rather than being presented as no attacks.
+
+The address ledger has no request path, User-Agent, or payload. Its timestamp is
+the collector observation time; bridge acceptance records a ban command, and
+active-ban status describes the current decision. None proves that the original
+request was blocked or identifies its tool. Richer direct attribution needs an
+additional logging integration; the dashboard does not reconstruct missing data.
+See [attack evidence](security-telemetry.md#attack-evidence-details).
+
 ## Deployment
 
 These changes need both installer v1.58 and an image containing the new backend
