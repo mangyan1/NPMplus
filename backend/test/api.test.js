@@ -581,6 +581,16 @@ test("a self password change issues a fresh cookie and kills the old session", a
 	assert.equal(login2.status, 200, login2.text);
 	peonCookie = sessionCookieOf(login2);
 	assert.ok(peonCookie, "re-login after password change set no cookie");
+	assert.equal(
+		(await api("GET", "/api/nginx/proxy-hosts", { cookie: peonCookie })).status,
+		200,
+		"immediate re-login must issue a usable session",
+	);
+	const refreshed = await api("GET", "/api/tokens", { cookie: peonCookie });
+	assert.equal(refreshed.status, 200, refreshed.text);
+	const refreshedCookie = sessionCookieOf(refreshed);
+	assert.ok(refreshedCookie);
+	assert.equal((await api("GET", "/api/nginx/proxy-hosts", { cookie: refreshedCookie })).status, 200);
 });
 
 test("a self password change without the current password is refused", async () => {

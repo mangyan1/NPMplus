@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import bcrypt from "bcryptjs";
 import mfa from "../internal/mfa.js";
+import { hash } from "../lib/argon2.js";
 import { migrateUp } from "../migrate.js";
 import authModel from "../models/auth.js";
 
@@ -27,4 +28,14 @@ test("using a recovery code does not consume other recovery codes", async () => 
 	assert.equal(await mfa.verifyForLogin(2, "invalid!"), false);
 	assert.equal(await mfa.verifyForLogin(2, "11111111"), true);
 	assert.equal(await mfa.verifyForLogin(2, "22222222"), true);
+});
+
+test("Argon2 recovery codes remain single-use under concurrent requests", async () => {
+	const codeHash = await hash("AABBCCDD", true);
+	await authModel
+		.query()
+		.insert({ user_id: 3, type: "password", secret: "unused", meta: { backup_codes: [codeHash] } });
+	const results = await Promise.all([mfa.verifyForLogin(3, "aabbccdd"), mfa.verifyForLogin(3, "AABBCCDD")]);
+	assert.deepEqual(results.sort(), [false, true]);
+	assert.equal(await mfa.verifyForLogin(3, "AABBCCDD"), false);
 });

@@ -6,6 +6,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ### Added
 
+- Integrated upstream develop through `3d5ac185`: Argon2id password hashing with legacy bcrypt migration and compatible MFA recovery codes, ECH updates without moreutils, and accurate CrowdSec bouncer identification. Retained reviewed dependency versions, bcrypt cost 6 for nginx basic-auth compatibility, central Express error handling, and CrowdSec telemetry instrumentation. Guarded legacy password migration against concurrent resets and fixed immediate-login/refresh timing after session revocation without future-dated tokens.
+
 - Added attack evidence panels in CrowdSec history and active bans, with suggested attack types, retained WAF rule names and request paths, detection windows, sample limits, and explicitly spoofable User-Agent tool hints. Honeypot observations can load bounded same-IP alert context; WAF rule summaries distinguish aggregate matches from per-request evidence. Query strings and fragments are removed from request URI metadata.
 
 - Took the first dependency batch that aged past the pnpm `minimumReleaseAge` supply-chain window after the upstream merge: `@biomejs/biome` 2.5.12 (both apps), `@types/react-dom` 19.2.7, and `react-intl` 10.1.26 (verified 8 days published; its `@formatjs` transitives were already pinned in the lockfile). The lockfiles regenerate clean under the policy, pnpm removed the now-stale `@biomejs/*@2.5.11` `minimumReleaseAgeExclude` entries, and biome 2.5.12 produces byte-identical formatting with unchanged findings. The remaining upstream-merge rejections (`react` 19.3.0, `vite` 8.3.0, `mysql2` 3.24.4, etc.) age out over the coming week.
