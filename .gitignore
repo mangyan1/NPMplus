@@ -11,3 +11,34 @@ CLAUDE.md
 # local test rigs and debug scratch, not source
 .backup-debug/
 .local-*/
+
+# generated output and local tool caches
+/output/
+node_modules/
+.pnpm-store/
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+*.tsbuildinfo
+__pycache__/
+*.pyc
+*.log
+
+# local environment and deployment state (keep shareable examples)
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+/data/
+/letsencrypt/
+/anubis-data/
+/crowdsec-data/
+/compose.override.yaml
+/compose.override.yml
+
+# workstation metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

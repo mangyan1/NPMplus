@@ -1,1 +1,40 @@
-*/node_modules
+# dependency and build output is recreated inside the build stages
+**/node_modules
+**/.pnpm-store
+frontend/dist
+**/coverage
+**/.nyc_output
+**/*.tsbuildinfo
+**/__pycache__
+**/*.pyc
+
+# local development tools and generated smoke artifacts
+.git
+**/AGENTS.md
+**/CLAUDE.md
+**/.claude
+**/.cursor
+**/.cursorrules
+.github/copilot-instructions.md
+**/.playwright-cli
+**/.playwright-mcp
+.backup-debug
+.local-*
+output
+backend/.smoke
+**/playwright-report
+**/test-results
+**/*.log
+
+# local configuration and runtime state
+**/.env
+**/.env.*
+data
+letsencrypt
+anubis-data
+crowdsec-data
+compose.override.yaml
+compose.override.yml
+**/.DS_Store
+**/Thumbs.db
+**/Desktop.ini
