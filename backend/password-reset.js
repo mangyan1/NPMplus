@@ -4,7 +4,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import bcrypt from "bcryptjs";
+import { hash } from "./lib/argon2.js";
 
 function usage() {
 	console.log(`usage: ${process.argv[1]} USER_EMAIL [--password-stdin] [--disable-mfa]
@@ -53,7 +53,7 @@ try {
 	if (auth) {
 		if (PASSWORD) {
 			db.prepare("UPDATE auth SET secret = ?, modified_on = datetime('now','localtime') WHERE id = ?").run(
-				bcrypt.hashSync(PASSWORD, 13),
+				await hash(PASSWORD),
 				auth.id,
 			);
 			db.prepare("UPDATE user SET npmplus_token_valid_after = ? WHERE id = ?").run(

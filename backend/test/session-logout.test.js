@@ -124,3 +124,21 @@ test("HTTP command failures expose only the generic message and correlation ID",
 	assert.ok(body.error.request_id);
 	assert.ok(!JSON.stringify(body).includes("private"));
 });
+
+test("a login in the revocation second works and can immediately be revoked again", async () => {
+	const { default: Auth } = await import("../models/auth.js");
+	const { default: internalToken } = await import("../internal/token.js");
+	const { default: Access } = await import("../lib/access.js");
+	await Auth.query().insert({ user_id: user.id, type: "password", secret: "timing fixture" });
+	const cutoff = Math.floor(Date.now() / 1000);
+	await User.query().findById(user.id).patch({ npmplus_token_valid_after: cutoff });
+	const signed = await internalToken.getTokenFromEmail({ identity: user.email, secret: "timing fixture" });
+	const claims = await Token().load(signed.token);
+	assert.ok(claims.iat > cutoff);
+	assert.ok(claims.iat <= Math.floor(Date.now() / 1000), "login must not issue a future-dated token");
+	await new Access(signed.token).load();
+	await User.query()
+		.findById(user.id)
+		.patch({ npmplus_token_valid_after: Math.floor(Date.now() / 1000) });
+	await assert.rejects(() => new Access(signed.token).load());
+});

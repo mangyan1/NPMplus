@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 import errs from "../lib/error.js";
 import { parseDatePeriod } from "../lib/helpers.js";
 import authModel from "../models/auth.js";
@@ -13,12 +14,21 @@ const ERROR_MESSAGE_INVALID_AUTH_I18N = "error.invalid-auth";
 const ERROR_MESSAGE_INVALID_CODE = "Invalid verification code";
 const ERROR_MESSAGE_INVALID_CODE_I18N = "error.invalid-code";
 
+// Revocation timestamps use whole seconds. Wait out that second rather than
+// issuing a future-dated token that could survive another immediate revocation.
+const issuedAfter = async (cutoff) => {
+	const delay = (Number(cutoff || 0) + 1) * 1000 - Date.now();
+	if (delay > 0) await setTimeout(delay);
+	return Math.floor(Date.now() / 1000);
+};
+
 const issueUserToken = async (user, { skipMfa = false } = {}) => {
 	const Token = TokenModel();
 	const hasMfa = await mfa.isAnyEnabled(user.id);
 	if (hasMfa && !skipMfa) {
 		const challengeToken = await issueSessionToken(Token, {
 			iss: "api",
+			iat: await issuedAfter(user.npmplus_token_valid_after),
 			attrs: { id: user.id },
 			scope: ["mfa-challenge"],
 			expiresIn: "3m",
@@ -33,6 +43,7 @@ const issueUserToken = async (user, { skipMfa = false } = {}) => {
 
 	const signed = await issueSessionToken(Token, {
 		iss: "api",
+		iat: await issuedAfter(user.npmplus_token_valid_after),
 		attrs: { id: user.id },
 		scope: ["user"],
 		expiresIn: "1h",
@@ -88,6 +99,7 @@ export default {
 				// Return challenge token instead of full token
 				const challengeToken = await issueSessionToken(Token, {
 					iss: "api",
+					iat: await issuedAfter(user.npmplus_token_valid_after),
 					attrs: {
 						id: user.id,
 					},
@@ -105,6 +117,7 @@ export default {
 
 		const signed = await issueSessionToken(Token, {
 			iss: "api",
+			iat: await issuedAfter(user.npmplus_token_valid_after),
 			attrs: {
 				id: user.id,
 			},
@@ -196,7 +209,7 @@ export default {
 						id: access.token.getUserId(0),
 					},
 					expiresIn: "1h",
-					iat: Math.floor(Date.now() / 1000) + (afterRevoke ? 1 : 0),
+					iat: await issuedAfter(afterRevoke ? Math.floor(Date.now() / 1000) : 0),
 				},
 				afterRevoke ? null : access.token.get("sid"),
 			);
@@ -257,6 +270,7 @@ export default {
 			Token,
 			{
 				iss: "api",
+				iat: await issuedAfter(user.npmplus_token_valid_after),
 				attrs: {
 					id: userId,
 				},
