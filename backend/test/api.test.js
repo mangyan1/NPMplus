@@ -116,8 +116,28 @@ const sessionCookieOf = (res) => {
 	return raw ? raw.split(";")[0] : null;
 };
 
+// jwt iat stamps are whole seconds and revocation rejects iat <= the
+// user's token_valid_after stamp, so a login issued in the same second as a
+// revoke is born dead (the app's self-service refreshes add iat+1 for this).
+// Tests that revoke and then re-login must cross the second boundary first.
+const nextSecond = async () => {
+	const now = Math.floor(Date.now() / 1000);
+	for (let i = 0; i < 50; i++) {
+		if (Math.floor(Date.now() / 1000) > now) return;
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+};
+
+// express clears a cookie by emitting the name with an empty value
+const CLEARED_SESSION_COOKIE_RE = /^__Host-Http-token=;/;
+const OIDC_NO_REDIRECT_PREFIX = "__Host-npmplus_oidc_no_redirect=true";
+const OIDC_NO_REDIRECT_EXPIRY_RE = /Max-Age=3600|Expires=/;
+
 let adminCookie = null;
 let peonCookie = null;
+// numeric ids for the session-revocation tests (captured at login/creation)
+let adminId = null;
+let peonId = null;
 
 // the server already started listening at module load, so there is no
 // listening event left to await here; closeAllConnections is required because
@@ -177,6 +197,10 @@ test("good credentials issue a signed session cookie", async () => {
 	// percent-encodes the colon on the wire)
 	assert.ok(decodeURIComponent(cookie).startsWith("__Host-Http-token=s:"), "cookie is not signed");
 	adminCookie = cookie;
+	// expose the numeric id for the session-revocation tests
+	const me = await api("GET", "/api/users/me", { cookie: adminCookie });
+	assert.equal(me.status, 200, me.text);
+	adminId = me.body.id;
 });
 
 test("an existing session can refresh its token", async () => {
@@ -220,6 +244,11 @@ test("the new user can log in and hits the permission wall on admin routes", asy
 	assert.equal(login.status, 200);
 	peonCookie = sessionCookieOf(login);
 	assert.ok(peonCookie, "peon login did not set a cookie");
+
+	// the session-revocation tests below address this user by numeric id
+	const me = await api("GET", "/api/users/me", { cookie: peonCookie });
+	assert.equal(me.status, 200, me.text);
+	peonId = me.body.id;
 
 	const res = await api("GET", "/api/users", { cookie: peonCookie });
 	assert.equal(res.status, 403);
@@ -499,4 +528,165 @@ test("security telemetry requires admin access and represents an empty collector
 test("extended alert history retains the admin gate", async () => {
 	assert.equal((await api("GET", "/api/crowdsec/history/alerts?cursor=")).status, 403);
 	assert.equal((await api("GET", "/api/crowdsec/history/alerts?cursor=", { cookie: peonCookie })).status, 403);
+});
+
+// ---------------------------------------------------------------------------
+// Upstream merge (4952ce4b): session-revocation semantics. A password change,
+// MFA change, or session revoke stamps user.npmplus_token_valid_after; tokens
+// issued before the stamp die with 401 (AuthError "Token has been revoked"),
+// and the self-service flows must issue a fresh cookie so the acting session
+// survives its own revocation.
+//
+// NOTE on the users-route rate limiter: routes/users.js counts FAILED
+// requests (5 per 5 min, skipSuccessfulRequests). Deliberate failures here
+// are budgeted: one 400 (missing current password) and one 403 (peon revoking
+// another user). Session-death (401) assertions therefore run against
+// /api/nginx/proxy-hosts, which has no limiter, instead of /api/users/me.
+// ---------------------------------------------------------------------------
+
+test("a self password change issues a fresh cookie and kills the old session", async () => {
+	const NEW_PASSWORD = "Rotated-Pass-2";
+	const login1 = await api("POST", "/api/tokens", { body: { identity: PEON_EMAIL, secret: PEON_PASSWORD } });
+	assert.equal(login1.status, 200, login1.text);
+	const oldCookie = sessionCookieOf(login1);
+	assert.ok(oldCookie, "initial login set no cookie");
+
+	const change = await api("PUT", `/api/users/${peonId}/auth`, {
+		cookie: oldCookie,
+		body: { type: "password", current: PEON_PASSWORD, secret: NEW_PASSWORD },
+	});
+	assert.equal(change.status, 200, change.text);
+	// the self-change must hand out a token stamped after the revocation
+	const freshCookie = sessionCookieOf(change);
+	assert.ok(freshCookie, "self password change did not issue a fresh session cookie");
+	assert.notEqual(freshCookie, oldCookie, "fresh cookie equals the revoked one");
+
+	// the OLD token now fails as an authentication failure (401), keeping the
+	// frontend's "log in again" semantics (limiter-free route)
+	assert.equal(
+		(await api("GET", "/api/nginx/proxy-hosts", { cookie: oldCookie })).status,
+		401,
+		"the pre-change session was not revoked",
+	);
+	// the fresh cookie keeps working
+	assert.equal((await api("GET", "/api/nginx/proxy-hosts", { cookie: freshCookie })).status, 200);
+
+	// the old password is dead and the new one works
+	assert.equal(
+		(await api("POST", "/api/tokens", { body: { identity: PEON_EMAIL, secret: PEON_PASSWORD } })).status,
+		400,
+		"the old password still authenticates",
+	);
+	const login2 = await api("POST", "/api/tokens", { body: { identity: PEON_EMAIL, secret: NEW_PASSWORD } });
+	assert.equal(login2.status, 200, login2.text);
+	peonCookie = sessionCookieOf(login2);
+	assert.ok(peonCookie, "re-login after password change set no cookie");
+});
+
+test("a self password change without the current password is refused", async () => {
+	const res = await api("PUT", `/api/users/${peonId}/auth`, {
+		cookie: peonCookie,
+		body: { type: "password", secret: "Still-No-Current-1" },
+	});
+	assert.equal(res.status, 400, res.text);
+	// the refusal must not have stamped token_valid_after: the session lives
+	assert.equal((await api("GET", "/api/nginx/proxy-hosts", { cookie: peonCookie })).status, 200);
+});
+
+test("an admin password change for another user does not refresh the admin session", async () => {
+	const OTHER_PASSWORD = "Other-User-Pass-3";
+	const created = await api("POST", "/api/users", {
+		cookie: adminCookie,
+		body: {
+			name: "Rotated",
+			nickname: "rotated",
+			email: "rotated@example.com",
+			auth: { type: "password", secret: OTHER_PASSWORD },
+		},
+	});
+	assert.equal(created.status, 201, created.text);
+	const otherId = created.body.id;
+
+	// admin rotates the OTHER user's password: no fresh cookie for the admin
+	const change = await api("PUT", `/api/users/${otherId}/auth`, {
+		cookie: adminCookie,
+		body: { type: "password", secret: "Rotated-Pass-4" },
+	});
+	assert.equal(change.status, 200, change.text);
+	assert.ok(!sessionCookieOf(change), "admin session was refreshed while changing someone else's password");
+	// admin session is untouched by the other user's stamp
+	assert.equal((await api("GET", "/api/users/me", { cookie: adminCookie })).status, 200);
+	// the other user's pre-change password is dead
+	assert.equal(
+		(await api("POST", "/api/tokens", { body: { identity: "rotated@example.com", secret: OTHER_PASSWORD } }))
+			.status,
+		400,
+		"the other user's pre-change password still works",
+	);
+});
+
+test("revoking your own sessions clears the cookie and sets the oidc opt-out", async () => {
+	// dedicated session so the shared peon cookie survives this test
+	const login = await api("POST", "/api/tokens", { body: { identity: PEON_EMAIL, secret: "Rotated-Pass-2" } });
+	assert.equal(login.status, 200, login.text);
+	const cookie = sessionCookieOf(login);
+	assert.ok(cookie);
+
+	const revoke = await api("DELETE", "/api/users/me/sessions", { cookie });
+	assert.equal(revoke.status, 200, revoke.text);
+
+	// the response must clear the session cookie and set the OIDC no-redirect
+	// opt-out the login page reads after a self-revoke
+	const cleared = revoke.setCookie.find((c) => CLEARED_SESSION_COOKIE_RE.test(c));
+	assert.ok(cleared, "self session revoke did not clear the session cookie");
+	const noRedirect = revoke.setCookie.find((c) => c.startsWith(OIDC_NO_REDIRECT_PREFIX));
+	assert.ok(noRedirect, "self session revoke did not set the OIDC no-redirect cookie");
+	assert.ok(OIDC_NO_REDIRECT_EXPIRY_RE.test(noRedirect), "oidc no-redirect cookie has no expiry");
+
+	// the revoked session dies as 401 (limiter-free route) and re-login works
+	assert.equal((await api("GET", "/api/nginx/proxy-hosts", { cookie })).status, 401);
+	await nextSecond();
+	const relogin = await api("POST", "/api/tokens", { body: { identity: PEON_EMAIL, secret: "Rotated-Pass-2" } });
+	assert.equal(relogin.status, 200, relogin.text);
+	assert.ok(sessionCookieOf(relogin), "re-login after self session revoke set no cookie");
+	// the self-revoke stamped the whole USER, so the shared peon cookie also
+	// died; refresh it for the tests that follow
+	peonCookie = sessionCookieOf(relogin);
+});
+
+test("revoking another user's sessions requires admin and does not clear the caller cookie", async () => {
+	// a non-admin revoking someone else gets the permission wall (403)
+	const otherSessions = await api("DELETE", `/api/users/${adminId}/sessions`, { cookie: peonCookie });
+	assert.equal(otherSessions.status, 403);
+
+	// admin revoking the peon's sessions: the peon dies, the admin survives
+	const revoke = await api("DELETE", `/api/users/${peonId}/sessions`, { cookie: adminCookie });
+	assert.equal(revoke.status, 200, revoke.text);
+	assert.ok(!sessionCookieOf(revoke), "admin session was cleared while revoking the peon");
+	const cleared = revoke.setCookie.find((c) => c.startsWith("__Host-npmplus_oidc_no_redirect"));
+	assert.ok(!cleared, "oidc opt-out was set for a revoke of another user");
+	assert.equal((await api("GET", "/api/users/me", { cookie: adminCookie })).status, 200);
+
+	// the peon's session (issued at the end of the previous test) dies as 401
+	// (limiter-free route) and can simply log back in
+	assert.equal((await api("GET", "/api/nginx/proxy-hosts", { cookie: peonCookie })).status, 401);
+	await nextSecond();
+	const back = await api("POST", "/api/tokens", { body: { identity: PEON_EMAIL, secret: "Rotated-Pass-2" } });
+	assert.equal(back.status, 200, back.text);
+	peonCookie = sessionCookieOf(back);
+	assert.ok(peonCookie);
+});
+
+test("a revoked session is rejected on every request, not only the first after revoke", async () => {
+	// pin that the revocation check runs per-request against the database
+	// stamp: issue two requests on the same cookie, revoke between them
+	await nextSecond();
+	const cookie = sessionCookieOf(
+		await api("POST", "/api/tokens", { body: { identity: PEON_EMAIL, secret: "Rotated-Pass-2" } }),
+	);
+	assert.ok(cookie);
+	assert.equal((await api("GET", "/api/nginx/proxy-hosts", { cookie })).status, 200);
+	await api("DELETE", "/api/users/me/sessions", { cookie });
+	// same cookie object, brand-new request: must hit the revocation check
+	assert.equal((await api("GET", "/api/nginx/proxy-hosts", { cookie })).status, 401);
 });
