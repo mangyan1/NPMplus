@@ -11,6 +11,7 @@ import {
 	SiteMenu,
 	Unhealthy,
 } from "src/components";
+import { AccountGate } from "src/components/AccountGate";
 import { useAuthState } from "src/context";
 import { useHealth } from "src/hooks";
 
@@ -59,35 +60,37 @@ function Router() {
 	}
 
 	return (
-		<BrowserRouter>
-			<Page>
-				<div>
-					<SiteHeader />
-					<SiteMenu />
-				</div>
-				<SiteContainer>
-					<ErrorBoundary>
-						<Suspense fallback={<LoadingPage noLogo />}>
-							<Routes>
-								<Route path="*" element={<ErrorNotFound />} />
-								<Route path="/certificates" element={<Certificates />} />
-								<Route path="/access" element={<Access />} />
-								<Route path="/audit-log" element={<AuditLog />} />
-								<Route path="/crowdsec" element={<Crowdsec />} />
-								<Route path="/settings" element={<Settings />} />
-								<Route path="/users" element={<Users />} />
-								<Route path="/nginx/proxy" element={<ProxyHosts />} />
-								<Route path="/nginx/redirection" element={<RedirectionHosts />} />
-								<Route path="/nginx/404" element={<DeadHosts />} />
-								<Route path="/nginx/stream" element={<Streams />} />
-								<Route path="/" element={<Dashboard />} />
-							</Routes>
-						</Suspense>
-					</ErrorBoundary>
-				</SiteContainer>
-				<SiteFooter />
-			</Page>
-		</BrowserRouter>
+		<AccountGate>
+			<BrowserRouter>
+				<Page>
+					<div>
+						<SiteHeader />
+						<SiteMenu />
+					</div>
+					<SiteContainer>
+						<ErrorBoundary>
+							<Suspense fallback={<LoadingPage noLogo />}>
+								<Routes>
+									<Route path="*" element={<ErrorNotFound />} />
+									<Route path="/certificates" element={<Certificates />} />
+									<Route path="/access" element={<Access />} />
+									<Route path="/audit-log" element={<AuditLog />} />
+									<Route path="/crowdsec" element={<Crowdsec />} />
+									<Route path="/settings" element={<Settings />} />
+									<Route path="/users" element={<Users />} />
+									<Route path="/nginx/proxy" element={<ProxyHosts />} />
+									<Route path="/nginx/redirection" element={<RedirectionHosts />} />
+									<Route path="/nginx/404" element={<DeadHosts />} />
+									<Route path="/nginx/stream" element={<Streams />} />
+									<Route path="/" element={<Dashboard />} />
+								</Routes>
+							</Suspense>
+						</ErrorBoundary>
+					</SiteContainer>
+					<SiteFooter />
+				</Page>
+			</BrowserRouter>
+		</AccountGate>
 	);
 }
 

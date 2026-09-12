@@ -134,6 +134,10 @@ const proxyHosts = [
 ];
 
 let defaultSite = { id: "default-site", value: "congratulations", meta: { html: "<p>Custom fixture</p>" } };
+let accountFailure = false;
+let sessionRejected = false;
+let rejectedRefreshes = 0;
+let rejectedProfiles = 0;
 let failures = 0;
 let appsecConfigured = true;
 let metricsMissing = false;
@@ -209,8 +213,22 @@ const api = async (route) => {
 		});
 
 	if (apiPath === "/" && request.method() === "GET")
-		return respond({ status: "OK", setup: true, password: false, oidc: false });
-	if (apiPath === "/tokens") return respond({ expires: iso(86400 * 1000) });
+		return respond({ status: "OK", setup: true, password: sessionRejected, oidc: false });
+	if (apiPath === "/tokens") {
+		if (sessionRejected && request.method() === "GET") {
+			rejectedRefreshes++;
+			return route.fulfill({ status: 401, contentType: "text/html", body: "<p>Session expired</p>" });
+		}
+		return respond({ expires: iso(86400 * 1000) });
+	}
+	if (apiPath === "/users/me" && (accountFailure || sessionRejected)) {
+		if (sessionRejected) rejectedProfiles++;
+		return route.fulfill({
+			status: sessionRejected ? 401 : 503,
+			contentType: "text/html",
+			body: "<p>Account unavailable</p>",
+		});
+	}
 	if (apiPath === "/users/me") return respond(user);
 	if (apiPath === "/users") return respond([user]);
 	if (apiPath === "/nginx/proxy-hosts") return respond(proxyHosts);
@@ -418,6 +436,7 @@ const browserErrors = [];
 let expectedManualBanError = false;
 page.on("console", (message) => {
 	if (message.type() !== "error") return;
+	if (accountFailure && message.text().includes("503")) return;
 	if ((metricsFailure || anubisReportFailure) && message.text().includes("503")) return;
 	if (
 		expectedManualBanError &&
@@ -985,6 +1004,41 @@ for (const width of [1440, 390, 320]) {
 	);
 	await page.screenshot({ path: `.smoke/ui-default-site-${width}.png`, fullPage: true });
 }
+accountFailure = true;
+await page.reload();
+await page.getByRole("heading", { name: "Unable to load your account" }).waitFor();
+check(
+	"failed account fetch shows recovery instead of a partial menu",
+	(await page.locator("#navbar-menu").count()) === 0,
+);
+check("account recovery reports HTTP status", await page.getByText("HTTP 503", { exact: true }).isVisible());
+await page.screenshot({ path: ".smoke/ui-account-recovery-320.png", fullPage: true });
+accountFailure = false;
+await page.getByRole("button", { name: "Retry", exact: true }).click();
+await page.locator('#navbar-menu a[href="/settings"]').waitFor({ state: "attached" });
+check("retry restores admin navigation", (await page.locator('#navbar-menu a[href="/crowdsec"]').count()) === 1);
+const expiredPage = await browser.newPage();
+await expiredPage.addInitScript(
+	(expires) => {
+		if (!sessionStorage.getItem("expired-profile-fixture")) {
+			sessionStorage.setItem("expired-profile-fixture", "true");
+			localStorage.setItem("auth", expires);
+		}
+	},
+	iso(86400 * 1000),
+);
+await expiredPage.route("**/api/**", (route) => api(route));
+sessionRejected = true;
+await expiredPage.goto("http://127.0.0.1:5173/settings");
+await expiredPage.locator('input[name="password"]').waitFor();
+check(
+	"HTML 401 clears the expired session and shows login",
+	(await expiredPage.evaluate(() => localStorage.getItem("auth"))) === null,
+);
+await expiredPage.waitForTimeout(1000);
+check("rejected session recovery does not loop", rejectedRefreshes <= 2);
+await expiredPage.close();
+sessionRejected = false;
 check("changed dashboard and host flows have no browser errors", browserErrors.length === 0, browserErrors.join(" | "));
 console.log(failures === 0 ? "ALL UI SMOKE CHECKS PASSED" : `${failures} FAILURES`);
 await browser.close();

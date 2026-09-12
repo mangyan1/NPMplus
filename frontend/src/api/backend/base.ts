@@ -44,25 +44,31 @@ function buildBody(data?: Record<string, any>): string | undefined {
 }
 
 export interface ApiError extends Error {
+	status?: number;
 	payload?: unknown;
 }
 
 async function processResponse<T = any>(response: Response, reload = true): Promise<T> {
-	const payload = await response.json();
+	// Session status must be handled even when a proxy returns an HTML error page.
+	if (response.status === 401 && reload) {
+		// Invalid or expired session: log out. Refresh attempts (reload=false)
+		// only throw, so a logged-out visitor does not fire token deletes or
+		// burn requests from the login rate limit on every render.
+		// 403 is an expected answer for restricted users, not a logout.
+		AuthStore.clear();
+		queryClient.clear();
+		await deleteToken().catch(() => {});
+		window.location.reload();
+	}
+	const payload = await response.json().catch((error) => {
+		if (response.ok) throw error;
+		return null;
+	});
 	if (!response.ok) {
-		if (response.status === 401 && reload) {
-			// Invalid or expired session: log out. Refresh attempts (reload=false)
-			// only throw, so a logged-out visitor does not fire token deletes or
-			// burn requests from the login rate limit on every render.
-			// 403 is an expected answer for restricted users, not a logout.
-			AuthStore.clear();
-			queryClient.clear();
-			await deleteToken().catch(() => {});
-			window.location.reload();
-		}
 		const error = new Error(
-			typeof payload.error.messageI18n !== "undefined" ? payload.error.messageI18n : payload.error.message,
+			payload?.error?.messageI18n || payload?.error?.message || `Request failed (HTTP ${response.status})`,
 		) as ApiError;
+		error.status = response.status;
 		error.payload = payload;
 		throw error;
 	}

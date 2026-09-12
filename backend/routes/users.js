@@ -31,10 +31,22 @@ const limiter = rateLimit({
 	legacyHeaders: false,
 	ipv6Subnet: 48,
 	skipSuccessfulRequests: true,
+	skip: (req) => ["GET", "HEAD", "OPTIONS"].includes(req.method),
 	validate: { trustProxy: false },
 });
 
-router.use(limiter);
+// Profile reads must remain available when an account mutation is throttled.
+const readLimiter = rateLimit({
+	windowMs: 60 * 1000,
+	limit: 60,
+	message: { error: { message: "Too many account reads, please try again later." } },
+	standardHeaders: "draft-8",
+	legacyHeaders: false,
+	ipv6Subnet: 48,
+	skip: (req) => req.method !== "GET" && req.method !== "HEAD",
+	validate: { trustProxy: false },
+});
+router.use(limiter, readLimiter);
 
 /**
  * /api/users

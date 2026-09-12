@@ -24,11 +24,24 @@ const limiter = rateLimit({
 	legacyHeaders: false,
 	ipv6Subnet: 48,
 	skipSuccessfulRequests: true,
-	skip: (req) => req.method === "DELETE",
+	// Only credential submissions consume the failed-login budget.
+	skip: (req) => req.method !== "POST",
 	validate: { trustProxy: false },
 });
 
-router.use(limiter);
+// Session discovery/refresh is automatic, including when no cookie exists.
+// Bound it separately so those expected 401s cannot lock out password login.
+const refreshLimiter = rateLimit({
+	windowMs: 60 * 1000,
+	limit: 60,
+	message: { error: { message: "Too many session checks, please try again later." } },
+	standardHeaders: "draft-8",
+	legacyHeaders: false,
+	ipv6Subnet: 48,
+	skip: (req) => req.method !== "GET" && req.method !== "HEAD",
+	validate: { trustProxy: false },
+});
+router.use(limiter, refreshLimiter);
 
 router
 	.route("/")

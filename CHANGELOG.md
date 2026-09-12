@@ -6,6 +6,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ### Added
 
+- Separated automatic session/profile reads from failed password/account-change rate limits, preserving bounded read traffic and the five-failure credential limit. Failed profile loading now shows recovery controls instead of a partial menu; HTML 401 responses clear expired sessions before JSON parsing.
+
 - Run enabled CrowdSec/AppSec access checks before generating the built-in forbidden page, retaining original request methods and bodies. Added Docker coverage using the actual NPMplus bouncer with controlled LAPI/AppSec fixtures to the boot-resilience workflow.
 
 - Restricted the built-in forbidden page with a stylesheet-hash Content Security Policy and framing denial, with regression coverage for hash drift and isolation from Custom HTML.
