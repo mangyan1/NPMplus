@@ -127,6 +127,40 @@ else:
         self.assertNotEqual(old_tip, self.proposal_tip())
         self.assertEqual(len(self.calls()), 1)
 
+    def prepare_deleted_report(self, upstream_edits_report=False):
+        self.commit("internal-review.md", "historical report fixture\n")
+        report_base = self.git("rev-parse", "HEAD")
+        self.git("rm", "internal-review.md")
+        self.git("commit", "-m", "remove published report fixture")
+        for name in (".gitignore", ".dockerignore"):
+            self.commit(name, "internal-review.md\n.local-*/\n")
+        self.git("push", "origin", "develop")
+        self.fork_tip = self.git("rev-parse", "HEAD")
+        self.git("switch", "-c", "upstream-fixture", report_base)
+        self.commit("internal-review.md" if upstream_edits_report else "upstream.txt",
+                    "upstream update\n")
+        self.git("push", str(self.upstream), "HEAD:develop")
+        self.git("switch", "develop")
+
+    def test_merge_preserves_report_deletion_and_ignore_rules(self):
+        self.prepare_deleted_report()
+        result = self.run_sync()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        tip = self.proposal_tip()
+        self.assertNotIn("internal-review.md", self.git("ls-tree", "--name-only", tip).splitlines())
+        for name in (".gitignore", ".dockerignore"):
+            self.assertEqual(self.git("show", f"{tip}:{name}"), "internal-review.md\n.local-*/")
+        self.assertEqual(self.git("show", f"{tip}:upstream.txt"), "upstream update")
+
+    def test_upstream_edit_of_deleted_report_stops_without_publishing(self):
+        self.prepare_deleted_report(upstream_edits_report=True)
+        result = self.run_sync()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.proposal_tip(), "")
+        self.assertEqual(self.calls(), [])
+        self.assertFalse((self.work / "internal-review.md").exists())
+        self.assertIn("internal-review.md", (self.root / "summary.md").read_text())
+
     def test_conflict_preserves_existing_proposal_and_aborts(self):
         self.diverge(conflict=True)
         self.git("push", "origin", "HEAD:automation/upstream-sync")

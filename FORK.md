@@ -104,6 +104,15 @@ Record user-visible behavior in CHANGELOG and the relevant `docs/` guide. The
 local `AGENTS.md` handoff is intentionally ignored and must not be force-added;
 durable maintenance rules therefore also live here.
 
+Internal audit reports belong in ignored local storage, outside the published
+`docs/` tree. Preserve the fork's `.gitignore` and `.dockerignore` exclusions and
+intentional report deletions during upstream merges. Git ignore rules do not
+prevent a merge from adding tracked files: review incoming documentation before
+publishing a proposal. If upstream edits a report deleted by the fork, stop for
+review rather than restoring it automatically. Keep security implementation,
+regression tests, reporting policies, and scanner exception files maintained.
+Local handoffs and private reports are not available in a fresh clone.
+
 The 2026-09-08 tidy extracts the sync workflow into a tested script and the browser
 deployment recovery into a dedicated module. Existing dashboard modules and
 database migrations retain their paths.
