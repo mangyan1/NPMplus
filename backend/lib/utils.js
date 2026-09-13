@@ -87,25 +87,50 @@ const omitRows = (omissions) => {
 /**
  * @returns {Object} Liquid render engine
  */
+let sharedRenderEngine = null;
+const parsedTemplates = new Map();
+
 const getRenderEngine = () => {
-	const renderEngine = new Liquid({
-		root: `${__dirname}/../templates/`,
-	});
+	// The engine is stateless across renders and its templates never change at
+	// runtime, so one shared instance avoids rebuilding it (and re-registering
+	// its filter) for every config generation, list update, and bulk rebuild.
+	if (sharedRenderEngine === null) {
+		sharedRenderEngine = new Liquid({
+			root: `${__dirname}/../templates/`,
+		});
 
-	/**
-	 * nginxAccessRule expects the object given to have 2 properties:
-	 *
-	 * directive  string
-	 * address    string
-	 */
-	renderEngine.registerFilter("nginxAccessRule", (v) => {
-		if (typeof v.directive !== "undefined" && typeof v.address !== "undefined" && v.directive && v.address) {
-			return `${v.directive} ${v.address};`;
-		}
-		return "";
-	});
+		/**
+		 * nginxAccessRule expects the object given to have 2 properties:
+		 *
+		 * directive  string
+		 * address    string
+		 */
+		sharedRenderEngine.registerFilter("nginxAccessRule", (v) => {
+			if (typeof v.directive !== "undefined" && typeof v.address !== "undefined" && v.directive && v.address) {
+				return `${v.directive} ${v.address};`;
+			}
+			return "";
+		});
+	}
 
-	return renderEngine;
+	return sharedRenderEngine;
 };
 
-export default { writeHash, execFile, omitRow, omitRows, getRenderEngine };
+/**
+ * Reads a template once and keeps its parsed representation. Rendering a
+ * pre-parsed template is an order of magnitude cheaper than re-parsing it on
+ * every host update, and bulk operations render the same templates repeatedly.
+ *
+ * @param   {String}  templatePath
+ * @returns {Promise<Object>} parsed Liquid template
+ */
+const getParsedTemplate = async (templatePath) => {
+	let template = parsedTemplates.get(templatePath);
+	if (template === undefined) {
+		template = getRenderEngine().parse(await readFile(templatePath, { encoding: "utf8" }));
+		parsedTemplates.set(templatePath, template);
+	}
+	return template;
+};
+
+export default { writeHash, execFile, omitRow, omitRows, getRenderEngine, getParsedTemplate };

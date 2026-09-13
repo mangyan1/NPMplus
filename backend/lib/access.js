@@ -22,6 +22,62 @@ import errs from "./error.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Every permission check used to re-read its permission file and build a new
+// Ajv instance with the same schemas, costing several milliseconds per check.
+// The permission files are static, so their parsed schemas are cached.
+//
+// Compiled validators are additionally cached, but only for permissions whose
+// schema never references the per-request "objects" schema. The users-*
+// permissions embed the calling user's id enum through "objects#", so a
+// compiled validator for them must be rebuilt per request; freezing the first
+// caller's user id into the cache would let any user pass those checks.
+const permissionSchemas = new Map();
+const permissionValidators = new Map();
+// Placeholder for the per-request objects schema in cached instances. It is
+// only ever referenced by users-* permissions, which are never cached.
+const cachedObjectSchema = {
+	$id: "objects",
+	type: "object",
+	properties: {},
+};
+
+const loadPermissionSchema = async (permission) => {
+	let cached = permissionSchemas.get(permission);
+	if (cached === undefined) {
+		const rawData = await readFile(`${__dirname}/access/${permission.replace(/:/gim, "-")}.json`, {
+			encoding: "utf8",
+		});
+		cached = { schema: JSON.parse(rawData), referencesObjects: rawData.includes('"objects#') };
+		permissionSchemas.set(permission, cached);
+	}
+	return cached;
+};
+
+const getPermissionValidator = async (permission) => {
+	let validator = permissionValidators.get(permission);
+	if (validator === undefined) {
+		const { schema } = await loadPermissionSchema(permission);
+		const permissionSchema = {
+			$async: true,
+			$id: "permissions",
+			type: "object",
+			additionalProperties: false,
+			properties: {},
+		};
+		permissionSchema.properties[permission] = schema;
+		const ajv = new Ajv({
+			verbose: true,
+			allErrors: true,
+			breakOnError: true,
+			coerceTypes: true,
+			schemas: [roleSchema, permsSchema, cachedObjectSchema, permissionSchema],
+		});
+		validator = ajv.getSchema("permissions");
+		permissionValidators.set(permission, validator);
+	}
+	return validator;
+};
+
 export default function (tokenString) {
 	const Token = TokenModel();
 	let tokenData = null;
@@ -220,7 +276,7 @@ export default function (tokenString) {
 
 			try {
 				await this.init();
-				const objectSchema = await this.getObjectSchema(permission);
+				const { referencesObjects } = await loadPermissionSchema(permission);
 
 				const dataSchema = {
 					[permission]: {
@@ -237,6 +293,19 @@ export default function (tokenString) {
 					},
 				};
 
+				if (!referencesObjects) {
+					// The schema does not depend on per-request values, so the
+					// compiled validator can be (and is) shared across requests.
+					const validator = await getPermissionValidator(permission);
+					const valid = await validator(dataSchema);
+					return valid && dataSchema[permission];
+				}
+
+				// users-* permissions validate the calling user's id against the
+				// objects schema, which is rebuilt from this token on every check.
+				const objectSchema = await this.getObjectSchema(permission);
+				const { schema } = await loadPermissionSchema(permission);
+
 				const permissionSchema = {
 					$async: true,
 					$id: "permissions",
@@ -244,11 +313,7 @@ export default function (tokenString) {
 					additionalProperties: false,
 					properties: {},
 				};
-
-				const rawData = await readFile(`${__dirname}/access/${permission.replace(/:/gim, "-")}.json`, {
-					encoding: "utf8",
-				});
-				permissionSchema.properties[permission] = JSON.parse(rawData);
+				permissionSchema.properties[permission] = schema;
 
 				const ajv = new Ajv({
 					verbose: true,

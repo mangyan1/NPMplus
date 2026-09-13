@@ -1,4 +1,4 @@
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
+import { rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { domainToASCII, fileURLToPath } from "node:url";
 import errs from "../lib/error.js";
@@ -120,9 +120,7 @@ const internalNginx = {
 		let template;
 
 		try {
-			template = await readFile(`${__dirname}/../templates/_proxy_host_custom_location.conf`, {
-				encoding: "utf8",
-			});
+			template = await utils.getParsedTemplate(`${__dirname}/../templates/_proxy_host_custom_location.conf`);
 		} catch (err) {
 			throw new errs.ConfigurationError(err.message, err);
 		}
@@ -152,7 +150,7 @@ const internalNginx = {
 			} else {
 				location.forward_upstream_name = `upstream_${host.id}_location_${idx}`;
 			}
-			renderedLocations += await renderEngine.parseAndRender(template, location);
+			renderedLocations += await renderEngine.render(template, location);
 		}
 
 		return renderedLocations;
@@ -167,9 +165,7 @@ const internalNginx = {
 		let template;
 
 		try {
-			template = await readFile(`${__dirname}/../templates/_upstream.conf`, {
-				encoding: "utf8",
-			});
+			template = await utils.getParsedTemplate(`${__dirname}/../templates/_upstream.conf`);
 		} catch (err) {
 			throw new errs.ConfigurationError(err.message, err);
 		}
@@ -193,7 +189,7 @@ const internalNginx = {
 				host.forward_upstream_name = host.forward_host;
 			} else {
 				host.forward_upstream_name = `upstream_${host.id}`;
-				renderedUpstreams += await renderEngine.parseAndRender(template, host);
+				renderedUpstreams += await renderEngine.render(template, host);
 			}
 		}
 
@@ -221,7 +217,7 @@ const internalNginx = {
 				location.forward_upstream_name = location.forward_host;
 			} else {
 				location.forward_upstream_name = `upstream_${host.id}_location_${idx}`;
-				renderedUpstreams += await renderEngine.parseAndRender(template, location);
+				renderedUpstreams += await renderEngine.render(template, location);
 			}
 		}
 
@@ -244,7 +240,7 @@ const internalNginx = {
 		const filename = internalNginx.getConfigName(nice_host_type, host.id);
 
 		try {
-			template = await readFile(`${__dirname}/../templates/${nice_host_type}.conf`, { encoding: "utf8" });
+			template = await utils.getParsedTemplate(`${__dirname}/../templates/${nice_host_type}.conf`);
 		} catch (err) {
 			throw new errs.ConfigurationError(err.message, err);
 		}
@@ -387,7 +383,7 @@ const internalNginx = {
 		}
 
 		try {
-			const config_text = await renderEngine.parseAndRender(template, host);
+			const config_text = await renderEngine.render(template, host);
 
 			await writeFile(filename, config_text, { encoding: "utf8" });
 			debug(logger, "Wrote config:", filename);

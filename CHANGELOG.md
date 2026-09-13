@@ -10,6 +10,10 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 - Setup-mode user creation now applies upstream's strict field whitelist (only `name`, `nickname`, `email`, `auth`, with `roles` forced to admin) alongside the existing one-time setup-token gate, setup race guard, and token removal. The create-user schema rejects malformed `auth` objects. Upstream's refusal to start on Unraid app-template deployments and its stricter root/`UID`/`GID` env checks are included; standard Compose deployments are unaffected.
 
+### Fixed
+
+- Reduced hot-path overhead in the admin API and nginx config generation. Permission checks no longer rebuild an Ajv validator per request (measured at ~4.7ms per check, now a cached compiled validator for the 40 static permissions; the `users-*` permissions keep their per-request rebuild because they embed the calling user's id enum, which must never be cached across users). Nginx config rendering shares one Liquid engine and caches parsed templates instead of re-reading and re-parsing each template per host, and bulk access-list regeneration no longer repeats that per host. Authenticated avatar and gravatar images allow a five-minute private browser cache, so UI re-renders stop re-running the auth subrequest (JWT verification plus session and user queries) for every image on every render; the first fetch still requires an authenticated session and failed checks remain uncacheable.
+
 - Separated automatic session/profile reads from failed password/account-change rate limits, preserving bounded read traffic and the five-failure credential limit. Failed profile loading now shows recovery controls instead of a partial menu; HTML 401 responses clear expired sessions before JSON parsing.
 
 - Run enabled CrowdSec/AppSec access checks before generating the built-in forbidden page, retaining original request methods and bodies. Added Docker coverage using the actual NPMplus bouncer with controlled LAPI/AppSec fixtures to the boot-resilience workflow.
