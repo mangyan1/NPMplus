@@ -279,6 +279,33 @@ test("peon can still read proxy hosts (view permission)", async () => {
 	assert.deepEqual(res.body, []);
 });
 
+// --- permission-check caching security contract ---
+//
+// access.can() caches compiled validators per permission for speed. The
+// users-* permission schemas embed the CALLING user's id enum through the
+// per-request "objects" schema, so their validators must never be cached
+// across requests: freezing user A's id into a shared validator would let
+// user B pass user A's checks. This pins the distinction end to end:
+// admin and peon perform the SAME users-get permission check back to back,
+// and the cross-user 403 walls must hold regardless of check order.
+test("cached permission checks never leak one user's id into another's validation", async () => {
+	// admin first: primes any per-permission cache with an admin-role check
+	const adminSeesAdmin = await api("GET", `/api/users/${adminId}`, { cookie: adminCookie });
+	assert.equal(adminSeesAdmin.status, 200, adminSeesAdmin.text);
+
+	// peon repeats the same permission against the admin's id: must stay 403
+	const peonSeesAdmin = await api("GET", `/api/users/${adminId}`, { cookie: peonCookie });
+	assert.equal(peonSeesAdmin.status, 403);
+
+	// and peon's own id must still work for peon (not rejected, not leaked)
+	const peonSeesSelf = await api("GET", `/api/users/${peonId}`, { cookie: peonCookie });
+	assert.equal(peonSeesSelf.status, 200, peonSeesSelf.text);
+
+	// reverse the order: peon's check must not poison the admin's either
+	const adminSeesPeon = await api("GET", `/api/users/${peonId}`, { cookie: adminCookie });
+	assert.equal(adminSeesPeon.status, 200, adminSeesPeon.text);
+});
+
 test("proxy host CRUD round-trips through nginx config generation", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 

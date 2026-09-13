@@ -81,6 +81,31 @@ Keep the upstream implementation if it covers the same requirements, then remove
 only the redundant fork implementation in a normal reviewable commit. Preserve
 attribution and upstream history with merge commits.
 
+### Rules for performance changes (learned 2026-09-13)
+
+Two mistake classes occurred in one day, and both are now guarded:
+
+1. **Never cache anything that embeds per-request identity.** The permission
+   cache (PR #19) is only safe because the four `users-*` permissions embed the
+   calling user's id enum through the per-request `objects` schema and are
+   therefore excluded from validator caching. Any future caching change to
+   `backend/lib/access.js` must preserve that exclusion. The regression pin is
+   `cached permission checks never leak one user's id into another's validation`
+   in `backend/test/api.test.js` - it fails the suite if a cached validator is
+   ever applied to a `users-*` permission, and it was verified to fail against
+   a deliberately sabotaged guard before being trusted. Run it whenever touching
+   access control, and keep the negative-verification habit: break the guard on
+   purpose, prove the test turns red, restore, prove green.
+
+2. **Verify the mechanism, not just the outcome, before writing it down.** The
+   `mmap_size` exclusion (PR #20) was initially recorded with the wrong reason -
+   "compiled out" - when the real mechanism was better-sqlite3's pragma-API
+   whitelist silently rejecting it. Both the exclusion decision and its recorded
+   justification were corrected in `85d9c244`. When a claim about a driver,
+   dependency, or runtime enters the CHANGELOG, it must be backed by a direct
+   probe of that exact build (e.g. `PRAGMA compile_options`), not inference
+   from a symptom like an empty readback.
+
 Before merging the proposal:
 
 1. Review the shared integration points above, dependency/lockfile changes, and
