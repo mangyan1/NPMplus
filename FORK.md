@@ -81,6 +81,60 @@ Keep the upstream implementation if it covers the same requirements, then remove
 only the redundant fork implementation in a normal reviewable commit. Preserve
 attribution and upstream history with merge commits.
 
+### Rules for performance changes (learned 2026-09-13)
+
+Two mistake classes occurred in one day, and both are now guarded:
+
+1. **Never cache anything that embeds per-request identity.** The permission
+   cache (PR #19) is only safe because the four `users-*` permissions embed the
+   calling user's id enum through the per-request `objects` schema and are
+   therefore excluded from validator caching. Any future caching change to
+   `backend/lib/access.js` must preserve that exclusion. The regression pin is
+   `cached permission checks never leak one user's id into another's validation`
+   in `backend/test/api.test.js` - it fails the suite if a cached validator is
+   ever applied to a `users-*` permission, and it was verified to fail against
+   a deliberately sabotaged guard before being trusted. Run it whenever touching
+   access control, and keep the negative-verification habit: break the guard on
+   purpose, prove the test turns red, restore, prove green.
+
+2. **Verify the mechanism, not just the outcome, before writing it down.** The
+   `mmap_size` exclusion (PR #20) was initially recorded with the wrong reason -
+   "compiled out" - when the real mechanism was better-sqlite3's pragma-API
+   whitelist silently rejecting it. Both the exclusion decision and its recorded
+   justification were corrected in `85d9c244`. When a claim about a driver,
+   dependency, or runtime enters the CHANGELOG, it must be backed by a direct
+   probe of that exact build (e.g. `PRAGMA compile_options`), not inference
+   from a symptom like an empty readback.
+
+### Enforced guardrails (2026-09-13)
+
+The two rule classes above are also machine-enforced so future sessions cannot
+drift past them, even under pressure to "just make it work":
+
+- `.github/CODE_GUIDELINES.md` is the always-loaded constraint summary for
+  every coding session (VS Code reads it automatically): the nine security
+  invariants, the change discipline, and the verification ladder. It points
+  here and to the tests for rationale.
+- `tests/security-invariants.mjs` runs in `lint-and-format` and fails the
+  build on drift in five load-bearing properties: subprocess output never
+  reaching API responses (app.js shape, error-object schema, CommandError
+  visibility), the jwtdecode 401-for-rejected-session contract (comment-aware
+  so a commented-out 401 cannot satisfy it), the no-store Cache-Control on
+  the admin index and SPA fallback location blocks, the permission-cache
+  identity exclusion (the `!referencesObjects` guard and the per-request
+  objects rebuild), and the bounded-fetch timeout/byte-cap contracts.
+- Every rule in the checker was **negative-verified before being trusted**:
+  each guarded file was sabotaged with its real drift pattern, the checker
+  had to catch it, and the tree was restored. A check that has never been
+  seen to fail proves nothing - keep that discipline when adding rules.
+- The behavioral layer is the regression pins in `backend/test/api.test.js`,
+  notably `cached permission checks never leak one user's id into another's
+  validation`, which was itself proven red against a sabotaged cache guard.
+- When a new incident reveals a drift class worth guarding, add a rule to the
+  checker AND a sabotage case to the negative-verification habit, never a
+  rule alone. Never edit the checker to make a change pass; redesign the
+  invariant with owner approval instead, and record it here.
+
 Before merging the proposal:
 
 1. Review the shared integration points above, dependency/lockfile changes, and

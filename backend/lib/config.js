@@ -90,6 +90,12 @@ const configure = () => {
 				useNullAsDefault: true,
 				pool: {
 					afterCreate: (conn, done) => {
+						// wait out transient write contention (telemetry/audit
+						// writers vs API reads) instead of failing with SQLITE_BUSY
+						conn.pragma("busy_timeout = 5000");
+						// keep the page cache in RAM; the admin database is small
+						// enough that most reads never touch disk after this
+						conn.pragma("cache_size = -20000");
 						conn.pragma("synchronous = NORMAL");
 						conn.pragma("temp_store = MEMORY");
 						conn.pragma("optimize = 0x10002");
