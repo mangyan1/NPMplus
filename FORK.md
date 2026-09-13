@@ -106,6 +106,35 @@ Two mistake classes occurred in one day, and both are now guarded:
    probe of that exact build (e.g. `PRAGMA compile_options`), not inference
    from a symptom like an empty readback.
 
+### Enforced guardrails (2026-09-13)
+
+The two rule classes above are also machine-enforced so future sessions cannot
+drift past them, even under pressure to "just make it work":
+
+- `.github/CODE_GUIDELINES.md` is the always-loaded constraint summary for
+  every coding session (VS Code reads it automatically): the nine security
+  invariants, the change discipline, and the verification ladder. It points
+  here and to the tests for rationale.
+- `tests/security-invariants.mjs` runs in `lint-and-format` and fails the
+  build on drift in five load-bearing properties: subprocess output never
+  reaching API responses (app.js shape, error-object schema, CommandError
+  visibility), the jwtdecode 401-for-rejected-session contract (comment-aware
+  so a commented-out 401 cannot satisfy it), the no-store Cache-Control on
+  the admin index and SPA fallback location blocks, the permission-cache
+  identity exclusion (the `!referencesObjects` guard and the per-request
+  objects rebuild), and the bounded-fetch timeout/byte-cap contracts.
+- Every rule in the checker was **negative-verified before being trusted**:
+  each guarded file was sabotaged with its real drift pattern, the checker
+  had to catch it, and the tree was restored. A check that has never been
+  seen to fail proves nothing - keep that discipline when adding rules.
+- The behavioral layer is the regression pins in `backend/test/api.test.js`,
+  notably `cached permission checks never leak one user's id into another's
+  validation`, which was itself proven red against a sabotaged cache guard.
+- When a new incident reveals a drift class worth guarding, add a rule to the
+  checker AND a sabotage case to the negative-verification habit, never a
+  rule alone. Never edit the checker to make a change pass; redesign the
+  invariant with owner approval instead, and record it here.
+
 Before merging the proposal:
 
 1. Review the shared integration points above, dependency/lockfile changes, and
