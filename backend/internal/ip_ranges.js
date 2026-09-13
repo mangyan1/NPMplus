@@ -87,8 +87,8 @@ const internalIpRanges = {
 	generateConfig: async (ip_ranges) => {
 		try {
 			const renderEngine = utils.getRenderEngine();
-			const template = await readFile(`${__dirname}/../templates/ip_ranges.conf`, { encoding: "utf8" });
-			const newConfig = await renderEngine.parseAndRender(template, { ip_ranges, env: process.env });
+			const template = await utils.getParsedTemplate(`${__dirname}/../templates/ip_ranges.conf`);
+			const newConfig = await renderEngine.render(template, { ip_ranges, env: process.env });
 			const filePath = "/usr/local/nginx/conf/conf.d/ip_ranges.conf";
 
 			try {
