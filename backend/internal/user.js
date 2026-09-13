@@ -34,13 +34,17 @@ const avatarExt = (b) => {
 	return null;
 };
 
-// download the gravatar for an email into the cache dir and return the served
-// path, or fall back to the default avatar on any failure; shared by the
-// create and update paths so both keep exactly the same contract
-const resolveGravatarAvatar = async (email, name) => {
-	if (process.env.DISABLE_GRAVATAR === "true") {
-		return "/images/default-avatar.jpg";
-	}
+// remove every supported avatar extension for a user- or hash-keyed cache
+// entry, so a format change can never leave a stale file behind
+const rmAvatars = (dir, name) =>
+	Promise.all(avatarExts.map((e) => rm(`/data/npmplus/${dir}/${name}.${e}`, { force: true })));
+
+// download the gravatar for an email into the id-keyed cache and return the
+// served path, or fall back to the default avatar on any failure; shared by
+// the create, update, and login-backfill paths so all keep the same contract.
+// The fetch is bounded in time and body size.
+const fetchGravatar = async (id, email, name) => {
+	if (process.env.DISABLE_GRAVATAR === "true") return "/images/default-avatar.jpg";
 	try {
 		const hash = crypto.createHash("sha256").update(email.trim().toLowerCase()).digest("hex");
 		const response = await fetchWithTimeout(
@@ -60,25 +64,15 @@ const resolveGravatarAvatar = async (email, name) => {
 
 		if (!response.ok) throw new Error(`Status code: ${response.status}`);
 
-		let ext;
-		switch (response.headers.get("content-type")) {
-			case "image/png":
-				ext = "png";
-				break;
-			case "image/jpeg":
-				ext = "jpg";
-				break;
-			case "image/gif":
-				ext = "gif";
-				break;
-			default:
-				throw new Error(`Unsupported content-type: ${response.headers.get("content-type")}`);
-		}
-
 		const buffer = await readBoundedBuffer(response, 1024 * 1024);
-		await writeFile(`/data/npmplus/gravatar/${hash}.${ext}`, buffer);
+		const ext = avatarExt(buffer);
+		if (!ext) throw new Error("Unsupported image format");
 
-		return `/images/gravatar/${hash}.${ext}`;
+		await rmAvatars("gravatar", id);
+		await rmAvatars("gravatar", hash);
+		await writeFile(`/data/npmplus/gravatar/${id}.${ext}`, buffer);
+
+		return `/images/gravatar/${id}.${ext}`;
 	} catch (err) {
 		logger.error(`Error downloading gravatar: ${err.message}`);
 		return "/images/default-avatar.jpg";
@@ -99,7 +93,7 @@ const backfillGravatarAvatar = async (email) => {
 		.andWhere("is_deleted", 0)
 		.first();
 	if (!user || user.avatar) return;
-	const avatar = await resolveGravatarAvatar(user.email, user.name);
+	const avatar = await fetchGravatar(user.id, user.email, user.name);
 	if (avatar === "/images/default-avatar.jpg") return;
 	await userModel.query().patchAndFetchById(user.id, { avatar });
 };
@@ -132,8 +126,6 @@ const internalUser = {
 			throw new errs.ValidationError(`Email address already in use - ${data.email}`);
 		}
 
-		data.avatar = await resolveGravatarAvatar(data.email, data.name);
-
 		let user = utils.omitRow(omissions())(await userModel.query().insertAndFetch(data));
 		if (auth) {
 			await authModel.query().insert({
@@ -158,6 +150,10 @@ const internalUser = {
 			certificates: isAdmin ? "manage" : "view",
 		});
 
+		await userModel
+			.query()
+			.patchAndFetchById(user.id, { avatar: await fetchGravatar(user.id, user.email, user.name) });
+
 		user = await internalUser.get(access, { id: user.id, expand: ["permissions"] });
 
 		await internalAuditLog.add(access, {
@@ -175,7 +171,7 @@ const internalUser = {
 		const ext = avatarExt(file?.buffer);
 		if (!ext) throw new errs.ValidationError("Invalid avatar file type");
 		const user = await internalUser.get(access, { id });
-		await Promise.all(avatarExts.map((e) => rm(`/data/npmplus/avatar/${user.id}.${e}`, { force: true })));
+		await rmAvatars("avatar", user.id);
 		await writeFile(`/data/npmplus/avatar/${user.id}.${ext}`, file.buffer);
 		await userModel.query().patchAndFetchById(user.id, { avatar: `/images/avatar/${user.id}.${ext}` });
 		return internalUser.update(access, { id: user.id });
@@ -184,7 +180,7 @@ const internalUser = {
 	deleteAvatar: async (access, id) => {
 		await access.can("users:update", id);
 		const user = await internalUser.get(access, { id });
-		await Promise.all(avatarExts.map((e) => rm(`/data/npmplus/avatar/${user.id}.${e}`, { force: true })));
+		await rmAvatars("avatar", user.id);
 		await userModel.query().patchAndFetchById(user.id, { avatar: "" });
 		return internalUser.update(access, { id: user.id });
 	},
@@ -229,7 +225,11 @@ const internalUser = {
 		if (existingUser.avatar?.startsWith("/images/avatar/")) {
 			data.avatar = existingUser.avatar;
 		} else {
-			data.avatar = await resolveGravatarAvatar(data.email || existingUser.email, data.name || existingUser.name);
+			data.avatar = await fetchGravatar(
+				existingUser.id,
+				data.email || existingUser.email,
+				data.name || existingUser.name,
+			);
 		}
 
 		await userModel.query().patchAndFetchById(existingUser.id, data);

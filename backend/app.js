@@ -70,6 +70,8 @@ app.use((err, req, res, _) => {
 
 	// Subprocess failures can contain credentials and paths. Keep diagnostics
 	// server-side, including when the public message is deliberately generic.
+	// The upstream "error.output" variant would publish raw certbot stdout and
+	// stderr to the browser, so it is intentionally not merged here.
 
 	// Not every error is worth logging - but this is good for now until it gets annoying.
 	if (typeof err.stack !== "undefined" && err.stack) {

@@ -4,12 +4,12 @@ import internalHost from "./internal/host.js";
 import internalNginx from "./internal/nginx.js";
 import internalProxyHost from "./internal/proxy-host.js";
 import internalProxyHostAccessList from "./internal/proxy-host-access-list.js";
+import internalUser from "./internal/user.js";
 import Access from "./lib/access.js";
 import { installPlugins } from "./lib/certbot.js";
 import errs from "./lib/error.js";
 import utils from "./lib/utils.js";
 import { setup as logger } from "./logger.js";
-import authModel from "./models/auth.js";
 import certificateModel from "./models/certificate.js";
 import deadModel from "./models/dead_host.js";
 import proxyModel from "./models/proxy_host.js";
@@ -17,7 +17,6 @@ import redirectionModel from "./models/redirection_host.js";
 import settingModel from "./models/setting.js";
 import streamModel from "./models/stream.js";
 import userModel from "./models/user.js";
-import userPermissionModel from "./models/user_permission.js";
 
 const setupTokenPath = process.env.INITIAL_SETUP_TOKEN_FILE || "/data/npmplus/setup-token";
 const setupTokenIsManaged = !process.env.INITIAL_SETUP_TOKEN && !process.env.INITIAL_SETUP_TOKEN_FILE;
@@ -100,33 +99,18 @@ const setupDefaultUser = async () => {
 		// Create a new user and set password
 		logger.info(`Creating a new user: ${initialAdminEmail}`);
 
-		const data = {
-			is_deleted: 0,
+		const access = new Access(null);
+		await access.load(true);
+
+		await internalUser.create(access, {
 			email: initialAdminEmail,
 			name: "Administrator",
 			nickname: "Admin",
-			avatar: "",
 			roles: ["admin"],
-		};
-
-		const user = await userModel.query().insertAndFetch(data);
-
-		await authModel.query().insert({
-			user_id: user.id,
-			type: "password",
-			secret: initialAdminPassword,
-			meta: {},
-		});
-
-		await userPermissionModel.query().insert({
-			user_id: user.id,
-			visibility: "all",
-			proxy_hosts: "manage",
-			redirection_hosts: "manage",
-			dead_hosts: "manage",
-			streams: "manage",
-			access_lists: "manage",
-			certificates: "manage",
+			auth: {
+				type: "password",
+				secret: initialAdminPassword,
+			},
 		});
 		await removeSetupToken();
 		logger.info(`Initial admin user creation completed: ${initialAdminEmail}`);
