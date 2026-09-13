@@ -140,6 +140,44 @@ installer variants, and reboot resilience all passed before merging. The
 [post-merge upstream sync](https://github.com/mangyan1/NPMplus/actions/runs/34697402798)
 succeeded. This records a tested merge, not a guarantee for later upstream revisions.
 
+## Upstream merge resolution notes (September 13)
+
+Upstream rewrote develop again (the previous integration `16116b76` was followed by
+`58f8a1b9`, `968d7e07`, and `ec092c26`), which made the scheduled `upstream sync`
+run fail closed on conflicts. That failure is the intended stop-for-review
+behavior, not a CI regression. The prepared merge on `fix/upstream-sync-20260913`
+resolves three files:
+
+- `backend/app.js`: upstream now publishes `payload.error.output` from
+  `CommandError` messages. That reintroduces the raw subprocess stdout/stderr leak
+  (certbot command lines can carry credentials and paths) that `8639e5a7`
+  removed, so the fork's generic-message handler is kept. The auto-merged
+  `error-object.json` `output` property was reverted for the same reason: the
+  schema must describe what this fork actually returns. The frontend modal
+  changes are kept because `err.payload?.error?.output` is simply never set; the
+  translated `<T id={err.message}>` fallback renders instead.
+- `backend/internal/user.js`: upstream's avatar rework (id-keyed gravatar cache,
+  magic-byte image detection, stale-extension cleanup, post-insert avatar patch)
+  is adopted, merged with the fork's hardening: the bounded 5s fetch timeout and
+  1 MiB bounded body read remain, and `backfillGravatarAvatar` keeps backfilling
+  empty avatars on login (now writing id-keyed files). The gravatar contract
+  tests assert the id-keyed file names.
+- `backend/routes/users.js`: upstream's strict setup whitelist (only `name`,
+  `nickname`, `email`, `auth`, forced `roles: ["admin"]`) replaces the fork's
+  field-defaulting block, while the fork's setup-mode race guard
+  (`setupCreationInProgress`), one-time setup-token verification, token removal
+  on completion, and `finally` release are preserved. The tightened
+  `post.json` `auth` object schema (password type/secret required when present)
+  is accepted; the admin UserModal sends no `auth` on create and the setup
+  wizard sends exactly `name`, `nickname`, `email`, `auth`.
+
+Auto-merged without conflicts: `backend/setup.js` now seeds the initial admin via
+`internalUser.create` with internal access (the audit entry records user id 1),
+`backend/schema/paths/users/post.json`, the seven frontend certbot-error modals,
+and `rootfs/usr/local/bin/envs.sh` (the upstream Unraid app-template refusal and
+the `UID`/`GID`/`$UID`-env root checks; the fork's compose.yaml sets neither, so
+the standard deployment is unaffected).
+
 The installer smoke workflow points its self-check at the file under test via a
 `file://` SELF_URL; the production stale-script guard remains enabled. Channel
 selection and password-hash rollback compatibility are documented in the

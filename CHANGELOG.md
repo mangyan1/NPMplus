@@ -6,6 +6,10 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ### Added
 
+- Merged the rewritten upstream develop through `ec092c26` after the scheduled upstream-sync run stopped on conflicts (its intended fail-closed behavior). Integrated upstream's avatar rework: gravatar images are now cached per user id with magic-byte image-format detection and stale-extension cleanup, instead of being keyed by the email hash. The fork's hardening is retained: the 5-second bounded fetch, 1 MiB bounded body read, and login-time backfill for accounts seeded without an avatar. Initial-admin seeding now goes through the same user-creation path (permissions, password hashing, and audit logging included) instead of raw table inserts.
+
+- Setup-mode user creation now applies upstream's strict field whitelist (only `name`, `nickname`, `email`, `auth`, with `roles` forced to admin) alongside the existing one-time setup-token gate, setup race guard, and token removal. The create-user schema rejects malformed `auth` objects. Upstream's refusal to start on Unraid app-template deployments and its stricter root/`UID`/`GID` env checks are included; standard Compose deployments are unaffected.
+
 - Separated automatic session/profile reads from failed password/account-change rate limits, preserving bounded read traffic and the five-failure credential limit. Failed profile loading now shows recovery controls instead of a partial menu; HTML 401 responses clear expired sessions before JSON parsing.
 
 - Run enabled CrowdSec/AppSec access checks before generating the built-in forbidden page, retaining original request methods and bodies. Added Docker coverage using the actual NPMplus bouncer with controlled LAPI/AppSec fixtures to the boot-resilience workflow.

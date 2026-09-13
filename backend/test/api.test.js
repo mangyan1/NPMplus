@@ -436,10 +436,10 @@ test("crowdsec reads degrade to a stable not-wired error without a LAPI key", as
 
 // --- gravatar avatar contract ---
 
-// a fake but structurally valid png: user.js switches on content-type and
-// stores whatever bytes arrived, so only the header matters to the contract
+// a fake but structurally valid png: user.js detects the format from the
+// image magic bytes and stores whatever bytes arrived, so only the header
+// matters to the contract
 const gravatarPng = Buffer.from("89504e470d0a1a0a00000000", "hex");
-const gravatarHashOf = (email) => crypto.createHash("sha256").update(email.toLowerCase().trim()).digest("hex");
 
 // gravatar.com must never be contacted for real in tests; everything else
 // (the api helper itself) goes through the untouched original fetch
@@ -467,9 +467,10 @@ test("user creation downloads and stores the gravatar for the email", async (t) 
 		body: { name: "Grav Atar", nickname: "grav", email: "gravatar-user@example.com" },
 	});
 	assert.equal(res.status, 201, res.text);
-	const hash = gravatarHashOf("gravatar-user@example.com");
-	assert.equal(res.body.avatar, `/images/gravatar/${hash}.png`);
-	const stored = await readFile(`/data/npmplus/gravatar/${hash}.png`);
+	const createdId = res.body.id;
+	assert.ok(createdId > 0);
+	assert.equal(res.body.avatar, `/images/gravatar/${createdId}.png`);
+	const stored = await readFile(`/data/npmplus/gravatar/${createdId}.png`);
 	assert.equal(stored.subarray(0, 4).toString("hex"), "89504e47");
 });
 
@@ -512,10 +513,9 @@ test("login backfills the avatar of a user whose row has none", async (t) => {
 	assert.equal(login.status, 200, login.text);
 
 	// the backfill runs in the background so it cannot slow the login down
-	const hash = gravatarHashOf("backfill@example.com");
 	for (let waited = 0; waited < 5000; waited += 100) {
 		const row = await userModel.query().findById(seeded.id);
-		if (row.avatar === `/images/gravatar/${hash}.png`) return;
+		if (row.avatar === `/images/gravatar/${seeded.id}.png`) return;
 		await new Promise((resolve) => setTimeout(resolve, 100));
 	}
 	assert.fail("login did not backfill the missing gravatar avatar");
