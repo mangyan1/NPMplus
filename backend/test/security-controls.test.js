@@ -43,15 +43,28 @@ test("delegated users cannot introduce raw nginx configuration", () => {
 });
 
 test("delegated users cannot introduce a local filesystem proxy target", () => {
-	assert.deepEqual(privilegedProjection({ forward_scheme: "path", forward_host: "/data/html" }), {
-		localPath: { forward_scheme: "path", forward_host: "/data/html" },
+	assert.deepEqual(privilegedProjection({ forward_scheme: "path", forward_host: "/data/html", forward_port: 9000 }), {
+		localPath: { forward_scheme: "path", forward_host: "/data/html", forward_port: 9000 },
 	});
 	assert.throws(
 		() =>
 			assertPrivilegedNginxFields(delegatedAccess, {
 				forward_scheme: "path",
 				forward_host: "/data/html",
+				forward_port: 9000,
 			}),
+		(error) => error.status === 403,
+	);
+});
+
+test("delegated users cannot change the local-path fastcgi port on an existing host", () => {
+	// the local-path fastcgi target renders from forward_port
+	// (fastcgi_pass unix:/run/php{{ forward_port }}.sock), so changing it must
+	// trip the admin-only guard, not just scheme/host
+	const existing = { forward_scheme: "path", forward_host: "/data/html", forward_port: 9000 };
+	assert.equal(assertPrivilegedNginxFields(delegatedAccess, { forward_port: 9000 }, existing), undefined);
+	assert.throws(
+		() => assertPrivilegedNginxFields(delegatedAccess, { forward_port: 9090 }, existing),
 		(error) => error.status === 403,
 	);
 });

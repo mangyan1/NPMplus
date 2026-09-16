@@ -59,7 +59,7 @@ const ADMIN_PASSWORD = "Correct-Horse-1";
 const PEON_EMAIL = "peon@example.com";
 const PEON_PASSWORD = "Peon-Pass-1";
 
-const insertUser = async ({ email, password, roles }) => {
+const insertUser = async ({ email, password, roles, permissions: permissionOverrides = {} }) => {
 	const user = await userModel.query().insertAndFetch({ email, name: "Test", nickname: "tester", avatar: "", roles });
 	await authModel
 		.query()
@@ -75,6 +75,8 @@ const insertUser = async ({ email, password, roles }) => {
 		streams: isAdmin ? "manage" : "view",
 		access_lists: isAdmin ? "manage" : "view",
 		certificates: isAdmin ? "manage" : "view",
+		// delegated-manager tests override specific levels here
+		...(!isAdmin ? permissionOverrides : {}),
 	});
 	return user;
 };
@@ -286,6 +288,13 @@ test("peon can still read proxy hosts (view permission)", async () => {
 	assert.deepEqual(res.body, []);
 });
 
+// the session-revocation route has no id validator, so the sentinel id used
+// to slip past canUser into an unauthenticated 500. It must be a 403.
+test("revoking the anonymous-session sentinel id is a permission error", async () => {
+	const res = await api("DELETE", "/api/users/0/sessions");
+	assert.equal(res.status, 403);
+});
+
 // --- permission-check caching security contract ---
 //
 // access.can() caches compiled validators per permission for speed. The
@@ -345,6 +354,76 @@ test("proxy host CRUD round-trips through nginx config generation", async (t) =>
 
 	const cleared = await api("GET", "/api/nginx/proxy-hosts", { cookie: adminCookie });
 	assert.ok(!cleared.body.some((row) => row.id === hostId));
+});
+
+// --- access-list attach ownership (IDOR) ---
+//
+// A delegated manager must not be able to attach another user's access list
+// by guessing its integer id: the attach validation scopes the ACL ids to
+// the caller's own lists for non-admins, so a foreign id fails as "no longer
+// exist" instead of silently linking and leaking its allow/deny rules and
+// basic-auth usernames through the expand endpoints.
+test("a delegated manager cannot attach another user's access list to their host", async (t) => {
+	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
+
+	await insertUser({
+		email: "manager@example.com",
+		password: "Manager-Pass-1",
+		roles: ["user"],
+		permissions: { proxy_hosts: "manage", access_lists: "manage" },
+	});
+	const login = await api("POST", "/api/tokens", {
+		body: { identity: "manager@example.com", secret: "Manager-Pass-1" },
+	});
+	assert.equal(login.status, 200, login.text);
+	const mgrCookie = sessionCookieOf(login);
+	assert.ok(mgrCookie, "manager login set no cookie");
+
+	const adminAcl = await api("POST", "/api/nginx/access-lists", {
+		cookie: adminCookie,
+		body: {
+			name: "admin-private-acl",
+			satisfy_any: true,
+			clients: [{ directive: "allow", address: "10.0.0.0/8" }],
+		},
+	});
+	assert.equal(adminAcl.status, 201, adminAcl.text);
+
+	const ownAcl = await api("POST", "/api/nginx/access-lists", {
+		cookie: mgrCookie,
+		body: {
+			name: "manager-own-acl",
+			satisfy_any: true,
+			clients: [{ directive: "allow", address: "192.168.0.0/24" }],
+		},
+	});
+	assert.equal(ownAcl.status, 201, ownAcl.text);
+
+	const created = await api("POST", "/api/nginx/proxy-hosts", {
+		cookie: mgrCookie,
+		body: {
+			domain_names: ["idor.example.com"],
+			forward_scheme: "http",
+			forward_host: "127.0.0.1",
+			forward_port: 8080,
+		},
+	});
+	assert.equal(created.status, 201, created.text);
+
+	// the IDOR attempt: the admin's ACL id must be rejected, not linked
+	const hijack = await api("PUT", `/api/nginx/proxy-hosts/${created.body.id}`, {
+		cookie: mgrCookie,
+		body: { npmplus_access_list_type: "custom", npmplus_access_list_ids: [adminAcl.body.id] },
+	});
+	assert.equal(hijack.status, 400);
+	assert.equal(hijack.body.error.message, "One or more selected Access Lists no longer exist");
+
+	// attaching a list the manager owns still works (no overreach)
+	const own = await api("PUT", `/api/nginx/proxy-hosts/${created.body.id}`, {
+		cookie: mgrCookie,
+		body: { npmplus_access_list_type: "custom", npmplus_access_list_ids: [ownAcl.body.id] },
+	});
+	assert.equal(own.status, 200, own.text);
 });
 
 // --- proxy host forward-destination reachability probe ---

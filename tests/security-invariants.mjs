@@ -141,6 +141,27 @@ const read = (path) => {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Rule 6: the merged permission model fails closed on malformed inputs.
+// can() must reject permission strings without a "type:level" shape (the
+// split otherwise compares undefined === undefined and grants), and canUser()
+// must reject the anonymous-session sentinel 0 and non-ids (otherwise
+// canUser("0") passes for an anonymous session). Both guards came out of the
+// 2026-09-16 security review; a future merge could drop them as "simpler
+// upstream shapes" and neither would fail any other test.
+// ---------------------------------------------------------------------------
+{
+	const access = read("backend/lib/access.js");
+	if (access !== null) {
+		if (!/typeof\s+required\s*!==\s*"string"/.test(access)) {
+			fail("fail-closed-permissions", "backend/lib/access.js can() no longer rejects colon-less permission strings");
+		}
+		if (!/Number\.isInteger\(userId\)/.test(access) || !/userId\s*<\s*1/.test(access)) {
+			fail("fail-closed-permissions", "backend/lib/access.js canUser() no longer rejects the anonymous sentinel and non-ids");
+		}
+	}
+}
+
 if (failures.length > 0) {
 	console.error("security invariant violations:");
 	for (const failure of failures) {
