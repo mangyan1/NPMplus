@@ -4,7 +4,9 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
-Nothing yet.
+### Security
+
+- Fixed the four findings of the 2026-09-16 security quality audit. A delegated manager can no longer attach another user's access list by guessing its integer id: `validateAccessLists` scopes attachable ACL ids to `owner_user_id` for non-admins, closing an IDOR that leaked foreign allow/deny CIDR rules and basic-auth usernames through `expand=access_lists` (admin attaches are unchanged). The permission model now fails closed on malformed inputs: `can()` rejects permission strings without a `type:level` shape, and `canUser()` rejects the anonymous-session sentinel `0` and non-integer/non-positive ids, so the unvalidated `DELETE /api/users/0/sessions` route answers 403 instead of reaching an unauthenticated 500. The nginx privilege guard snapshots `forward_port` for local-path hosts, so changing the fastcgi target port trips the admin-only guard. Both permission guards are pinned as rule 6 in `tests/security-invariants.mjs`, and the backend suite covers the IDOR round-trip, the sentinel 403, and the guard trip (132 tests).
 
 ## v2.15.1-mangyan1.rc.7 - 2026-09-16
 
