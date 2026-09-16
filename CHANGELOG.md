@@ -4,6 +4,12 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+Nothing yet.
+
+## v2.15.1-mangyan1.rc.6 - 2026-09-15
+
+Sixth public release candidate of the security-focused fork.
+
 ### Added
 
 - Merged the rewritten upstream develop through `ec092c26` after the scheduled upstream-sync run stopped on conflicts (its intended fail-closed behavior). Integrated upstream's avatar rework: gravatar images are now cached per user id with magic-byte image-format detection and stale-extension cleanup, instead of being keyed by the email hash. The fork's hardening is retained: the 5-second bounded fetch, 1 MiB bounded body read, and login-time backfill for accounts seeded without an avatar. Initial-admin seeding now goes through the same user-creation path (permissions, password hashing, and audit logging included) instead of raw table inserts.
@@ -63,6 +69,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 - Backend API, DNS-certificate, and smoke tests use isolated temporary databases and files. Concurrent MFA recovery-code submissions can consume a code only once.
 - CrowdSec pagination reports complete bounded match totals and safe page limits. Dashboard reporting distinguishes exact, capped, unavailable, and stale data; aligns rolling activity with LAPI alert start times; separates parser events from node evaluations; and describes WAF rule triggers and bouncer API reads accurately.
 - Added restore-failure and reporting regression coverage.
+
+See the [release notes](.github/release-notes/v2.15.1-mangyan1.rc.6.md) for installation and validation guidance.
 
 ## v2.15.1-mangyan1.rc.5 - 2026-09-07
 

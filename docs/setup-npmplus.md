@@ -4,15 +4,15 @@
 
 The installer intentionally does not deploy PHP-FPM. This fork treats NPMplus as a reverse proxy and security boundary; every proxied application remains responsible for its own runtime, application files, updates, and health checks. Keep the `PHP83`, `PHP84`, and `PHP85` options disabled unless you deliberately leave this recommended deployment model and accept the advanced compatibility tradeoffs documented in `ADVANCED.md`.
 
-The recommended installer is the pinned **v2.15.1-mangyan1.rc.5** release candidate, which is SHA-256-verified and resolves its images to immutable digests; it does not move the stable `latest` channel. The maintained `develop` channel contains the newest fixes between releases and remains available for rolling test deployments.
+The recommended installer is the pinned **v2.15.1-mangyan1.rc.6** release candidate, which is SHA-256-verified and resolves its images to immutable digests; it does not move the stable `latest` channel. The maintained `develop` channel contains the newest fixes between releases and remains available for rolling test deployments.
 
 ## Fresh installation
 
 Download the current release-candidate script and checksum, verify them, review the script, and run it on a test server:
 
 ```bash
-wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh &&
-wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh.sha256 &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.6/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.6/setup-npmplus.sh.sha256 &&
 sha256sum -c setup-npmplus.sh.sha256 &&
 less setup-npmplus.sh &&
 sudo bash setup-npmplus.sh
@@ -22,7 +22,7 @@ The version-pinned installer is verified against its checksum file before it is 
 
 On a new server, select **Install NPMplus**. On an existing installation, the same command offers safe update, CrowdSec doctor, startup/reboot diagnostics, advanced reconfiguration, and uninstall. The interactive installation prompts cover the initial administrator, CrowdSec and AppSec, the firewall bouncer, Anubis, Caddy, Cloudflare trust, UFW, and unattended security upgrades. The recommended defaults enable CrowdSec, AppSec, the firewall bouncer, and Anubis. Existing UFW rules are preserved unless a reset is explicitly approved. Before a reset, the script detects the active SSH port and asks for confirmation so it does not assume port 22.
 
-RC5 is the current release candidate and contains all of the post-RC4 protected-startup, boot-guard, and origin-lock work described below, plus the CrowdSec dashboard overhaul. It is being tested against real traffic before promotion.
+RC6 is the current release candidate and contains all of the post-RC5 security, attack-evidence, Anubis-reporting, and telemetry work described below, plus the upstream Argon2id integration and the admin-API performance work. It is being tested against real traffic before promotion.
 
 The generated Compose file is `/opt/npmplus/compose.yaml`. Registry channels are pulled and resolved to immutable `sha256` image digests before that file is written. An explicitly supplied initial administrator password is passed through a root-only, one-time Docker secret under `/run`, never embedded in Compose. After the API confirms that the account exists, the script removes its Compose references, recreates NPMplus without the secret mount, confirms health, and only then erases the file. Setup script v1.16 also scrubs legacy inline `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` entries before an update snapshot is created.
 
@@ -67,9 +67,9 @@ Download the new versioned installer and checksum first when moving to a newer r
 
 ### September 12 develop upgrade
 
-The security fixes, richer attack evidence, and upstream Argon2id integration are
-included in `develop` through merge commit `c891f43f`. They are not included in
-`v2.15.1-mangyan1.rc.5`. A release-pinned installer stays on its release channel;
+The security fixes, richer attack evidence, and upstream Argon2id integration landed
+in `develop` through merge commit `c891f43f` and are included in
+`v2.15.1-mangyan1.rc.6`. A release-pinned installer stays on its release channel;
 it does not automatically acquire later `develop` code.
 
 To stay on rolling `develop`, or deliberately move an installer-managed release
@@ -111,15 +111,15 @@ with the rollback/recovery procedure. No release tag is moved by this upgrade.
 
 ### Protection opt-ins
 
-The version-pinned commands below target RC5. Rolling `develop` users should use
+The version-pinned commands below target RC6. Rolling `develop` users should use
 the branch installer above with the same update flags instead of downloading an
 older release installer.
 
 An ordinary update preserves the existing AppSec setting. To opt an existing installer-managed CrowdSec deployment into AppSec, run the safe update once with the explicit flag:
 
 ```bash
-wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh &&
-wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh.sha256 &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.6/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.6/setup-npmplus.sh.sha256 &&
 sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh --update --enable-appsec
 ```
@@ -129,8 +129,8 @@ The opt-in is included in the same snapshot, health-check, and automatic-rollbac
 Fresh installs default protected startup to on when the installer-managed firewall bouncer is selected. Existing installations preserve their current behavior unless this explicit opt-in is used:
 
 ```bash
-wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh &&
-wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh.sha256 &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.6/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.6/setup-npmplus.sh.sha256 &&
 sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh --update --enable-strict-boot
 ```
@@ -142,8 +142,8 @@ The firewall bouncer uses its supported iptables/ipset backend with both `INPUT`
 If every public hostname sharing the origin IP is Cloudflare orange-clouded, the optional origin lock can be enabled in the fresh-install prompt or during the same safe update:
 
 ```bash
-wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh &&
-wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.5/setup-npmplus.sh.sha256 &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.6/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.6/setup-npmplus.sh.sha256 &&
 sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh --update --enable-strict-boot --enable-cloudflare-origin-lock
 ```
@@ -242,10 +242,9 @@ rules still apply, so a rejected connection cannot display this page.
 
 ## Security dashboard
 
-Current `develop` includes **WAF by proxy host** and **Observed enforcement**
-in the WAF and System tabs. It requires the updated image plus installer v1.56.
+**WAF by proxy host** and **Observed enforcement** in the WAF and System tabs are
+included in RC6. They require the updated image plus installer v1.56.
 See [reporting definitions, collection limits, and deployment steps](security-telemetry.md).
-RC5 does not include this addition.
 
 The **Explore older alerts** control can browse beyond the recent
 history sample in bounded batches. See [extended history and IPv6 offender guidance](security-history.md)

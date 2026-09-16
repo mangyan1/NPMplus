@@ -1,6 +1,6 @@
 # Extended alert history and IPv6 offenders
 
-Unreleased develop addition, 2026-09-08. RC5 does not include it.
+Added on develop on 2026-09-08 and included in RC6.
 
 ## Browse older alerts
 
@@ -104,7 +104,7 @@ validation, 8 frontend tests, TypeScript, production Vite build, the real
 nginx/IPv6-over-IPv4 integration, and 57 Chromium checks. Desktop and 320px history
 screenshots were inspected. Both applications pass full Biome CI in the disposable
 LF verification copy, English translation ordering, and `git diff --check`.
-These develop changes are not included in RC5. No VM deployment or new release has been performed.
+These changes are included in RC6. No VM deployment has been performed.
 
 - [CrowdSec alert filters](https://github.com/crowdsecurity/crowdsec/blob/v1.8.1/pkg/database/alertfilter.go)
   defines the duration-based time filters.

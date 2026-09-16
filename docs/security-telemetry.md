@@ -1,7 +1,6 @@
 # Observed enforcement and WAF history
 
-Implemented for develop on 2026-09-08.
-This addition is not included in RC5 and does not lift the release hold.
+Implemented for develop on 2026-09-08 and included in RC6.
 
 ## What the dashboard reports
 
