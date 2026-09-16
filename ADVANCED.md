@@ -56,8 +56,8 @@ Security fixes (filed as upstream issues #3806-#3810, fixed here first):
 Automation, run `sudo bash setup-npmplus.sh` on a fresh host (or `--update` later). If you do not have the script yet, this is all it takes on a fresh Debian/Ubuntu host:
 
 ```bash
-wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.6/setup-npmplus.sh &&
-wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.6/setup-npmplus.sh.sha256 &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.7/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.7/setup-npmplus.sh.sha256 &&
 sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh
 ```
@@ -135,7 +135,7 @@ On first use, the setup form requires the one-time setup token. Read it on the D
 
 # Crowdsec
 
-For current `develop` upgrade behavior, session renewal, Argon2 password migration,
+For upgrade behavior, session renewal, Argon2 password migration,
 and image/data rollback compatibility, see the [operations guide](docs/setup-npmplus.md#september-12-develop-upgrade).
 The [attack-evidence guide](docs/security-telemetry.md#attack-evidence-details) explains
 recorded rules, tool hints, and what the dashboard cannot establish from counters.

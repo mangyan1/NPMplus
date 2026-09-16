@@ -4,6 +4,12 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+Nothing yet.
+
+## v2.15.1-mangyan1.rc.7 - 2026-09-16
+
+Seventh public release candidate of the security-focused fork.
+
 ### Added
 
 - Reconciled upstream develop through `2fcc605a` manually (the scheduled upstream-sync run had stopped on 42 conflicted files — its fail-closed behavior) and adopted upstream's typescript-to-javascript frontend migration: the react-query client, API modules, components, and pages are plain JavaScript now, and the frontend tsconfig, `tsc` build step, and typescript/`@types/*` devDependencies are gone. The fork-only `.ts`/`.tsx` sources (Anubis/CrowdSec/security UI, deployment recovery, error boundary) remain and run through Node 24 type stripping. Frontend tests run via `node --test test/*.test.ts`.
@@ -15,6 +21,10 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 - `nickname` is now server-managed: absent from all API schemas and responses, with the `nickname_default` migration backfilling existing rows. API tests no longer send it.
 
 - Every fork security invariant is preserved and re-verified against the merge (127/127 backend tests, 10/10 frontend tests, `vite build`, and `tests/security-invariants.mjs` green): an anonymous missing session is still a 403 at route permission checks rather than upstream's 401 (rejected sessions remain 401); the login, refresh, and OIDC rate limiters and the OIDC `no_redirect` cookie handling are unchanged; gravatar fetching stays bounded (5 s timeout, 1 MiB cap) with avatar cleanup and login-time backfill; the one-time setup-token gate and its field whitelist are kept, and upstream's open `POST /users/setup` endpoint was not taken. `multer` 2.3.0 and `mysql2` 3.24.3 stay fork-side; the remaining upstream dependency bumps that were younger than the `minimumReleaseAge` window were rejected and age out through the renovate cron.
+
+- Took the next upstream round through `bb347a39` after the scheduled upstream-sync run fail-closed again on the same dep-policy collision: the lua-nginx-module build bumps to v0.10.32rc5 (resolver_conf_parsing 1.31.6 was already on develop), and the `react-intl` 12.0.2 / `markdown-to-jsx` 9.10.3 bumps (both published within 24 hours of the run) are rejected under `minimumReleaseAge` and left for the renovate cron.
+
+See the [release notes](.github/release-notes/v2.15.1-mangyan1.rc.7.md) for installation and validation guidance.
 
 ## v2.15.1-mangyan1.rc.6 - 2026-09-15
 

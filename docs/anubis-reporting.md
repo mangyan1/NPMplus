@@ -7,7 +7,7 @@ reachability, bridge status, retained log counts, and active decisions remain av
 
 ## Detection evidence
 
-On current `develop`, expand **Detection evidence** beside a honeypot history
+Expand **Detection evidence** beside a honeypot history
 event to load bounded recent CrowdSec alerts for that IP. Compare timestamps and
 rule names: an alert for the same address may describe a different request.
 Lookup errors remain unavailable, rather than being presented as no attacks.
