@@ -15,6 +15,10 @@ const privilegedProjection = (data = {}) => {
 		projection.localPath = {
 			forward_scheme: data.forward_scheme,
 			forward_host: data.forward_host,
+			// the local-path fastcgi target renders from forward_port
+			// (fastcgi_pass unix:/run/php{{ forward_port }}.sock): changing it
+			// must trip the guard, not just scheme/host
+			forward_port: data.forward_port,
 		};
 	}
 
@@ -29,6 +33,8 @@ const privilegedProjection = (data = {}) => {
 				privileged.localPath = {
 					forward_scheme: location.forward_scheme,
 					forward_host: location.forward_host,
+					// same fastcgi target as the host-level snapshot above
+					forward_port: location.forward_port,
 				};
 			}
 			if (nginxSyntaxPattern.test(location.path || "")) privileged.nginxSyntaxPath = location.path;

@@ -94,7 +94,13 @@ export default function (tokenString) {
 		 * @returns {Boolean}
 		 */
 		canUser: (id) => {
-			if (isAdmin || Number(id) === Token.getUserId(0)) return true;
+			// 0 is the anonymous-session sentinel from Token.getUserId(0), not a
+			// real user id. Rejecting non-positive/non-integer ids keeps the
+			// sentinel from authorizing anything if a route ever passes an
+			// unvalidated id (e.g. canUser("0") on DELETE /users/0/sessions).
+			const userId = Number(id);
+			if (!Number.isInteger(userId) || userId < 1) throw new errs.PermissionError();
+			if (isAdmin || userId === Token.getUserId(0)) return true;
 			throw new errs.PermissionError();
 		},
 
@@ -129,6 +135,10 @@ export default function (tokenString) {
 		 */
 		can: (permission) => {
 			const [type, required] = permission.split(":");
+			// A permission string without a "type:level" shape has nothing to
+			// match: without this guard `level === required` would compare two
+			// undefineds and grant instead of failing closed.
+			if (typeof required !== "string") throw new errs.PermissionError();
 			const level = permissions[type];
 			if (isAdmin || level === "manage" || level === required) return true;
 			throw new errs.PermissionError();

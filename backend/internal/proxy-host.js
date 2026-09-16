@@ -80,7 +80,7 @@ const internalProxyHost = {
 		thisData.owner_user_id = access.token.getUserId(1);
 		thisData = internalHost.cleanSslHstsData(createCertificate, thisData);
 		thisData = internalProxyHostAccessList.cleanAccessListTypes(thisData);
-		await internalProxyHostAccessList.validateAccessLists(thisData);
+		await internalProxyHostAccessList.validateAccessLists(thisData, access);
 
 		const createdRow = utils.omitRow(omissions())(
 			await proxyHostModel.transaction(async (trx) => {
@@ -182,7 +182,7 @@ const internalProxyHost = {
 		thisData = { domain_names: existingRow.domain_names, ...thisData };
 		thisData = internalHost.cleanSslHstsData(createCertificate, thisData, existingRow);
 		thisData = internalProxyHostAccessList.cleanAccessListTypes(thisData);
-		await internalProxyHostAccessList.validateAccessLists(thisData);
+		await internalProxyHostAccessList.validateAccessLists(thisData, access);
 
 		await proxyHostModel.transaction(async (trx) => {
 			const patchResult = await proxyHostModel.query(trx).where({ id: thisData.id }).patch(thisData);

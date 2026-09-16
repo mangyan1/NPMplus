@@ -371,11 +371,18 @@ const internalProxyHostAccessList = {
 	/**
 	 * Ensures the provided acls are valid (if custom, at least 1 acl must be specified)
 	 * @param {*} proxyHost
+	 * @param {Object} access the caller's access object, used to scope the
+	 * allowed ACL ids to the caller's own lists for non-admins
 	 * @returns
 	 */
-	validateAccessLists: async (proxyHost) => {
+	validateAccessLists: async (proxyHost, access) => {
 		if (!proxyHost) {
 			return;
+		}
+		// Access is required so a future caller cannot silently skip the
+		// ownership scoping below (that would reopen the IDOR).
+		if (!access) {
+			throw new errs.PermissionError();
 		}
 		const aclIds = new Set(); // make sure no ACLs are being submitted that have been deleted
 		const validateCustomSelection = (accessListType, accessListIds) => {
@@ -403,11 +410,25 @@ const internalProxyHostAccessList = {
 		}
 		// make sure no ACLs that are being uploaded have been soft deleted
 		if (aclIds.size > 0) {
-			const rows = await accessListModel
+			// canAdmin throws for non-admins; the try/catch turns it into a
+			// plain check (same pattern as lib/nginx-privilege.js).
+			let isAdminAccess = true;
+			try {
+				access.canAdmin();
+			} catch {
+				isAdminAccess = false;
+			}
+			const query = accessListModel
 				.query()
 				.whereIn("id", [...aclIds])
-				.andWhere("is_deleted", 0)
-				.select("id");
+				.andWhere("is_deleted", 0);
+			// A non-admin may only attach access lists they own: otherwise the
+			// ACL id becomes a handle onto another user's allow/deny rules and
+			// basic-auth usernames via the expand endpoints (IDOR).
+			if (!isAdminAccess) {
+				query.andWhere("owner_user_id", access.token.getUserId(1));
+			}
+			const rows = await query.select("id");
 
 			const validIds = new Set(rows.map((row) => row.id));
 			const invalidIds = [...aclIds].filter((id) => !validIds.has(id));
