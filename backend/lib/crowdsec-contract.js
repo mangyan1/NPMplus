@@ -317,8 +317,6 @@ const summarizeCrowdsecMetrics = (samples) => {
 	};
 };
 
-const hasCrowdsecAdminAccess = (permission) => Boolean(permission);
-
 // community blocklist syncs arrive as alerts with the literal scenario
 // "update : +N/-M IPs" (origin capi) - they are bookkeeping, not attacks,
 // so the dashboard keeps them out of attack counts and rankings
@@ -349,7 +347,6 @@ const summarizeAppsecRules = (samples, limit = 10) => {
 export {
 	crowdsecAlertTarget,
 	filterCrowdsecAlerts,
-	hasCrowdsecAdminAccess,
 	isAttackAlert,
 	isBlocklistSyncAlert,
 	normalizeCrowdsecAlerts,

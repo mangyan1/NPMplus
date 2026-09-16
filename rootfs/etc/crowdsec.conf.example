@@ -15,7 +15,9 @@ UPDATE_FREQUENCY=10
 # set ENABLE_INTERNAL=true to allow checking on these internal requests.
 ENABLE_INTERNAL=false
 # live or stream
-MODE=live
+# stream caches bans locally (pulled every UPDATE_FREQUENCY), so bans keep
+# being enforced if the LAPI is down; live fails open on LAPI outages
+MODE=stream
 # Only enforce decisions whose scenario contains one of these comma-separated substrings.
 # Matching is done server-side by the LAPI (case-insensitive substring), e.g. "http-,wordpress".
 # Leave empty to enforce decisions from all scenarios.
@@ -41,7 +43,8 @@ CAPTCHA_EXPIRATION=3600
 
 APPSEC_URL=
 # point this at your appsec endpoint, e.g. http://127.0.0.1:7422, only if you run crowdsec appsec
-APPSEC_FAILURE_ACTION=passthrough
+# deny fails closed: requests are blocked while the appsec component is unreachable
+APPSEC_FAILURE_ACTION=deny
 APPSEC_CONNECT_TIMEOUT=
 APPSEC_SEND_TIMEOUT=
 APPSEC_PROCESS_TIMEOUT=

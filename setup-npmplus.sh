@@ -1495,12 +1495,12 @@ run_restore() (
 		if [[ ! -s "$DATA_DIR/crowdsec/lapi-ui.key" ]] || ! bouncer_key_works "$(cat "$DATA_DIR/crowdsec/lapi-ui.key" 2>/dev/null)"; then
 			say "re-registering the admin UI bouncer key"
 			key=$(register_bouncer npmplus-ui || true)
-			[[ -n "$key" ]] && { echo "$key" >"$DATA_DIR/crowdsec/lapi-ui.key"; chmod 600 "$DATA_DIR/crowdsec/lapi-ui.key"; }
+			[[ -n "$key" ]] && printf '%s\n' "$key" | write_root_file "$DATA_DIR/crowdsec/lapi-ui.key" 600
 		fi
 		if [[ ! -s "$DATA_DIR/crowdsec/lapi-ui-machine.key" ]] || ! machine_key_works npmplus-ui "$(cat "$DATA_DIR/crowdsec/lapi-ui-machine.key" 2>/dev/null)"; then
 			say "re-registering the admin UI machine key"
 			password=$(register_machine npmplus-ui || true)
-			[[ -n "$password" ]] && { echo "$password" >"$DATA_DIR/crowdsec/lapi-ui-machine.key"; chmod 600 "$DATA_DIR/crowdsec/lapi-ui-machine.key"; }
+			[[ -n "$password" ]] && printf '%s\n' "$password" | write_root_file "$DATA_DIR/crowdsec/lapi-ui-machine.key" 600
 		fi
 		# the restored LAPI database has never seen this machine's host firewall
 		# bouncer key either, and a dead bouncer keeps the protected boot gate
@@ -2213,6 +2213,12 @@ EOF
 	else
 		printf 'APPSEC_URL=%s\n' "$appsec_url" >>"$bouncer_conf"
 	fi
+	# AppSec must fail closed; the lua bouncer's own default is passthrough,
+	# which silently drops WAF inspection when the appsec component is down.
+	# An explicit passthrough is an operator decision and stays untouched.
+	if grep -q '^APPSEC_FAILURE_ACTION=$' "$bouncer_conf"; then
+		sed -i 's|^APPSEC_FAILURE_ACTION=.*|APPSEC_FAILURE_ACTION=deny|' "$bouncer_conf"
+	fi
 	chmod 600 "$bouncer_conf"
 	say "CrowdSec AppSec enabled (default high-confidence rules)"
 }
@@ -2747,6 +2753,8 @@ say "installing crowdsec key heal (daily cron, log: /var/log/npmplus-crowdsec-he
 write_root_file /usr/local/bin/npmplus-crowdsec-heal 755 <<'EOF'
 #!/bin/bash
 set -uo pipefail
+# this script only writes bouncer/machine secrets - close the creation race
+umask 077
 
 LOG=/var/log/npmplus-crowdsec-heal.log
 exec >>"$LOG" 2>&1
@@ -2858,9 +2866,26 @@ if [[ -f /var/lib/npmplus/installed-firewall-bouncer && -s "$FWCONF" ]]; then
 			systemctl restart crowdsec-firewall-bouncer
 			log "host firewall bouncer healed"
 			# a bouncer that was dead at boot left the protected gate failed and
-			# the public ports closed - now that enforcement is back, open them
-			systemctl start npmplus-public.service >/dev/null 2>&1 || true
-			log "protected startup re-attempted"
+			# the public ports closed - only open them once enforcement is
+			# actually back: the service active AND its INPUT/FORWARD rules
+			# exist, the same standard crowdsec-doctor.sh step 8b applies
+			gate_open=false
+			for _ in $(seq 1 10); do
+				rules=$(iptables-save 2>/dev/null || true)
+				if systemctl is-active --quiet crowdsec-firewall-bouncer && \
+					grep -Eq '^-A INPUT .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules" && \
+					grep -Eq '^-A FORWARD .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules"; then
+					gate_open=true
+					break
+				fi
+				sleep 1
+			done
+			if [[ "$gate_open" == "true" ]]; then
+				systemctl start npmplus-public.service >/dev/null 2>&1 || true
+				log "protected startup re-attempted"
+			else
+				log "gate left closed - firewall bouncer did not restore its INPUT/FORWARD rules"
+			fi
 		else
 			log "host firewall bouncer heal FAILED"
 		fi
@@ -3719,7 +3744,7 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 		CONF="$DATA_DIR/crowdsec/crowdsec.conf"
 		if [[ ! -s "$CONF" ]]; then
 			# same defaults the image would seed on first start
-			cat >"$CONF" <<EOF
+			write_root_file "$CONF" 600 <<EOF
 ENABLED=true
 API_URL=http://$CROWDSEC_SERVICE_HOST:8080
 API_KEY=$KEY
@@ -3745,7 +3770,8 @@ SITE_KEY=
 CAPTCHA_TEMPLATE_PATH=/data/crowdsec/captcha.html
 CAPTCHA_EXPIRATION=3600
 APPSEC_URL=
-APPSEC_FAILURE_ACTION=passthrough
+# deny fails closed: requests are blocked while the appsec component is unreachable
+APPSEC_FAILURE_ACTION=deny
 APPSEC_CONNECT_TIMEOUT=
 APPSEC_SEND_TIMEOUT=
 APPSEC_PROCESS_TIMEOUT=
@@ -3756,7 +3782,6 @@ EOF
 			# The recommended prompt default enables AppSec. Keep the URL empty only
 			# when the operator explicitly declines it for this installation.
 			[[ "$USE_APPSEC" == "y" ]] && sed -i "s|^APPSEC_URL=.*|APPSEC_URL=http://$CROWDSEC_SERVICE_HOST:7422|" "$CONF"
-			chmod 600 "$CONF"
 		else
 			# existing conf: just flip ENABLED and rotate the key
 			sed -i "s|^ENABLED=.*|ENABLED=true|" "$CONF"
@@ -3773,8 +3798,7 @@ EOF
 	UIKEY=""
 	[[ -s "$DATA_DIR/crowdsec/lapi-ui.key" ]] || UIKEY=$(register_bouncer npmplus-ui || true)
 	if [[ -n "$UIKEY" ]]; then
-		echo "$UIKEY" >"$DATA_DIR/crowdsec/lapi-ui.key"
-		chmod 600 "$DATA_DIR/crowdsec/lapi-ui.key"
+		printf '%s\n' "$UIKEY" | write_root_file "$DATA_DIR/crowdsec/lapi-ui.key" 600
 	else
 		echo "could not register the admin UI bouncer - the UI's crowdsec page will show an error" >&2
 		echo "run: docker exec crowdsec cscli bouncers add npmplus-ui -o raw" >&2
@@ -3787,8 +3811,7 @@ EOF
 	UIPASSWORD=""
 	[[ -s "$DATA_DIR/crowdsec/lapi-ui-machine.key" ]] || UIPASSWORD=$(register_machine npmplus-ui || true)
 	if [[ -n "$UIPASSWORD" ]]; then
-		echo "$UIPASSWORD" >"$DATA_DIR/crowdsec/lapi-ui-machine.key"
-		chmod 600 "$DATA_DIR/crowdsec/lapi-ui-machine.key"
+		printf '%s\n' "$UIPASSWORD" | write_root_file "$DATA_DIR/crowdsec/lapi-ui-machine.key" 600
 	else
 		echo "could not register the admin UI machine - unban and alert context will show an error" >&2
 		echo "run: docker exec crowdsec cscli machines add npmplus-ui -a -f - --force" >&2

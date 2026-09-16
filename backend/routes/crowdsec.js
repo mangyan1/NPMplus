@@ -603,7 +603,7 @@ router
 			try {
 				await auditEntry.$query().patch({
 					action: "create-failed",
-					meta: { value, duration, type, reason, status: "failed", error: err.message },
+					meta: { value, duration, type, reason, status: "failed", error: err.public ? err.message : "crowdsec.lapi-error" },
 				});
 			} catch (auditErr) {
 				logger.warn(`Could not finalize failed CrowdSec audit entry ${auditEntry.id}: ${auditErr}`);

@@ -4,6 +4,9 @@
 # what the npmplus container actually sees - and offers to re-register.
 # Run as root on the npmplus host: sudo bash crowdsec-doctor.sh
 set -uo pipefail
+# every file this doctor writes is a bouncer/machine secret - keep the
+# creation race closed even before the explicit chmod 600 runs
+umask 077
 
 DATA_DIR=/opt/npmplus
 KEY="$DATA_DIR/crowdsec/lapi-ui.key"
@@ -232,6 +235,28 @@ else
 	note "Cloudflare origin lock is not enabled"
 fi
 
+hdr "8d. bouncer enforcement posture (fail-open modes)"
+BOUNCER_CONF=$DATA_DIR/crowdsec/crowdsec.conf
+mode=$(sed -n 's/^MODE=//p' "$BOUNCER_CONF" 2>/dev/null | head -1)
+appsec_url=$(sed -n 's/^APPSEC_URL=//p' "$BOUNCER_CONF" 2>/dev/null | head -1)
+appsec_action=$(sed -n 's/^APPSEC_FAILURE_ACTION=//p' "$BOUNCER_CONF" 2>/dev/null | head -1)
+if [[ -z "$mode" || "$mode" == "live" ]]; then
+	bad "MODE=${mode:-unset} fails open: bans stop being enforced while the LAPI is down"
+	note "set MODE=stream in $BOUNCER_CONF, then restart the npmplus container"
+	fail=1
+else
+	ok "MODE=$mode keeps bans enforced through LAPI outages"
+fi
+if [[ -z "$appsec_url" ]]; then
+	note "AppSec is not configured"
+elif [[ "$appsec_action" == "passthrough" ]]; then
+	bad "AppSec failures pass requests through while the appsec component is down"
+	note "set APPSEC_FAILURE_ACTION=deny in $BOUNCER_CONF, then restart the npmplus container"
+	fail=1
+else
+	ok "AppSec fails closed (action=$appsec_action)"
+fi
+
 hdr "9. recent crowdsec auth errors (2h)"
 auth_errors=$(docker logs crowdsec --since 2h 2>&1 | grep -iE "api key|bouncer|403" | tail -8)
 if [[ -n $auth_errors ]]; then
@@ -260,7 +285,10 @@ if grep -q "successfully interact" <<<"$capi_status"; then
 		key=$(cat "$KEY" 2>/dev/null || true)
 		community=""
 		if [[ -n "$key" ]]; then
-			community=$(curl -sS -m 5 -H "X-Api-Key: $key" \
+			# same --config - piping as bouncer_http_code: the key never
+			# appears in this curl's argv, so /proc/<pid>/cmdline cannot leak it
+			community=$(printf 'header = "X-Api-Key: %s"\n' "$key" | \
+				curl -sS -m 5 --config - \
 				"$LAPI/v1/decisions?origins=capi,lists&limit=1" 2>/dev/null || true)
 		fi
 		if [[ -z "$key" ]]; then

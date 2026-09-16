@@ -3,7 +3,6 @@ import test from "node:test";
 import {
 	crowdsecAlertTarget,
 	filterCrowdsecAlerts,
-	hasCrowdsecAdminAccess,
 	isBlocklistSyncAlert,
 	normalizeCrowdsecAlerts,
 	normalizeCrowdsecDecisions,
@@ -294,12 +293,6 @@ test("CrowdSec decision IDs must be positive safe integers", () => {
 	assert.equal(parseCrowdsecDecisionId("8.5"), null);
 	assert.equal(parseCrowdsecDecisionId(0), null);
 	assert.equal(parseCrowdsecDecisionId("not-a-number"), null);
-});
-
-test("CrowdSec endpoints require a positive admin permission result", () => {
-	assert.equal(hasCrowdsecAdminAccess({ granted: true }), true);
-	assert.equal(hasCrowdsecAdminAccess(null), false);
-	assert.equal(hasCrowdsecAdminAccess(false), false);
 });
 
 test("manual ban input accepts ips, cidr ranges, and valid durations", () => {
