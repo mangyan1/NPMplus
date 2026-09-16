@@ -12,6 +12,31 @@ import validator from "../../lib/validator/index.js";
 import { debug, express as logger } from "../../logger.js";
 import { getValidationSchema } from "../../schema/index.js";
 
+const listSchema = {
+	additionalProperties: false,
+	properties: {
+		expand: {
+			$ref: "common#/properties/expand",
+		},
+		query: {
+			$ref: "common#/properties/query",
+		},
+	},
+};
+
+const certificateSchema = {
+	required: ["certificate_id"],
+	additionalProperties: false,
+	properties: {
+		certificate_id: {
+			$ref: "common#/properties/id",
+		},
+		expand: {
+			$ref: "common#/properties/expand",
+		},
+	},
+};
+
 const router = express.Router({
 	caseSensitive: true,
 	strict: true,
@@ -46,9 +71,6 @@ const parseCertFiles = (req, res, next) =>
  */
 router
 	.route("/")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 
 	/**
@@ -57,23 +79,10 @@ router
 	 * Retrieve all certificates
 	 */
 	.get(async (req, res, next) => {
-		const data = await validator(
-			{
-				additionalProperties: false,
-				properties: {
-					expand: {
-						$ref: "common#/properties/expand",
-					},
-					query: {
-						$ref: "common#/properties/query",
-					},
-				},
-			},
-			{
-				expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
-				query: typeof req.query.query === "string" ? req.query.query : null,
-			},
-		);
+		const data = await validator(listSchema, {
+			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
+			query: typeof req.query.query === "string" ? req.query.query : null,
+		});
 		const rows = await internalCertificate.getAll(res.locals.access, data.expand, data.query);
 		res.status(200).send(rows);
 	})
@@ -95,9 +104,6 @@ router
  */
 router
 	.route("/dns-providers")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 
 	/**
@@ -126,9 +132,6 @@ router
  */
 router
 	.route("/test-http")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 
 	/**
@@ -151,9 +154,6 @@ router
  */
 router
 	.route("/validate")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 
 	/**
@@ -161,10 +161,10 @@ router
 	 *
 	 * Validate certificates
 	 */
-	.post(parseCertFiles, async (req, res, next) => {
+	.post(parseCertFiles, (req, res, next) => {
 		if (!req.files?.certificate) return res.status(400).send({ error: "certificate file is required" });
 
-		const result = await internalCertificate.validate(res.locals.access, {
+		const result = internalCertificate.validate(res.locals.access, {
 			files: req.files,
 		});
 		res.status(200).send(result);
@@ -177,9 +177,6 @@ router
  */
 router
 	.route("/:certificate_id")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 
 	/**
@@ -188,24 +185,10 @@ router
 	 * Retrieve a specific certificate
 	 */
 	.get(async (req, res, next) => {
-		const data = await validator(
-			{
-				required: ["certificate_id"],
-				additionalProperties: false,
-				properties: {
-					certificate_id: {
-						$ref: "common#/properties/id",
-					},
-					expand: {
-						$ref: "common#/properties/expand",
-					},
-				},
-			},
-			{
-				certificate_id: req.params.certificate_id,
-				expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
-			},
-		);
+		const data = await validator(certificateSchema, {
+			certificate_id: req.params.certificate_id,
+			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
+		});
 		const row = await internalCertificate.get(res.locals.access, {
 			id: Number.parseInt(data.certificate_id, 10),
 			expand: data.expand,
@@ -232,9 +215,6 @@ router
  */
 router
 	.route("/:certificate_id/upload")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 
 	/**
@@ -259,9 +239,6 @@ router
  */
 router
 	.route("/:certificate_id/renew")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 
 	/**
@@ -284,9 +261,6 @@ router
  */
 router
 	.route("/:certificate_id/download")
-	.options((_req, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 
 	/**

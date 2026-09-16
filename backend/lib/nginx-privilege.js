@@ -47,14 +47,17 @@ const privilegedProjection = (data = {}) => {
  * container-level code/data access. Only administrators may introduce or
  * alter them. Delegated managers may still update ordinary host settings.
  */
-export const assertPrivilegedNginxFields = async (access, data, existing = null) => {
-	if (
-		await access
-			.can("admin:access")
-			.then(() => true)
-			.catch(() => false)
-	)
-		return;
+export const assertPrivilegedNginxFields = (access, data, existing = null) => {
+	// canAdmin throws for non-admins; the try/catch turns it into a plain check
+	// for the comparison below. can() is synchronous in the merged permission
+	// model, so no promise handling here.
+	let isAdmin = true;
+	try {
+		access.canAdmin();
+	} catch {
+		isAdmin = false;
+	}
+	if (isAdmin) return;
 
 	const proposed = existing ? { ...existing, ...data } : data;
 	if (!isDeepStrictEqual(privilegedProjection(existing || {}), privilegedProjection(proposed))) {

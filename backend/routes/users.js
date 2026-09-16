@@ -17,6 +17,31 @@ import { isSetup, removeSetupToken, verifySetupToken } from "../setup.js";
 
 let setupCreationInProgress = false;
 
+const listSchema = {
+	additionalProperties: false,
+	properties: {
+		expand: {
+			$ref: "common#/properties/expand",
+		},
+		query: {
+			$ref: "common#/properties/query",
+		},
+	},
+};
+
+const userSchema = {
+	required: ["user_id"],
+	additionalProperties: false,
+	properties: {
+		user_id: {
+			$ref: "common#/properties/id",
+		},
+		expand: {
+			$ref: "common#/properties/expand",
+		},
+	},
+};
+
 const router = express.Router({
 	caseSensitive: true,
 	strict: true,
@@ -53,9 +78,6 @@ router.use(limiter, readLimiter);
  */
 router
 	.route("/")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 
 	/**
@@ -64,23 +86,10 @@ router
 	 * Retrieve all users
 	 */
 	.get(async (req, res, _next) => {
-		const data = await validator(
-			{
-				additionalProperties: false,
-				properties: {
-					expand: {
-						$ref: "common#/properties/expand",
-					},
-					query: {
-						$ref: "common#/properties/query",
-					},
-				},
-			},
-			{
-				expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
-				query: typeof req.query.query === "string" ? req.query.query : null,
-			},
-		);
+		const data = await validator(listSchema, {
+			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
+			query: typeof req.query.query === "string" ? req.query.query : null,
+		});
 		const users = await internalUser.getAll(res.locals.access, data.expand, data.query);
 		res.status(200).send(users);
 	})
@@ -140,9 +149,6 @@ router
  */
 router
 	.route("/:user_id")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 	.all(userIdFromMe)
 
@@ -152,29 +158,14 @@ router
 	 * Retrieve a specific user
 	 */
 	.get(async (req, res, _next) => {
-		const data = await validator(
-			{
-				required: ["user_id"],
-				additionalProperties: false,
-				properties: {
-					user_id: {
-						$ref: "common#/properties/id",
-					},
-					expand: {
-						$ref: "common#/properties/expand",
-					},
-				},
-			},
-			{
-				user_id: req.params.user_id,
-				expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
-			},
-		);
+		const data = await validator(userSchema, {
+			user_id: req.params.user_id,
+			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
+		});
 
 		const user = await internalUser.get(res.locals.access, {
 			id: data.user_id,
 			expand: data.expand,
-			omit: internalUser.getUserOmisionsByAccess(res.locals.access, data.user_id),
 		});
 		res.status(200).send(user);
 	})
@@ -210,9 +201,6 @@ router
  */
 router
 	.route("/:user_id/auth")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 	.all(userIdFromMe)
 
@@ -247,9 +235,6 @@ router
  */
 router
 	.route("/:user_id/permissions")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 	.all(userIdFromMe)
 
@@ -272,9 +257,6 @@ router
  */
 router
 	.route("/:user_id/mfa")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 	.all(userIdFromMe)
 
@@ -315,9 +297,6 @@ router
  */
 router
 	.route("/:user_id/mfa/totp")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 	.all(userIdFromMe)
 
@@ -360,9 +339,6 @@ router
  */
 router
 	.route("/:user_id/mfa/totp/enable")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 	.all(userIdFromMe)
 
@@ -397,9 +373,6 @@ router
  */
 router
 	.route("/:user_id/mfa/backup-codes")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 	.all(userIdFromMe)
 
@@ -429,9 +402,6 @@ router
 
 router
 	.route("/:user_id/sessions")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 	.all(userIdFromMe)
 
@@ -466,9 +436,6 @@ router
  */
 router
 	.route("/:user_id/avatar")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 	.all(userIdFromMe)
 

@@ -29,7 +29,7 @@ const alert = (id, extra = {}) => ({
 const request = async (path, query = {}) => {
 	let body;
 	const res = {
-		locals: { access: { can: async () => true } },
+		locals: { access: { canAdmin: () => true } },
 		status() {
 			return this;
 		},

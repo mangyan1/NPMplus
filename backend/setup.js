@@ -105,7 +105,6 @@ const setupDefaultUser = async () => {
 		await internalUser.create(access, {
 			email: initialAdminEmail,
 			name: "Administrator",
-			nickname: "Admin",
 			roles: ["admin"],
 			auth: {
 				type: "password",

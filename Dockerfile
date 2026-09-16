@@ -118,6 +118,7 @@ RUN cd /src/nginx && \
     --with-threads \
     --with-file-aio \
     --with-libatomic \
+    --with-control-api \
     --with-pcre \
     --with-pcre-jit \
     --without-select_module \
@@ -133,6 +134,7 @@ RUN cd /src/nginx && \
     --with-http_gunzip_module \
     --with-http_gzip_static_module \
     --with-http_sub_module \
+    --with-http_json_module \
     --with-http_addition_module \
     --with-http_stub_status_module \
     --with-http_auth_request_module \
@@ -180,8 +182,7 @@ RUN apk upgrade --no-cache -a && \
     find /app/node_modules -name "*.node" -type f -exec llvm-strip -s {} \; && \
     find /app/node_modules -name "*.node" -type f -exec file {} \;
 COPY frontend /app
-RUN pnpm tsc -b && \
-    pnpm vite build && \
+RUN pnpm vite build && \
     find /app/dist -type f ! -name "*.jpg" ! -name "*.png" -print0 | xargs -r0 -P "$(nproc)" -n 1 brotli -q 11 -sf
 
 FROM --platform=$BUILDPLATFORM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS backend

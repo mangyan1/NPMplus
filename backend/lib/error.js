@@ -1,9 +1,9 @@
 const errs = {
-	PermissionError: function (_, previous) {
+	PermissionError: function (message, previous) {
 		Error.captureStackTrace(this, this.constructor);
 		this.name = this.constructor.name;
 		this.previous = previous;
-		this.message = "Permission Denied";
+		this.message = message || "Permission Denied";
 		this.public = true;
 		this.status = 403;
 	},
@@ -84,12 +84,11 @@ const errs = {
 		this.status = 400;
 	},
 
-	CommandError: function (stdErr, code, previous) {
+	CommandError: function (stdErr, previous) {
 		Error.captureStackTrace(this, this.constructor);
 		this.name = this.constructor.name;
 		this.previous = previous;
 		this.message = stdErr;
-		this.code = code;
 		this.public = false;
 	},
 };

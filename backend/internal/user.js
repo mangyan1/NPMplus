@@ -15,6 +15,7 @@ import internalToken from "./token.js";
 
 const omissions = () => [
 	"is_deleted",
+	"nickname",
 	"npmplus_token_valid_after",
 	"permissions.id",
 	"permissions.user_id",
@@ -120,7 +121,7 @@ const internalUser = {
 			data.is_disabled = data.is_disabled ? 1 : 0;
 		}
 
-		await access.can("users:create", data);
+		access.canAdmin();
 
 		if (!(await internalUser.isEmailAvailable(data.email))) {
 			throw new errs.ValidationError(`Email address already in use - ${data.email}`);
@@ -142,17 +143,17 @@ const internalUser = {
 		await userPermissionModel.query().insert({
 			user_id: user.id,
 			visibility: isAdmin ? "all" : "user",
-			proxy_hosts: isAdmin ? "manage" : "view",
-			redirection_hosts: isAdmin ? "manage" : "view",
-			dead_hosts: isAdmin ? "manage" : "view",
-			streams: isAdmin ? "manage" : "view",
-			access_lists: isAdmin ? "manage" : "view",
-			certificates: isAdmin ? "manage" : "view",
+			proxy_hosts: "manage",
+			redirection_hosts: "manage",
+			dead_hosts: "manage",
+			streams: "manage",
+			access_lists: "manage",
+			certificates: "manage",
 		});
 
 		await userModel
 			.query()
-			.patchAndFetchById(user.id, { avatar: await fetchGravatar(user.id, user.email, user.name) });
+			.patchAndFetchById(user.id, { avatar: await internalUser.fetchGravatar(user.id, user.email, user.name) });
 
 		user = await internalUser.get(access, { id: user.id, expand: ["permissions"] });
 
@@ -166,8 +167,11 @@ const internalUser = {
 		return user;
 	},
 
+	// bounded module-level implementation above; no unbounded fetch here
+	fetchGravatar,
+
 	setAvatar: async (access, id, file) => {
-		await access.can("users:update", id);
+		access.canUser(id);
 		const ext = avatarExt(file?.buffer);
 		if (!ext) throw new errs.ValidationError("Invalid avatar file type");
 		const user = await internalUser.get(access, { id });
@@ -178,7 +182,7 @@ const internalUser = {
 	},
 
 	deleteAvatar: async (access, id) => {
-		await access.can("users:update", id);
+		access.canUser(id);
 		const user = await internalUser.get(access, { id });
 		await rmAvatars("avatar", user.id);
 		await userModel.query().patchAndFetchById(user.id, { avatar: "" });
@@ -198,13 +202,12 @@ const internalUser = {
 			data.is_disabled = data.is_disabled ? 1 : 0;
 		}
 
+		access.canUser(data.id);
 		try {
-			await access.can("users:permissions", data.id);
+			access.canAdmin();
 		} catch {
 			delete data.roles;
 		}
-
-		await access.can("users:update", data.id);
 		const existingUser = await internalUser.get(access, { id: data.id });
 		// 2. if email is to be changed, find other users with that email
 		if (typeof data.email !== "undefined") {
@@ -225,7 +228,7 @@ const internalUser = {
 		if (existingUser.avatar?.startsWith("/images/avatar/")) {
 			data.avatar = existingUser.avatar;
 		} else {
-			data.avatar = await fetchGravatar(
+			data.avatar = await internalUser.fetchGravatar(
 				existingUser.id,
 				data.email || existingUser.email,
 				data.name || existingUser.name,
@@ -250,7 +253,6 @@ const internalUser = {
 	 * @param  {Object}   [data]
 	 * @param  {Integer}  [data.id]          Defaults to the token user
 	 * @param  {Array}    [data.expand]
-	 * @param  {Array}    [data.omit]
 	 * @return {Promise}
 	 */
 	get: async (access, data) => {
@@ -260,7 +262,7 @@ const internalUser = {
 			thisData.id = access.token.getUserId(0);
 		}
 
-		await access.can("users:get", thisData.id);
+		access.canUser(thisData.id);
 
 		const query = userModel
 			.query()
@@ -278,18 +280,15 @@ const internalUser = {
 			throw new errs.ItemNotFoundError(thisData.id);
 		}
 
-		if (row.id === access.token.getUserId(0)) {
-			row.goaccess = process.env.GOA === "true" && row.roles.includes("admin");
-		}
-		// Custom omissions
-		if (typeof thisData.omit !== "undefined" && thisData.omit !== null) {
-			return _.omit(row, thisData.omit);
-		}
-
+		// rows seeded without a downloaded avatar serve the default image
+		// instead of a broken empty src
 		if (row.avatar === "") {
 			row.avatar = "/images/default-avatar.jpg";
 		}
 
+		if (row.id === access.token.getUserId(0)) {
+			row.goaccess = process.env.GOA === "true" && row.roles.includes("admin");
+		}
 		return row;
 	},
 
@@ -320,7 +319,7 @@ const internalUser = {
 	 * @returns {Promise}
 	 */
 	delete: async (access, data) => {
-		await access.can("users:delete", data.id);
+		access.canAdmin();
 
 		const user = await internalUser.get(access, { id: data.id });
 		if (!user) {
@@ -354,7 +353,7 @@ const internalUser = {
 	 * @returns {*}
 	 */
 	getCount: async (access, search_query) => {
-		await access.can("users:list");
+		access.canAdmin();
 
 		const query = userModel.query().count("id as count").where("is_deleted", 0).first();
 
@@ -378,7 +377,7 @@ const internalUser = {
 	 * @returns {Promise}
 	 */
 	getAll: async (access, expand, search_query) => {
-		await access.can("users:list");
+		access.canAdmin();
 		const query = userModel
 			.query()
 			.where("is_deleted", 0)
@@ -402,21 +401,6 @@ const internalUser = {
 	},
 
 	/**
-	 * @param   {Access} access
-	 * @param   {Integer} [id_requested]
-	 * @returns {[String]}
-	 */
-	getUserOmisionsByAccess: (access, idRequested) => {
-		let response = []; // Admin response
-
-		if (!access.token.hasScope("admin") && access.token.getUserId(0) !== idRequested) {
-			response = ["is_deleted"]; // Restricted response
-		}
-
-		return response;
-	},
-
-	/**
 	 * @param  {Access}  access
 	 * @param  {Object}  data
 	 * @param  {Integer} data.id
@@ -425,7 +409,7 @@ const internalUser = {
 	 * @return {Promise}
 	 */
 	setPassword: async (access, data) => {
-		await access.can("users:password", data.id);
+		access.canUser(data.id);
 
 		const user = await internalUser.get(access, { id: data.id });
 		if (user.id !== data.id) {
@@ -488,7 +472,7 @@ const internalUser = {
 	 * @return {Promise}
 	 */
 	setPermissions: async (access, data) => {
-		await access.can("users:permissions", data.id);
+		access.canAdmin();
 
 		const user = await internalUser.get(access, { id: data.id });
 		if (user.id !== data.id) {
@@ -526,7 +510,7 @@ const internalUser = {
 	},
 
 	revokeSessions: async (access, userId) => {
-		await access.can("users:revoke", userId);
+		access.canUser(userId);
 		const user = await userModel
 			.query()
 			.patchAndFetchById(userId, { npmplus_token_valid_after: Math.floor(Date.now() / 1000) });
@@ -545,6 +529,5 @@ const internalUser = {
 	},
 };
 
-export { backfillGravatarAvatar };
-
 export default internalUser;
+export { backfillGravatarAvatar };

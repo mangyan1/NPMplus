@@ -45,9 +45,6 @@ router.use(limiter, refreshLimiter);
 
 router
 	.route("/")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 
 	/**
 	 * GET /tokens
@@ -57,6 +54,10 @@ router
 	 * for services like Job board and Worker.
 	 */
 	.get(jwtdecode(), async (req, res, next) => {
+		// Session discovery is anonymous by design; jwt-decode lets cookieless
+		// requests through as an anonymous access, so answer 401 here instead
+		// of letting getFreshToken hit its invalid-user-data assertion. These
+		// expected 401s are budgeted by refreshLimiter, not the login limiter.
 		if (!req.signedCookies?.["__Host-Http-token"]) {
 			res.clearCookie("__Host-Http-token", {
 				httpOnly: true,
@@ -158,9 +159,6 @@ router
 
 router
 	.route("/totp")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 
 	/**
 	 * POST /tokens/totp
@@ -185,8 +183,6 @@ router
 				secure: true,
 				sameSite: "Strict",
 			});
-			res.clearCookie("__Host-npmplus_oidc_totp_required", { secure: true, sameSite: "Strict" });
-			res.clearCookie("__Host-npmplus_oidc_no_redirect", { secure: true, sameSite: "Strict" });
 
 			res.status(200).send(responseBody);
 		} catch (err) {

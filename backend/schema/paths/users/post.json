@@ -6,9 +6,7 @@
 	],
 	"security": [
 		{
-			"cookieAuth": [
-				"admin"
-			]
+			"cookieAuth": []
 		}
 	],
 	"requestBody": {
@@ -21,15 +19,11 @@
 					"additionalProperties": false,
 					"required": [
 						"name",
-						"nickname",
 						"email"
 					],
 					"properties": {
 						"name": {
 							"$ref": "../../components/user-object.json#/properties/name"
-						},
-						"nickname": {
-							"$ref": "../../components/user-object.json#/properties/nickname"
 						},
 						"email": {
 							"$ref": "../../components/user-object.json#/properties/email"
@@ -79,7 +73,6 @@
 								"is_disabled": false,
 								"email": "jc@jc21.com",
 								"name": "Jamie Curnow",
-								"nickname": "James",
 								"avatar": "//www.gravatar.com/avatar/6193176330f8d38747f038c170ddb193?default=mm",
 								"roles": [
 									"admin"

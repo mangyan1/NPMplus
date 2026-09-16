@@ -6,9 +6,7 @@
 	],
 	"security": [
 		{
-			"cookieAuth": [
-				"proxy_hosts.manage"
-			]
+			"cookieAuth": []
 		}
 	],
 	"requestBody": {
@@ -178,7 +176,6 @@
 									"is_disabled": false,
 									"email": "jc@jc21.com",
 									"name": "jamiec",
-									"nickname": "jamiec",
 									"avatar": "//www.gravatar.com/avatar/6193176330f8d38747f038c170ddb193?default=mm",
 									"roles": [
 										"admin"
