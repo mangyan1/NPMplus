@@ -3,6 +3,7 @@
 // exercised directly: `new Access(null)` is the anonymous shape (no
 // permissions, not admin) and load(true) is the synthetic-admin path the
 // setup route uses.
+import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import Access from "../lib/access.js";
