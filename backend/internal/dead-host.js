@@ -25,7 +25,7 @@ const internalDeadHost = {
 			delete thisData.certificate_id;
 		}
 
-		await access.can("dead_hosts:create", thisData);
+		access.can("dead_hosts:manage");
 		await assertPrivilegedNginxFields(access, thisData);
 
 		// Get a list of the domain names and check each of them against existing records
@@ -87,7 +87,9 @@ const internalDeadHost = {
 			delete thisData.certificate_id;
 		}
 
-		await access.can("dead_hosts:update", thisData.id);
+		access.can("dead_hosts:manage");
+
+		const existingRow = await internalDeadHost.get(access, { id: thisData.id });
 
 		// Get a list of the domain names and check each of them against existing records
 		if (typeof thisData.domain_names !== "undefined") {
@@ -102,7 +104,6 @@ const internalDeadHost = {
 			}
 		}
 
-		const existingRow = await internalDeadHost.get(access, { id: thisData.id });
 		if (existingRow.id !== thisData.id) {
 			// Sanity check that something crazy hasn't happened
 			throw new errs.InternalValidationError(
@@ -162,7 +163,7 @@ const internalDeadHost = {
 	get: async (access, data) => {
 		const thisData = data || {};
 
-		const accessData = await access.can("dead_hosts:get", thisData.id);
+		access.can("dead_hosts:view");
 
 		const query = deadHostModel
 			.query()
@@ -171,7 +172,7 @@ const internalDeadHost = {
 			.allowGraph(deadHostModel.defaultAllowGraph)
 			.first();
 
-		if (accessData.permission_visibility !== "all") {
+		if (access.visibility !== "all") {
 			query.andWhere("owner_user_id", access.token.getUserId(1));
 		}
 
@@ -202,7 +203,7 @@ const internalDeadHost = {
 	 * @returns {Promise}
 	 */
 	delete: async (access, data) => {
-		await access.can("dead_hosts:delete", data.id);
+		access.can("dead_hosts:manage");
 
 		const row = await internalDeadHost.get(access, { id: data.id });
 		if (!row?.id) {
@@ -236,7 +237,7 @@ const internalDeadHost = {
 	 * @returns {Promise}
 	 */
 	enable: async (access, data) => {
-		await access.can("dead_hosts:update", data.id);
+		access.can("dead_hosts:manage");
 
 		const row = await internalDeadHost.get(access, {
 			id: data.id,
@@ -285,7 +286,7 @@ const internalDeadHost = {
 	 * @returns {Promise}
 	 */
 	disable: async (access, data) => {
-		await access.can("dead_hosts:update", data.id);
+		access.can("dead_hosts:manage");
 
 		const row = await internalDeadHost.get(access, { id: data.id });
 		if (!row?.id) {
@@ -325,7 +326,7 @@ const internalDeadHost = {
 	 * @returns {Promise}
 	 */
 	getAll: async (access, expand, searchQuery) => {
-		const accessData = await access.can("dead_hosts:list");
+		access.can("dead_hosts:view");
 
 		const query = deadHostModel
 			.query()
@@ -334,7 +335,7 @@ const internalDeadHost = {
 			.allowGraph(deadHostModel.defaultAllowGraph)
 			.orderBy(castJsonIfNeed("domain_names"), "ASC");
 
-		if (accessData.permission_visibility !== "all") {
+		if (access.visibility !== "all") {
 			query.andWhere("owner_user_id", access.token.getUserId(1));
 		}
 

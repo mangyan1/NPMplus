@@ -6,6 +6,31 @@ import validator from "../../lib/validator/index.js";
 import { debug, express as logger } from "../../logger.js";
 import { getValidationSchema } from "../../schema/index.js";
 
+const listSchema = {
+	additionalProperties: false,
+	properties: {
+		expand: {
+			$ref: "common#/properties/expand",
+		},
+		query: {
+			$ref: "common#/properties/query",
+		},
+	},
+};
+
+const hostSchema = {
+	required: ["host_id"],
+	additionalProperties: false,
+	properties: {
+		host_id: {
+			$ref: "common#/properties/id",
+		},
+		expand: {
+			$ref: "common#/properties/expand",
+		},
+	},
+};
+
 const router = express.Router({
 	caseSensitive: true,
 	strict: true,
@@ -17,9 +42,6 @@ const router = express.Router({
  */
 router
 	.route("/")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 
 	/**
@@ -28,23 +50,10 @@ router
 	 * Retrieve all redirection-hosts
 	 */
 	.get(async (req, res, next) => {
-		const data = await validator(
-			{
-				additionalProperties: false,
-				properties: {
-					expand: {
-						$ref: "common#/properties/expand",
-					},
-					query: {
-						$ref: "common#/properties/query",
-					},
-				},
-			},
-			{
-				expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
-				query: typeof req.query.query === "string" ? req.query.query : null,
-			},
-		);
+		const data = await validator(listSchema, {
+			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
+			query: typeof req.query.query === "string" ? req.query.query : null,
+		});
 		const rows = await internalRedirectionHost.getAll(res.locals.access, data.expand, data.query);
 		res.status(200).send(rows);
 	})
@@ -67,9 +76,6 @@ router
  */
 router
 	.route("/:host_id")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 
 	/**
@@ -78,24 +84,10 @@ router
 	 * Retrieve a specific redirection-host
 	 */
 	.get(async (req, res, next) => {
-		const data = await validator(
-			{
-				required: ["host_id"],
-				additionalProperties: false,
-				properties: {
-					host_id: {
-						$ref: "common#/properties/id",
-					},
-					expand: {
-						$ref: "common#/properties/expand",
-					},
-				},
-			},
-			{
-				host_id: req.params.host_id,
-				expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
-			},
-		);
+		const data = await validator(hostSchema, {
+			host_id: req.params.host_id,
+			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
+		});
 		const row = await internalRedirectionHost.get(res.locals.access, {
 			id: Number.parseInt(data.host_id, 10),
 			expand: data.expand,
@@ -134,9 +126,6 @@ router
  */
 router
 	.route("/:host_id/enable")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 
 	/**
@@ -156,9 +145,6 @@ router
  */
 router
 	.route("/:host_id/disable")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 	.all(jwtdecode())
 
 	/**

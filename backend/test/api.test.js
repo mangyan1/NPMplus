@@ -41,6 +41,13 @@ const { default: app } = await import("../app.js");
 const { getCompiledSchema } = await import("../schema/index.js");
 await getCompiledSchema();
 const utils = (await import("../lib/utils.js")).default;
+// reload() talks to the nginx control-API unix socket in the container
+// (upstream reworked the reload from `nginx -s reload`); the socket does not
+// exist in the test environment, so stub it the same way the old execFile
+// path was stubbed. The default export is a shared object, so every internal
+// caller sees the stub.
+const internalNginx = await import("../internal/nginx.js");
+internalNginx.default.reload = async () => {};
 const authModel = (await import("../models/auth.js")).default;
 const userModel = (await import("../models/user.js")).default;
 const userPermissionModel = (await import("../models/user_permission.js")).default;
@@ -252,7 +259,7 @@ test("animated forbidden selection persists and generates a fixed 403 without re
 test("admin creates a user with password auth", async () => {
 	const res = await api("POST", "/api/users", {
 		cookie: adminCookie,
-		body: { name: "Peon", nickname: "peon", email: PEON_EMAIL, auth: { type: "password", secret: PEON_PASSWORD } },
+		body: { name: "Peon", email: PEON_EMAIL, auth: { type: "password", secret: PEON_PASSWORD } },
 	});
 	assert.equal(res.status, 201);
 	assert.ok(res.body.id > 0);
@@ -491,7 +498,7 @@ test("user creation downloads and stores the gravatar for the email", async (t) 
 	const { readFile } = await import("node:fs/promises");
 	const res = await api("POST", "/api/users", {
 		cookie: adminCookie,
-		body: { name: "Grav Atar", nickname: "grav", email: "gravatar-user@example.com" },
+		body: { name: "Grav Atar", email: "gravatar-user@example.com" },
 	});
 	assert.equal(res.status, 201, res.text);
 	const createdId = res.body.id;
@@ -507,7 +514,6 @@ test("a failed gravatar download falls back to the default avatar", async (t) =>
 		cookie: adminCookie,
 		body: {
 			name: "Grav Fail",
-			nickname: "gravfail",
 			email: "gravatar-fail@example.com",
 			auth: { type: "password", secret: "Grav-Fail-1" },
 		},
@@ -521,7 +527,7 @@ test("a custom local avatar survives a user update", async (t) => {
 	await userModel.query().patchAndFetchById(user.id, { avatar: "/images/avatar/local.jpg" });
 	const res = await api("PUT", `/api/users/${user.id}`, {
 		cookie: adminCookie,
-		body: { name: "Renamed", nickname: "renamed", email: "local-avatar@example.com" },
+		body: { name: "Renamed", email: "local-avatar@example.com" },
 	});
 	assert.equal(res.status, 200, res.text);
 	assert.equal(res.body.avatar, "/images/avatar/local.jpg");
@@ -655,7 +661,6 @@ test("an admin password change for another user does not refresh the admin sessi
 		cookie: adminCookie,
 		body: {
 			name: "Rotated",
-			nickname: "rotated",
 			email: "rotated@example.com",
 			auth: { type: "password", secret: OTHER_PASSWORD },
 		},

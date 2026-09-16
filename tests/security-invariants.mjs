@@ -100,41 +100,25 @@ const read = (path) => {
 }
 
 // ---------------------------------------------------------------------------
-// Rule 4: the permission cache never validates users-* permissions with a
-// shared validator. Those schemas embed the calling user's id enum through
-// the per-request objects schema; a cached compiled validator freezes the
-// first caller's id and lets any user pass. The behavioral pin lives in
-// backend/test/api.test.js; this rule catches textual drift in access.js
-// itself (guard removed, condition inverted, exclusion list emptied).
+// Rule 4: logout revocation is enforced per request at the access layer.
+// The fork tracks refresh sessions in the database; a cookie/token replayed
+// after logout must fail here (assertTokenSession in access.js init), not
+// only in the MFA challenge path. Upstream does not have this check, so a
+// future merge could drop it as an "upstream simplification". The Ajv
+// permission cache this rule originally guarded was removed with upstream's
+// plain can()/canUser() permission model; identity is now per-request by
+// construction, but the session check must survive every merge.
 // ---------------------------------------------------------------------------
 {
 	const access = read("backend/lib/access.js");
 	if (access !== null) {
-		if (!/referencesObjects/.test(access)) {
-			fail("permission-cache-identity", "backend/lib/access.js lost the referencesObjects distinction");
+		if (!/assertTokenSession\(/.test(access)) {
+			fail("session-revocation-access", "backend/lib/access.js no longer calls assertTokenSession");
 		}
-		if (!/objects#/.test(access)) {
-			fail(
-				"permission-cache-identity",
-				"backend/lib/access.js no longer detects objects# references in permission schemas",
-			);
-		}
-		// The guard itself: the cached path must only run when the schema has
-		// no objects# reference, and the dynamic path must rebuild the objects
-		// schema for this token. "if (true)" or inverted variants pass the
-		// string checks but silently freeze user identity; this checks shape.
-		if (!/if\s*\(\s*!referencesObjects\s*\)\s*\{/.test(access)) {
-			fail(
-				"permission-cache-identity",
-				"backend/lib/access.js no longer gates the cached validator on !referencesObjects",
-			);
-		}
-		if (!/const objectSchema = await this\.getObjectSchema\(permission\);/.test(access)) {
-			fail(
-				"permission-cache-identity",
-				"backend/lib/access.js no longer rebuilds the objects schema on the dynamic path",
-			);
-		}
+	}
+	const token = read("backend/internal/token.js");
+	if (token !== null && !/assertTokenSession\(/.test(token)) {
+		fail("session-revocation-access", "backend/internal/token.js no longer calls assertTokenSession");
 	}
 }
 

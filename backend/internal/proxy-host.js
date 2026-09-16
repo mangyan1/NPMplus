@@ -64,7 +64,7 @@ const internalProxyHost = {
 			delete thisData.certificate_id;
 		}
 
-		await access.can("proxy_hosts:create", thisData);
+		access.can("proxy_hosts:manage");
 		await assertPrivilegedNginxFields(access, thisData);
 
 		// Get a list of the domain names and check each of them against existing records
@@ -143,7 +143,9 @@ const internalProxyHost = {
 			delete thisData.certificate_id;
 		}
 
-		await access.can("proxy_hosts:update", thisData.id);
+		access.can("proxy_hosts:manage");
+
+		const existingRow = await internalProxyHost.get(access, { id: thisData.id });
 
 		// Get a list of the domain names and check each of them against existing records
 		if (typeof thisData.domain_names !== "undefined") {
@@ -158,7 +160,6 @@ const internalProxyHost = {
 			}
 		}
 
-		const existingRow = await internalProxyHost.get(access, { id: thisData.id });
 		if (existingRow.id !== thisData.id) {
 			// Sanity check that something crazy hasn't happened
 			throw new errs.InternalValidationError(
@@ -234,7 +235,7 @@ const internalProxyHost = {
 	get: async (access, data) => {
 		const thisData = data || {};
 
-		const accessData = await access.can("proxy_hosts:get", thisData.id);
+		access.can("proxy_hosts:view");
 
 		const query = proxyHostModel
 			.query()
@@ -243,7 +244,7 @@ const internalProxyHost = {
 			.allowGraph(proxyHostModel.defaultAllowGraph)
 			.first();
 
-		if (accessData.permission_visibility !== "all") {
+		if (access.visibility !== "all") {
 			query.andWhere("owner_user_id", access.token.getUserId(1));
 		}
 
@@ -274,7 +275,7 @@ const internalProxyHost = {
 	 * @returns {Promise}
 	 */
 	delete: async (access, data) => {
-		await access.can("proxy_hosts:delete", data.id);
+		access.can("proxy_hosts:manage");
 
 		const row = await internalProxyHost.get(access, { id: data.id });
 		if (!row?.id) {
@@ -312,7 +313,7 @@ const internalProxyHost = {
 	 * @returns {Promise}
 	 */
 	enable: async (access, data) => {
-		await access.can("proxy_hosts:update", data.id);
+		access.can("proxy_hosts:manage");
 
 		const row = await internalProxyHost.get(access, {
 			id: data.id,
@@ -365,7 +366,7 @@ const internalProxyHost = {
 	 * @returns {Promise}
 	 */
 	disable: async (access, data) => {
-		await access.can("proxy_hosts:update", data.id);
+		access.can("proxy_hosts:manage");
 
 		const row = await internalProxyHost.get(access, { id: data.id });
 		if (!row?.id) {
@@ -405,7 +406,7 @@ const internalProxyHost = {
 	 * @returns {Promise}
 	 */
 	getAll: async (access, expand, searchQuery) => {
-		const accessData = await access.can("proxy_hosts:list");
+		access.can("proxy_hosts:view");
 
 		const query = proxyHostModel
 			.query()
@@ -414,7 +415,7 @@ const internalProxyHost = {
 			.allowGraph(proxyHostModel.defaultAllowGraph)
 			.orderBy(castJsonIfNeed("domain_names"), "ASC");
 
-		if (accessData.permission_visibility !== "all") {
+		if (access.visibility !== "all") {
 			query.andWhere("owner_user_id", access.token.getUserId(1));
 		}
 

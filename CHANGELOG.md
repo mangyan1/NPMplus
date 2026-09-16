@@ -4,7 +4,17 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- Reconciled upstream develop through `2fcc605a` manually (the scheduled upstream-sync run had stopped on 42 conflicted files — its fail-closed behavior) and adopted upstream's typescript-to-javascript frontend migration: the react-query client, API modules, components, and pages are plain JavaScript now, and the frontend tsconfig, `tsc` build step, and typescript/`@types/*` devDependencies are gone. The fork-only `.ts`/`.tsx` sources (Anubis/CrowdSec/security UI, deployment recovery, error boundary) remain and run through Node 24 type stripping. Frontend tests run via `node --test test/*.test.ts`.
+
+- Adopted upstream's simplified permission model (`isAdmin`, `canAdmin()`, `canUser(id)`, `can("type:manage")`, `get visibility()`) replacing the per-object permission walk; `access.js` drops to ~120 lines. The nginx privilege guard (raw config and local-path fields stay admin-only) and the CrowdSec route gate now wrap the synchronous `canAdmin()` call, and their tests were updated to the synchronous shape.
+
+- Adopted upstream's nginx control API: config reload now patches `http://localhost/1/control/config` over the `/run/nginx-control.sock` unix socket via the undici client instead of running `nginx -s reload`; the API tests stub the reload since the socket does not exist in the test environment. `undici` 8.10.2 enters the backend manifest (verified 11 days published at merge time, inside the `minimumReleaseAge` window).
+
+- `nickname` is now server-managed: absent from all API schemas and responses, with the `nickname_default` migration backfilling existing rows. API tests no longer send it.
+
+- Every fork security invariant is preserved and re-verified against the merge (127/127 backend tests, 10/10 frontend tests, `vite build`, and `tests/security-invariants.mjs` green): an anonymous missing session is still a 403 at route permission checks rather than upstream's 401 (rejected sessions remain 401); the login, refresh, and OIDC rate limiters and the OIDC `no_redirect` cookie handling are unchanged; gravatar fetching stays bounded (5 s timeout, 1 MiB cap) with avatar cleanup and login-time backfill; the one-time setup-token gate and its field whitelist are kept, and upstream's open `POST /users/setup` endpoint was not taken. `multer` 2.3.0 and `mysql2` 3.24.3 stay fork-side; the remaining upstream dependency bumps that were younger than the `minimumReleaseAge` window were rejected and age out through the renovate cron.
 
 ## v2.15.1-mangyan1.rc.6 - 2026-09-15
 

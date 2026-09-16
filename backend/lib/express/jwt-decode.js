@@ -29,6 +29,11 @@ export default () => {
 			// is reserved for authenticated users hitting a permission wall.
 			// Sending 403 here stranded the UI in a ghost session: localStorage
 			// still claimed a valid login while every request was rejected.
+			res.cookie("__Host-npmplus_oidc_no_redirect", "true", {
+				secure: true,
+				sameSite: "Strict",
+				maxAge: 60 * 60 * 1000,
+			});
 			return res.status(401).json({
 				error: {
 					message: "Invalid or expired token",

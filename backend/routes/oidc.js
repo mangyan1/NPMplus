@@ -34,9 +34,6 @@ router.use(limiter);
 
 router
 	.route("/")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 
 	/**
 	 * GET /api/oidc
@@ -90,7 +87,7 @@ router
 
 			res.redirect(buildAuthorizationUrl(config, parameters).toString());
 		} catch (err) {
-			logger.error(`Callback error: ${err.message}`);
+			logger.error(`Init error: ${err.message}`);
 			res.cookie("__Host-npmplus_oidc_no_redirect", "true", {
 				secure: true,
 				sameSite: "Strict",
@@ -117,9 +114,6 @@ router
 
 router
 	.route("/callback")
-	.options((_, res) => {
-		res.sendStatus(204);
-	})
 
 	/**
 	 * GET /api/oidc/callback
@@ -155,7 +149,7 @@ router
 
 			if (!claims.email) throw new errs.AuthError("The Identity Provider didn't send the 'email' claim");
 
-			if (claims.email_verified !== true && process.env.OIDC_REQUIRE_VERIFIED_EMAIL === "true") {
+			if (process.env.OIDC_REQUIRE_VERIFIED_EMAIL === "true" && claims.email_verified !== true) {
 				throw new errs.AuthError("The email address has not been verified.");
 			}
 
@@ -192,11 +186,13 @@ router
 					sameSite: "Strict",
 					expires: new Date(data.expires),
 				});
-				res.cookie("__Host-npmplus_oidc_totp_required", "true", {
-					secure: true,
-					sameSite: "Strict",
-					expires: new Date(data.expires),
-				});
+				if (data.requiresTotp) {
+					res.cookie("__Host-npmplus_oidc_totp_required", "true", {
+						secure: true,
+						sameSite: "Strict",
+						expires: new Date(data.expires),
+					});
+				}
 			} else {
 				res.cookie("__Host-Http-token", data.token, {
 					signed: true,
@@ -210,6 +206,11 @@ router
 			res.redirect("/");
 		} catch (err) {
 			logger.error(`Callback error: ${err.message}`);
+			res.cookie("__Host-npmplus_oidc_no_redirect", "true", {
+				secure: true,
+				sameSite: "Strict",
+				maxAge: 60 * 60 * 1000,
+			});
 			res.clearCookie("__Host-Http-npmplus_oidc_state", {
 				httpOnly: true,
 				secure: true,

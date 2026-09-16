@@ -20,7 +20,6 @@ import { fetchWithTimeout, readBoundedText } from "../lib/bounded-fetch.js";
 import {
 	crowdsecAlertTarget,
 	filterCrowdsecAlerts,
-	hasCrowdsecAdminAccess,
 	isAttackAlert,
 	normalizeCrowdsecAlerts,
 	normalizeCrowdsecDecisions,
@@ -120,9 +119,15 @@ const ANUBIS_UPSTREAM = process.env.AUTH_REQUEST_ANUBIS_UPSTREAM || "";
 const ANUBIS_TIMEOUT_MS = 3000;
 const HONEYPOT_SCENARIO = "anubis-honeypot";
 
-const requireAdmin = async (res) => {
-	const permission = await res.locals.access.can("admin:access").catch(() => null);
-	return hasCrowdsecAdminAccess(permission);
+const requireAdmin = (res) => {
+	// can() is synchronous in the merged permission model; canAdmin throws
+	// for non-admins
+	try {
+		res.locals.access.canAdmin();
+		return true;
+	} catch {
+		return false;
+	}
 };
 
 const queryString = (value, maxLength = 256) =>

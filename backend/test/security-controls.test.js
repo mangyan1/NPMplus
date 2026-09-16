@@ -6,10 +6,12 @@ import { assertPrivilegedNginxFields, privilegedProjection } from "../lib/nginx-
 
 const exceedsEightBytesPattern = /exceeds 8 bytes/;
 const delegatedAccess = {
-	can: (permission) => {
-		if (permission === "admin:access") return Promise.reject(new Error("not an admin"));
-		return Promise.resolve(true);
+	// merged permission model: canAdmin() throws for non-admins, can() stays
+	// synchronous
+	canAdmin: () => {
+		throw new Error("not an admin");
 	},
+	can: () => true,
 };
 
 test("bounded response reader rejects oversized streaming bodies", async () => {
@@ -33,36 +35,39 @@ test("outbound timeout remains active while the response body is read", async ()
 	}
 });
 
-test("delegated users cannot introduce raw nginx configuration", async () => {
-	await assert.rejects(
-		assertPrivilegedNginxFields(delegatedAccess, { advanced_config: "proxy_set_header X-Test yes;" }),
+test("delegated users cannot introduce raw nginx configuration", () => {
+	assert.throws(
+		() => assertPrivilegedNginxFields(delegatedAccess, { advanced_config: "proxy_set_header X-Test yes;" }),
 		(error) => error.status === 403,
 	);
 });
 
-test("delegated users cannot introduce a local filesystem proxy target", async () => {
+test("delegated users cannot introduce a local filesystem proxy target", () => {
 	assert.deepEqual(privilegedProjection({ forward_scheme: "path", forward_host: "/data/html" }), {
 		localPath: { forward_scheme: "path", forward_host: "/data/html" },
 	});
-	await assert.rejects(
-		assertPrivilegedNginxFields(delegatedAccess, {
-			forward_scheme: "path",
-			forward_host: "/data/html",
-		}),
+	assert.throws(
+		() =>
+			assertPrivilegedNginxFields(delegatedAccess, {
+				forward_scheme: "path",
+				forward_host: "/data/html",
+			}),
 		(error) => error.status === 403,
 	);
 });
 
-test("delegated users cannot add syntax-bearing custom location paths", async () => {
-	await assert.rejects(
-		assertPrivilegedNginxFields(delegatedAccess, {
-			locations: [{ path: "/safe # injected", forward_scheme: "http", forward_host: "example.com" }],
-		}),
+test("delegated users cannot add syntax-bearing custom location paths", () => {
+	assert.throws(
+		() =>
+			assertPrivilegedNginxFields(delegatedAccess, {
+				locations: [{ path: "/safe # injected", forward_scheme: "http", forward_host: "example.com" }],
+			}),
 		(error) => error.status === 403,
 	);
 });
 
-test("delegated users may update ordinary fields without changing existing privileged fields", async () => {
+test("delegated users may update ordinary fields without changing existing privileged fields", () => {
 	const existing = { id: 1, advanced_config: "add_header X-Test yes;", enabled: true };
-	await assert.doesNotReject(assertPrivilegedNginxFields(delegatedAccess, { id: 1, enabled: false }, existing));
+	// the guard is synchronous in the merged permission model: no throw is the pass
+	assert.equal(assertPrivilegedNginxFields(delegatedAccess, { id: 1, enabled: false }, existing), undefined);
 });

@@ -1,4 +1,4 @@
-import { appendFile, rm, unlink, writeFile } from "node:fs/promises";
+import { appendFile, rm, writeFile } from "node:fs/promises";
 import bcrypt from "bcryptjs";
 import _ from "lodash";
 import errs from "../lib/error.js";
@@ -21,7 +21,7 @@ const internalAccessList = {
 	 * @returns {Promise}
 	 */
 	create: async (access, data) => {
-		await access.can("access_lists:create", data);
+		access.can("access_lists:manage");
 		const row = utils.omitRow(omissions())(
 			await accessListModel.query().insertAndFetch({
 				name: data.name,
@@ -101,7 +101,7 @@ const internalAccessList = {
 	 * @return {Promise}
 	 */
 	update: async (access, data) => {
-		await access.can("access_lists:update", data.id);
+		access.can("access_lists:manage");
 		const row = await internalAccessList.get(access, { id: data.id });
 		if (row.id !== data.id) {
 			// Sanity check that something crazy hasn't happened
@@ -208,7 +208,7 @@ const internalAccessList = {
 	 */
 	get: async (access, data, skipMasking) => {
 		const thisData = data || {};
-		const accessData = await access.can("access_lists:get", thisData.id);
+		access.can("access_lists:view");
 
 		const query = accessListModel
 			.query()
@@ -231,7 +231,7 @@ const internalAccessList = {
 			.allowGraph("[owner,items,clients,proxy_hosts.[certificate,access_lists.[clients,items]]]")
 			.first();
 
-		if (accessData.permission_visibility !== "all") {
+		if (access.visibility !== "all") {
 			query.andWhere("access_list.owner_user_id", access.token.getUserId(1));
 		}
 
@@ -265,7 +265,7 @@ const internalAccessList = {
 	 * @returns {Promise}
 	 */
 	delete: async (access, data) => {
-		await access.can("access_lists:delete", data.id);
+		access.can("access_lists:manage");
 		const row = await internalAccessList.get(access, {
 			id: data.id,
 			expand: ["proxy_hosts.[certificate, access_lists.[clients,items]]", "items", "clients"],
@@ -353,11 +353,7 @@ const internalAccessList = {
 		await internalNginx.reload();
 
 		// delete the htpasswd file
-		try {
-			await unlink(internalAccessList.getFilename(row));
-		} catch {
-			// do nothing
-		}
+		await rm(internalAccessList.getFilename(row), { force: true });
 
 		// 4. audit log
 		await internalAuditLog.add(access, {
@@ -378,7 +374,7 @@ const internalAccessList = {
 	 * @returns {Promise}
 	 */
 	getAll: async (access, expand, searchQuery) => {
-		const accessData = await access.can("access_lists:list");
+		access.can("access_lists:view");
 
 		const query = accessListModel
 			.query()
@@ -400,7 +396,7 @@ const internalAccessList = {
 			.allowGraph("[owner,items,clients]")
 			.orderBy("access_list.name", "ASC");
 
-		if (accessData.permission_visibility !== "all") {
+		if (access.visibility !== "all") {
 			query.andWhere("access_list.owner_user_id", access.token.getUserId(1));
 		}
 

@@ -45,7 +45,7 @@ test("Anubis HTTP response headers prove reachability even when its body is over
 	);
 	let body;
 	const res = {
-		locals: { access: { can: async () => true } },
+		locals: { access: { canAdmin: () => true } },
 		status() {
 			return this;
 		},

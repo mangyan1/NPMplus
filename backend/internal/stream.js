@@ -50,7 +50,7 @@ const internalStream = {
 			delete thisData.certificate_id;
 		}
 
-		await access.can("streams:create", thisData);
+		access.can("streams:manage");
 		await assertPrivilegedNginxFields(access, thisData);
 
 		await validateIncomingPort(thisData.incoming_port);
@@ -103,7 +103,7 @@ const internalStream = {
 			delete thisData.certificate_id;
 		}
 
-		await access.can("streams:update", thisData.id);
+		access.can("streams:manage");
 
 		if (typeof thisData.incoming_port !== "undefined") {
 			await validateIncomingPort(thisData.incoming_port, thisData.id);
@@ -165,7 +165,7 @@ const internalStream = {
 	get: async (access, data) => {
 		const thisData = data || {};
 
-		const accessData = await access.can("streams:get", thisData.id);
+		access.can("streams:view");
 
 		const query = streamModel
 			.query()
@@ -174,7 +174,7 @@ const internalStream = {
 			.allowGraph(streamModel.defaultAllowGraph)
 			.first();
 
-		if (accessData.permission_visibility !== "all") {
+		if (access.visibility !== "all") {
 			query.andWhere("owner_user_id", access.token.getUserId(1));
 		}
 
@@ -205,7 +205,7 @@ const internalStream = {
 	 * @returns {Promise}
 	 */
 	delete: async (access, data) => {
-		await access.can("streams:delete", data.id);
+		access.can("streams:manage");
 
 		const row = await internalStream.get(access, { id: data.id });
 		if (!row?.id) {
@@ -239,7 +239,7 @@ const internalStream = {
 	 * @returns {Promise}
 	 */
 	enable: async (access, data) => {
-		await access.can("streams:update", data.id);
+		access.can("streams:manage");
 
 		const row = await internalStream.get(access, {
 			id: data.id,
@@ -280,7 +280,7 @@ const internalStream = {
 	 * @returns {Promise}
 	 */
 	disable: async (access, data) => {
-		await access.can("streams:update", data.id);
+		access.can("streams:manage");
 
 		const row = await internalStream.get(access, { id: data.id });
 		if (!row?.id) {
@@ -320,7 +320,7 @@ const internalStream = {
 	 * @returns {Promise}
 	 */
 	getAll: async (access, expand, searchQuery) => {
-		const accessData = await access.can("streams:list");
+		access.can("streams:view");
 
 		const query = streamModel
 			.query()
@@ -329,7 +329,7 @@ const internalStream = {
 			.allowGraph(streamModel.defaultAllowGraph)
 			.orderBy("incoming_port", "ASC");
 
-		if (accessData.permission_visibility !== "all") {
+		if (access.visibility !== "all") {
 			query.andWhere("owner_user_id", access.token.getUserId(1));
 		}
 
