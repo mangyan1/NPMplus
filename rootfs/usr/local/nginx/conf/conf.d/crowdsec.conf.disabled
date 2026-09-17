@@ -1,5 +1,7 @@
 lua_shared_dict crowdsec_cache 50m;
-lua_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+# the trusted CA bundle for LAPI-over-TLS comes from nginx.conf's http context;
+# restating lua_ssl_trusted_certificate here is a duplicate directive and fails
+# nginx -t as soon as this file is enabled
 init_by_lua_block {
   cs = require "crowdsec"
   require("npmplus_telemetry").install(cs)
