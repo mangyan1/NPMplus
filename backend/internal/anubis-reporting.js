@@ -18,8 +18,9 @@ const METRICS = {
 	failed: "anubis_failed_validations",
 };
 const hash = (value) => createHash("sha256").update(value).digest("hex");
+const IPV4V6_CHARS = /^[0-9a-fA-F.:]+$/;
 const canonicalIp = (value) => {
-	if (typeof value !== "string" || value.length > 45 || !/^[0-9a-fA-F.:]+$/.test(value)) return null;
+	if (typeof value !== "string" || value.length > 45 || !IPV4V6_CHARS.test(value)) return null;
 	if (isIP(value) === 6) return new URL(`http://[${value}]`).hostname.slice(1, -1);
 	return isIP(value) === 4 ? value : null;
 };
@@ -50,8 +51,8 @@ const setState = async (trx, id, time, data) =>
 
 // Keep individual series baselines: a disappearing ASN/method series or restart
 // must not be mistaken for a counter increase. Missing families stay unknown.
-const recordMetrics = async (text, time, now = Date.now()) => {
-	time = Math.trunc(time);
+const recordMetrics = async (text, rawTime, now = Date.now()) => {
+	const time = Math.trunc(rawTime);
 	if (!Number.isSafeInteger(time) || time < 0) throw new Error("Invalid Anubis sample time");
 	if (now - time > GAP || time > now + 5000) throw new Error("Stale Anubis metrics");
 	const samples = parsePrometheusText(text);
@@ -79,8 +80,8 @@ const recordMetrics = async (text, time, now = Date.now()) => {
 			const current = series[key];
 			const valid =
 				continuous &&
-				Object.keys(current).length &&
-				Object.keys(old).length &&
+				Object.keys(current).length > 0 &&
+				Object.keys(old).length > 0 &&
 				Object.keys(old).every((id) => current[id] >= old[id]);
 			if (valid) {
 				const delta = Object.entries(current).reduce((sum, [id, count]) => sum + count - (old[id] ?? 0), 0);
@@ -129,13 +130,14 @@ const recordAddresses = async (text, now = Date.now()) => {
 		});
 	});
 };
+const ATTEMPT_LINE = /^(\d{13}) (accepted|failed) ([0-9a-fA-F.:]{2,45}) [a-f0-9-]{36}$/;
 const recordAttempts = async (text, now = Date.now()) => {
 	await db().transaction(async (trx) => {
 		for (const line of text
 			.slice(0, text.lastIndexOf("\n") + 1)
 			.split("\n")
 			.slice(-2001, -1)) {
-			const match = /^(\d{13}) (accepted|failed) ([0-9a-fA-F.:]{2,45}) [a-f0-9-]{36}$/.exec(line);
+			const match = line.match(ATTEMPT_LINE);
 			if (!match) continue;
 			const time = Number(match[1]);
 			const ip = canonicalIp(match[3]);
@@ -214,13 +216,15 @@ const readReport = async (hours = 24, page = 1, hostPage = 1, now = Date.now()) 
 		.orderBy("id")
 		.limit(25)
 		.offset((page - 1) * 25);
+	// a series is observed within the freshness window, stale past it, and
+	// unavailable when no sample ever landed
+	const seriesStatus = (entry) => {
+		if (!entry) return "unavailable";
+		return now - entry.time > GAP || entry.time > now + 5000 ? "stale" : "observed";
+	};
 	return {
 		metrics: {
-			status: baseline
-				? now - baseline.time > GAP || baseline.time > now + 5000
-					? "stale"
-					: "observed"
-				: "unavailable",
+			status: seriesStatus(baseline),
 			observedAt: baseline ? new Date(baseline.time).toISOString() : null,
 			start: new Date(start).toISOString(),
 			end: new Date(end).toISOString(),
@@ -228,16 +232,8 @@ const readReport = async (hours = 24, page = 1, hostPage = 1, now = Date.now()) 
 			partial: Object.keys(METRICS).some((key) => (covered[key] ?? 0) < end - start),
 		},
 		ledger: {
-			status: addresses
-				? now - addresses.time > GAP || addresses.time > now + 5000
-					? "stale"
-					: "observed"
-				: "unavailable",
-			attemptsStatus: attempts
-				? now - attempts.time > GAP || attempts.time > now + 5000
-					? "stale"
-					: "observed"
-				: "unavailable",
+			status: seriesStatus(addresses),
+			attemptsStatus: seriesStatus(attempts),
 			observedAt: addresses ? new Date(addresses.time).toISOString() : null,
 			gap: Boolean(addresses?.gapAt && addresses.gapAt >= now - hours * 3600_000),
 			pending: addresses?.pending ?? false,

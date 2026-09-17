@@ -10,10 +10,13 @@ import authModel from "../models/auth.js";
 await migrateUp();
 
 test("a recovery code is accepted by only one concurrent request", async () => {
-	const hash = await bcrypt.hash("ABCDEF12", 10);
-	await authModel
-		.query()
-		.insert({ user_id: 1, type: "password", secret: "unused", meta: { backup_codes: [hash], totp_enabled: true } });
+	const recoveryHash = await bcrypt.hash("ABCDEF12", 10);
+	await authModel.query().insert({
+		user_id: 1,
+		type: "password",
+		secret: "unused",
+		meta: { backup_codes: [recoveryHash], totp_enabled: true },
+	});
 	const results = await Promise.all([mfa.verifyForLogin(1, "ABCDEF12"), mfa.verifyForLogin(1, "ABCDEF12")]);
 	assert.deepEqual(results.sort(), [false, true]);
 	assert.equal(await mfa.verifyForLogin(1, "ABCDEF12"), false);

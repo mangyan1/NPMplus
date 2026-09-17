@@ -100,7 +100,7 @@ router
 	 *
 	 * Create a new Token
 	 */
-	.post(async (req, res, next) => {
+	.post(async (req, res, _next) => {
 		if (process.env.OIDC_DISABLE_PASSWORD === "true") {
 			throw new errs.AuthError("Non OIDC login is disabled");
 		}

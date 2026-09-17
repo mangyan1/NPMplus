@@ -78,7 +78,7 @@ router
 	 *
 	 * Retrieve all certificates
 	 */
-	.get(async (req, res, next) => {
+	.get(async (req, res, _next) => {
 		const data = await validator(listSchema, {
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
 			query: typeof req.query.query === "string" ? req.query.query : null,
@@ -92,7 +92,7 @@ router
 	 *
 	 * Create a new certificate
 	 */
-	.post(async (req, res, next) => {
+	.post(async (req, res, _next) => {
 		const payload = apiValidator(getValidationSchema("/nginx/certificates", "post"), req.body);
 		req.setTimeout(900000); // 15 minutes timeout
 		const result = await internalCertificate.create(res.locals.access, payload);
@@ -111,7 +111,7 @@ router
 	 *
 	 * Get list of all supported DNS providers
 	 */
-	.get((req, res, next) => {
+	.get((_req, res, _next) => {
 		if (!res.locals.access.token.getUserId()) {
 			throw new errs.PermissionError("Login required");
 		}
@@ -139,7 +139,7 @@ router
 	 *
 	 * Test HTTP challenge for domains
 	 */
-	.post(async (req, res, next) => {
+	.post(async (req, res, _next) => {
 		const payload = apiValidator(getValidationSchema("/nginx/certificates/test-http", "post"), req.body);
 		req.setTimeout(60000); // 1 minute timeout
 
@@ -161,7 +161,7 @@ router
 	 *
 	 * Validate certificates
 	 */
-	.post(parseCertFiles, (req, res, next) => {
+	.post(parseCertFiles, (req, res, _next) => {
 		if (!req.files?.certificate) return res.status(400).send({ error: "certificate file is required" });
 
 		const result = internalCertificate.validate(res.locals.access, {
@@ -184,7 +184,7 @@ router
 	 *
 	 * Retrieve a specific certificate
 	 */
-	.get(async (req, res, next) => {
+	.get(async (req, res, _next) => {
 		const data = await validator(certificateSchema, {
 			certificate_id: req.params.certificate_id,
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
@@ -201,7 +201,7 @@ router
 	 *
 	 * Update and existing certificate
 	 */
-	.delete(async (req, res, next) => {
+	.delete(async (req, res, _next) => {
 		const result = await internalCertificate.delete(res.locals.access, {
 			id: Number.parseInt(req.params.certificate_id, 10),
 		});
@@ -222,7 +222,7 @@ router
 	 *
 	 * Upload certificates
 	 */
-	.post(parseCertFiles, async (req, res, next) => {
+	.post(parseCertFiles, async (req, res, _next) => {
 		if (!req.files?.certificate) return res.status(400).send({ error: "certificate file is required" });
 
 		const result = await internalCertificate.upload(res.locals.access, {
@@ -246,7 +246,7 @@ router
 	 *
 	 * Renew certificate
 	 */
-	.post(async (req, res, next) => {
+	.post(async (req, res, _next) => {
 		req.setTimeout(900000); // 15 minutes timeout
 		const result = await internalCertificate.renew(res.locals.access, {
 			id: Number.parseInt(req.params.certificate_id, 10),

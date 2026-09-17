@@ -10,6 +10,7 @@ import { fetchWithTimeout, readBoundedJson } from "../lib/bounded-fetch.js";
 import { debug, express as logger } from "../logger.js";
 import PACKAGE from "../package.json" with { type: "json" };
 
+// biome-ignore lint/style/useExportsLast: exports sit next to the code they describe
 export const publicError = (message, status) => Object.assign(new Error(message), { public: true, status });
 
 const LAPI_KEY_FILE = process.env.CROWDSEC_LAPI_KEY_FILE || "/data/crowdsec/lapi-ui.key";

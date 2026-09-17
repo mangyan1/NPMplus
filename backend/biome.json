@@ -96,6 +96,22 @@
 					}
 				}
 			}
+		},
+		{
+			"includes": ["test/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noDoneCallback": "off"
+					},
+					"suspicious": {
+						"useAwait": "off"
+					},
+					"performance": {
+						"useTopLevelRegex": "off"
+					}
+				}
+			}
 		}
 	]
 }

@@ -197,7 +197,7 @@ test("empty filtered batches keep their older cursor, including IPv6 offenders",
 		/cursor-invalid/,
 	);
 	await assert.rejects(
-		request("/history/alerts", { cursor: first.next_cursor + "x", search: "ip:2001:db8::1234" }),
+		request("/history/alerts", { cursor: `${first.next_cursor}x`, search: "ip:2001:db8::1234" }),
 		/cursor-invalid/,
 	);
 });
@@ -233,7 +233,7 @@ test("cursor fallback stays bounded and malformed recording times fail visibly",
 test("cursor preserves nanosecond recording order and expires after one hour", async (t) => {
 	const base = new Date(Date.now() - 60_000).toISOString().slice(0, 19);
 	const alerts = Array.from({ length: 30 }, (_, i) =>
-		alert(i + 1, { created_at: base + "." + String(99999 - i).padStart(9, "0") + "Z" }),
+		alert(i + 1, { created_at: `${base}.${String(99999 - i).padStart(9, "0")}Z` }),
 	);
 	fixture(t, { alerts });
 	const first = await request("/history/alerts", { cursor: "" });

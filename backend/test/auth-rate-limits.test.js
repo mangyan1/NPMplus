@@ -35,10 +35,10 @@ after(async () => {
 	server.closeAllConnections();
 	await new Promise((resolve) => server.close(resolve));
 });
-const request = (method, path, body, cookie) =>
+const request = (method, path, body, cookieValue) =>
 	fetch(`http://127.0.0.1:${server.address().port}/api${path}`, {
 		method,
-		headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) },
+		headers: { "Content-Type": "application/json", ...(cookieValue ? { cookie: cookieValue } : {}) },
 		body: body === undefined ? undefined : JSON.stringify(body),
 	});
 const credentials = { identity: "limits@example.com", secret: "Fixture-Password-123" };

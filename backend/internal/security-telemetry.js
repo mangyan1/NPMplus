@@ -187,15 +187,16 @@ const readTelemetry = async (hours = 24, now = Date.now()) => {
 	const selected = [...hostCounts.values()]
 		.sort((a, b) => b.counters.waf_bans - a.counters.waf_bans || a.id - b.id)
 		.slice(0, 200);
-	const hosts = selected.length
-		? await ProxyHost.query()
-				.select("id", "domain_names")
-				.whereIn(
-					"id",
-					selected.map((host) => host.id),
-				)
-				.where("is_deleted", 0)
-		: [];
+	const hosts =
+		selected.length > 0
+			? await ProxyHost.query()
+					.select("id", "domain_names")
+					.whereIn(
+						"id",
+						selected.map((host) => host.id),
+					)
+					.where("is_deleted", 0)
+			: [];
 	result.nginx.hosts = selected.map((host) => ({
 		...host,
 		domains: hosts.find((item) => item.id === host.id)?.domain_names ?? [],

@@ -9,10 +9,11 @@ const encode = (value) => {
 	return `${text}.${sign(text)}`;
 };
 // Preserve sub-millisecond CreatedAt ordering from the LAPI's RFC3339 timestamps.
+const SUB_SECOND = /\.(\d+)(?:Z|[+-]\d\d:\d\d)$/;
 const timestamp = (value) => {
 	const millis = Date.parse(value);
 	if (!Number.isFinite(millis)) throw publicError("crowdsec.invalid-response", 502);
-	const fraction = /\.(\d+)(?:Z|[+-]\d\d:\d\d)$/.exec(value)?.[1] ?? "";
+	const fraction = value.match(SUB_SECOND)?.[1] ?? "";
 	return BigInt(millis) * 1_000_000n + BigInt(fraction.slice(3, 9).padEnd(6, "0"));
 };
 const decode = (cursor, binding, now) => {
@@ -78,7 +79,10 @@ const scanAlertHistory = async ({ windowHours, filters, cursor = "", now = Date.
 	const candidates = raw
 		.map((alert) => ({ alert, time: timestamp(alert.created_at) }))
 		.filter(({ alert, time }) => time < before || (time === before && alert.id < state.id))
-		.sort((a, b) => (a.time === b.time ? b.alert.id - a.alert.id : a.time > b.time ? -1 : 1));
+		.sort((a, b) => {
+			if (a.time === b.time) return b.alert.id - a.alert.id;
+			return a.time > b.time ? -1 : 1;
+		});
 	const batch = candidates.slice(0, 25);
 	const more = candidates.length > batch.length || raw.length === limit;
 	const blocked = more && (batch.length === 0 || state.step + 1 >= 100);

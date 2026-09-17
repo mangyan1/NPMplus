@@ -51,6 +51,20 @@ const ACRONYMS = new Set([
 
 const communityBlocklistSyncRe = /^update : \+\d+\/-\d+ IPs$/;
 
+// hoisted so the hot path does not rebuild them per call
+const splitTokensRe = /[-_]+/;
+const firstCharRe = /^./;
+const vpatchPrefixRe = /^vpatch-/i;
+const appsecPrefixRe = /^appsec/i;
+const appsecStripRe = /^appsec-?/i;
+const cveProbeRe = /^http-cve-(\d{4}-\d+)$/i;
+const bruteForceSuffixRe = /^(.*)-bf$/i;
+const bruteForceWordsRe = /(^|\s)(bf|brute\s?force)(\s|$)/i;
+const injectionWordsRe = /sqli|sql|xss|traversal|rce|lfi|xxe|xpath|inject/i;
+const probingWordsRe = /probing|crawl|scan|enum|fpath|glob/i;
+const suspiciousClientWordsRe = /bad-user-agent|http-ua|user-agent/i;
+const floodingWordsRe = /flood|dos\b/i;
+
 // strip the hub author ("crowdsecurity/", "firewallservices/", ...) from a
 // scenario id; plain names and manual/sync strings pass through untouched
 const stripAuthor = (id: string) => {
@@ -63,11 +77,11 @@ const humanizeToken = (token: string) => (ACRONYMS.has(token) ? token.toUpperCas
 // generic readable form: "http-cve-2021-41773" -> "HTTP cve 2021 41773"
 const humanize = (rest: string) =>
 	rest
-		.split(/[-_]+/)
+		.split(splitTokensRe)
 		.filter(Boolean)
 		.map(humanizeToken)
 		.join(" ")
-		.replace(/^./, (char) => char.toUpperCase());
+		.replace(firstCharRe, (char) => char.toUpperCase());
 
 const present = (raw: string, label: string, category: ScenarioCategory): ScenarioPresentation => ({
 	raw,
@@ -88,24 +102,24 @@ const presentScenario = (raw: string): ScenarioPresentation => {
 	if (rest === "anubis-honeypot") return present(raw, "Anubis honeypot", "honeypot");
 
 	// vpatch-cve-2024-1234 -> "vPatch CVE-2024-1234"
-	if (/^vpatch-/i.test(rest)) return present(raw, `vPatch ${humanize(rest.slice(7))}`, "waf");
+	if (vpatchPrefixRe.test(rest)) return present(raw, `vPatch ${humanize(rest.slice(7))}`, "waf");
 	// appsec rules and engine blocks
-	if (/^appsec/i.test(rest))
-		return present(raw, `WAF rule ${humanize(rest.replace(/^appsec-?/i, ""))}`.trim(), "waf");
+	if (appsecPrefixRe.test(rest))
+		return present(raw, `WAF rule ${humanize(rest.replace(appsecStripRe, ""))}`.trim(), "waf");
 	// exploit probe scenarios name their CVE
-	const cve = /^http-cve-(\d{4}-\d+)$/i.exec(rest);
+	const cve = cveProbeRe.exec(rest);
 	if (cve) return present(raw, `Exploit probe CVE-${cve[1]}`, "injection");
 	// <service>-bf is the hub's brute force naming convention
-	const bf = /^(.*)-bf$/i.exec(rest);
+	const bf = bruteForceSuffixRe.exec(rest);
 	if (bf) return present(raw, `${humanize(bf[1])} brute force`, "brute-force");
 
 	const label = humanize(rest);
-	if (/(^|\s)(bf|brute\s?force)(\s|$)/i.test(rest)) return present(raw, label, "brute-force");
+	if (bruteForceWordsRe.test(rest)) return present(raw, label, "brute-force");
 	// injection patterns win over probing: "http-sqli-probing" is an injection
-	if (/sqli|sql|xss|traversal|rce|lfi|xxe|xpath|inject/i.test(rest)) return present(raw, label, "injection");
-	if (/probing|crawl|scan|enum|fpath|glob/i.test(rest)) return present(raw, label, "probing");
-	if (/bad-user-agent|http-ua|user-agent/i.test(rest)) return present(raw, label, "suspicious-client");
-	if (/flood|dos\b/i.test(rest)) return present(raw, label, "flooding");
+	if (injectionWordsRe.test(rest)) return present(raw, label, "injection");
+	if (probingWordsRe.test(rest)) return present(raw, label, "probing");
+	if (suspiciousClientWordsRe.test(rest)) return present(raw, label, "suspicious-client");
+	if (floodingWordsRe.test(rest)) return present(raw, label, "flooding");
 	return present(raw, label, "other");
 };
 

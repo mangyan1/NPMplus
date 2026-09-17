@@ -50,7 +50,7 @@ router
 	 *
 	 * Retrieve all proxy-hosts
 	 */
-	.get(async (req, res, next) => {
+	.get(async (req, res, _next) => {
 		const data = await validator(listSchema, {
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
 			query: typeof req.query.query === "string" ? req.query.query : null,
@@ -92,7 +92,7 @@ router
 	 *
 	 * Retrieve a specific proxy-host
 	 */
-	.get(async (req, res, next) => {
+	.get(async (req, res, _next) => {
 		const data = await validator(hostSchema, {
 			host_id: req.params.host_id,
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
@@ -109,7 +109,7 @@ router
 	 *
 	 * Update an existing proxy-host
 	 */
-	.put(async (req, res, next) => {
+	.put(async (req, res, _next) => {
 		const payload = apiValidator(getValidationSchema("/nginx/proxy-hosts/{hostID}", "put"), req.body);
 		payload.id = Number.parseInt(req.params.host_id, 10);
 		const result = await internalProxyHost.update(res.locals.access, payload);
@@ -121,7 +121,7 @@ router
 	 *
 	 * Delete a proxy-host
 	 */
-	.delete(async (req, res, next) => {
+	.delete(async (req, res, _next) => {
 		const result = await internalProxyHost.delete(res.locals.access, {
 			id: Number.parseInt(req.params.host_id, 10),
 		});
@@ -140,7 +140,7 @@ router
 	/**
 	 * POST /api/nginx/proxy-hosts/123/enable
 	 */
-	.post(async (req, res, next) => {
+	.post(async (req, res, _next) => {
 		const result = await internalProxyHost.enable(res.locals.access, {
 			id: Number.parseInt(req.params.host_id, 10),
 		});
@@ -159,7 +159,7 @@ router
 	/**
 	 * POST /api/nginx/proxy-hosts/123/disable
 	 */
-	.post(async (req, res, next) => {
+	.post(async (req, res, _next) => {
 		const result = await internalProxyHost.disable(res.locals.access, {
 			id: Number.parseInt(req.params.host_id, 10),
 		});

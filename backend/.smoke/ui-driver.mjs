@@ -137,8 +137,13 @@ let defaultSite = { id: "default-site", value: "congratulations", meta: { html: 
 let accountFailure = false;
 let sessionRejected = false;
 let rejectedRefreshes = 0;
-let rejectedProfiles = 0;
+let _rejectedProfiles = 0;
 let failures = 0;
+// the fixture's last three hours carry the sample counts the driver checks
+const activityCount = (index) => {
+	if (index === 23) return 4;
+	return index >= 21 ? 3 : 0;
+};
 let appsecConfigured = true;
 let metricsMissing = false;
 let metricsFailure = false;
@@ -222,7 +227,7 @@ const api = async (route) => {
 		return respond({ expires: iso(86400 * 1000) });
 	}
 	if (apiPath === "/users/me" && (accountFailure || sessionRejected)) {
-		if (sessionRejected) rejectedProfiles++;
+		if (sessionRejected) _rejectedProfiles++;
 		return route.fulfill({
 			status: sessionRejected ? 401 : 503,
 			contentType: "text/html",
@@ -289,7 +294,7 @@ const api = async (route) => {
 			sampled: false,
 			activity: Array.from({ length: 24 }, (_, index) => ({
 				start: iso((index - 23) * 3600 * 1000),
-				count: index === 23 ? 4 : index >= 21 ? 3 : 0,
+				count: activityCount(index),
 			})),
 			locations: [
 				{ latitude: 51.16, longitude: 10.45, country: "DE", count: 5 },

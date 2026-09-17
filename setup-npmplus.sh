@@ -2891,6 +2891,29 @@ if [[ -f /var/lib/npmplus/installed-firewall-bouncer && -s "$FWCONF" ]]; then
 		fi
 	fi
 fi
+
+# 5: fail-open posture migration - confs seeded before 2026-09-16 default to
+# MODE=live and AppSec passthrough, both of which silently drop enforcement
+# while the LAPI or the appsec component is down. Stream mode caches bans
+# locally and deny fails AppSec closed, so migrate both. An operator who wants
+# the old behavior opts out once: touch $DATA_DIR/crowdsec/keep-fail-open
+CONF="$DATA_DIR/crowdsec/crowdsec.conf"
+if [[ -s "$CONF" && ! -e "$DATA_DIR/crowdsec/keep-fail-open" ]]; then
+	migrated=""
+	if grep -q '^MODE=live$' "$CONF"; then
+		sed -i 's|^MODE=.*|MODE=stream|' "$CONF"
+		migrated="mode=live->stream"
+	fi
+	# only tighten the failure action when AppSec is actually wired
+	if grep -q '^APPSEC_URL=http' "$CONF" && grep -q '^APPSEC_FAILURE_ACTION=passthrough$' "$CONF"; then
+		sed -i 's|^APPSEC_FAILURE_ACTION=.*|APPSEC_FAILURE_ACTION=deny|' "$CONF"
+		migrated="$migrated${migrated:+ }appsec=passthrough->deny"
+	fi
+	if [[ -n "$migrated" ]]; then
+		docker compose -f "$DATA_DIR/compose.yaml" restart npmplus >/dev/null 2>&1
+		log "migrated fail-open posture: $migrated (npmplus restarted)"
+	fi
+fi
 EOF
 printf '42 2 * * * root /usr/local/bin/npmplus-crowdsec-heal\n' >/etc/cron.d/npmplus-crowdsec-heal
 chmod 644 /etc/cron.d/npmplus-crowdsec-heal

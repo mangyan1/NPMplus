@@ -266,7 +266,7 @@ const AttackHistory = ({
 					<div className="d-flex align-items-center justify-content-between pt-3 border-top">
 						<span className="text-secondary">
 							<T id="crowdsec.history.page" data={{ page: activePage }} />
-							{" · "}
+							·
 							<T
 								id={
 									scan

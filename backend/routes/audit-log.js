@@ -2,7 +2,6 @@ import express from "express";
 import internalAuditLog from "../internal/audit-log.js";
 import jwtdecode from "../lib/express/jwt-decode.js";
 import validator from "../lib/validator/index.js";
-import { debug, express as logger } from "../logger.js";
 
 const listSchema = {
 	additionalProperties: false,
@@ -47,7 +46,7 @@ router
 	 *
 	 * Retrieve all logs
 	 */
-	.get(async (req, res, next) => {
+	.get(async (req, res, _next) => {
 		const data = await validator(listSchema, {
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
 			query: typeof req.query.query === "string" ? req.query.query : null,
@@ -70,7 +69,7 @@ router
 	 *
 	 * Retrieve a specific entry
 	 */
-	.get(async (req, res, next) => {
+	.get(async (req, res, _next) => {
 		const data = await validator(eventSchema, {
 			event_id: req.params.event_id,
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,

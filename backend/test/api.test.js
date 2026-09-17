@@ -601,7 +601,7 @@ test("a failed gravatar download falls back to the default avatar", async (t) =>
 	assert.equal(res.body.avatar, "/images/default-avatar.jpg");
 });
 
-test("a custom local avatar survives a user update", async (t) => {
+test("a custom local avatar survives a user update", async (_t) => {
 	const user = await insertUser({ email: "local-avatar@example.com", password: "Local-Avatar-1", roles: ["user"] });
 	await userModel.query().patchAndFetchById(user.id, { avatar: "/images/avatar/local.jpg" });
 	const res = await api("PUT", `/api/users/${user.id}`, {

@@ -71,7 +71,7 @@ test("command attempts deduplicate by identity, validate inputs, and paginate", 
 		(_, i) =>
 			`${start + i} ${i ? "accepted" : "failed"} 2001:db8::1 00000000-0000-4000-8000-${String(i).padStart(12, "0")}\n`,
 	).join("");
-	await recordAttempts(journal + `${start} failed <script> bad\n`, start + 60_000);
+	await recordAttempts(`${journal}${start} failed <script> bad\n`, start + 60_000);
 	await recordAttempts(journal, start + 60_000);
 	const result = await readReport(1, 2, 1, start + 60_000);
 	assert.equal(result.ledger.total, 30);

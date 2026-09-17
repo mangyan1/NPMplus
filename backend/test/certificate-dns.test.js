@@ -103,6 +103,7 @@ test("dns challenge request invokes certbot with the plugin authenticator and cr
 	assert.equal(readFileSync(credentialsPath, "utf8"), "dns_cloudflare_api_token=SECRET-TOKEN");
 	if (process.platform !== "win32") {
 		// windows fakes posix modes; the mode check is only honest on posix
+		// biome-ignore lint/suspicious/noBitwiseOperators: masking the posix permission bits needs &
 		assert.equal(statSync(credentialsPath).mode & 0o777, 0o600, "credentials file must not be world-readable");
 	}
 });

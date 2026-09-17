@@ -393,6 +393,7 @@ test("preserves bounded AppSec rule evidence without query credentials or payloa
 					meta: [
 						{ key: "rule_name", value: "crowdsecurity/vpatch-env-access" },
 						{ key: "uri", value: "/.env?token=secret#private" },
+						// biome-ignore lint/security/noSecrets: fake fixture metadata values
 						{ key: "target_uri", value: "/login?password=secret" },
 						{ key: "http_user_agent", value: "sqlmap/1.8" },
 						{ key: "data", value: "payload-secret" },

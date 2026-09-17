@@ -64,8 +64,11 @@ router
 				)
 				.map((item) => canonicalIp(item.value)),
 		);
-		for (const item of report.ledger.items)
-			item.activeBan = active.has(item.ip) ? true : decisions && decisions.length <= 500 ? false : null;
+		for (const item of report.ledger.items) {
+			if (active.has(item.ip)) item.activeBan = true;
+			else if (decisions && decisions.length <= 500) item.activeBan = false;
+			else item.activeBan = null;
+		}
 		return res.status(200).send(report);
 	});
 
@@ -196,7 +199,7 @@ router
 	.route("/anubis")
 	.options((_, res) => res.sendStatus(204))
 	.all(jwtdecode())
-	.get(async (req, res) => {
+	.get(async (_req, res) => {
 		if (!(await requireAdmin(res))) {
 			res.status(403).send({ error: { message: "access.denied" } });
 			return;
@@ -252,29 +255,30 @@ router
 		//    down, so follow no redirects and never throw on them.
 		if (ANUBIS_UPSTREAM) {
 			probes.push(
-				fetchCrowdsec(
-					ANUBIS_UPSTREAM,
-					{
-						method: "GET",
-						redirect: "manual",
-						// This is an internal reachability probe, not a visitor request.
-						// Anubis requires a client address before evaluating its policy.
-						headers: { "X-Real-Ip": "127.0.0.1" },
-					},
-					ANUBIS_TIMEOUT_MS,
-				)
-					.then(async (upstreamResponse) => {
+				(async () => {
+					try {
+						const upstreamResponse = await fetchCrowdsec(
+							ANUBIS_UPSTREAM,
+							{
+								method: "GET",
+								redirect: "manual",
+								// This is an internal reachability probe, not a visitor request.
+								// Anubis requires a client address before evaluating its policy.
+								headers: { "X-Real-Ip": "127.0.0.1" },
+							},
+							ANUBIS_TIMEOUT_MS,
+						);
 						response.container.up = true;
 						response.container.httpStatus = upstreamResponse.status;
 						// HTTP headers prove reachability; a large/broken body must not
 						// turn a responding service into a false network outage.
-						await upstreamResponse.body?.cancel().catch(() => {});
-					})
-					.catch((err) => {
+						upstreamResponse.body?.cancel().catch(() => {});
+					} catch (err) {
 						debug(logger, `Anubis upstream probe failed: ${err.message}`);
 						response.container.up = false;
 						response.container.error = "crowdsec.anubis-unreachable";
-					}),
+					}
+				})(),
 			);
 		}
 

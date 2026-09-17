@@ -242,7 +242,8 @@ appsec_url=$(sed -n 's/^APPSEC_URL=//p' "$BOUNCER_CONF" 2>/dev/null | head -1)
 appsec_action=$(sed -n 's/^APPSEC_FAILURE_ACTION=//p' "$BOUNCER_CONF" 2>/dev/null | head -1)
 if [[ -z "$mode" || "$mode" == "live" ]]; then
 	bad "MODE=${mode:-unset} fails open: bans stop being enforced while the LAPI is down"
-	note "set MODE=stream in $BOUNCER_CONF, then restart the npmplus container"
+	note "the daily heal migrates this to MODE=stream automatically;"
+	note "set it yourself, or touch $DATA_DIR/crowdsec/keep-fail-open to keep live mode"
 	fail=1
 else
 	ok "MODE=$mode keeps bans enforced through LAPI outages"
@@ -251,7 +252,8 @@ if [[ -z "$appsec_url" ]]; then
 	note "AppSec is not configured"
 elif [[ "$appsec_action" == "passthrough" ]]; then
 	bad "AppSec failures pass requests through while the appsec component is down"
-	note "set APPSEC_FAILURE_ACTION=deny in $BOUNCER_CONF, then restart the npmplus container"
+	note "the daily heal migrates this to APPSEC_FAILURE_ACTION=deny automatically;"
+	note "set it yourself, or touch $DATA_DIR/crowdsec/keep-fail-open to keep passthrough"
 	fail=1
 else
 	ok "AppSec fails closed (action=$appsec_action)"

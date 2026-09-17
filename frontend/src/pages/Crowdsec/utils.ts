@@ -22,9 +22,10 @@ export const attackMixSegments = (items: { name: string; count: number }[], tota
 	if (total <= 0) return [];
 	const categories = new Map<string, number>();
 	for (const item of items) {
-		if (!item.name || item.count <= 0) continue;
-		const category = scenarioCategory(item.name);
-		categories.set(category, (categories.get(category) ?? 0) + item.count);
+		if (item.name && item.count > 0) {
+			const category = scenarioCategory(item.name);
+			categories.set(category, (categories.get(category) ?? 0) + item.count);
+		}
 	}
 	const segments: AttackMixSegment[] = [...categories.entries()]
 		.filter(([name]) => name !== "")

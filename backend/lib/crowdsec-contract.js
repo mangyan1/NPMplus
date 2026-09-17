@@ -182,8 +182,8 @@ const normalizeCrowdsecAlerts = (payload) => {
 const crowdsecAlertTarget = (alert) => {
 	for (const key of ["target_host", "target_fqdn", "target_uri", "uri"]) {
 		for (const event of alert.events ?? []) {
-			const item = event.meta?.find((item) => item.key === key && item.value);
-			if (item) return item.value;
+			const match = event.meta?.find((meta) => meta.key === key && meta.value);
+			if (match) return match.value;
 		}
 	}
 	return "";
@@ -289,9 +289,10 @@ const summarizeCrowdsecMetrics = (samples) => {
 			.reduce((total, [, value]) => total + value, 0);
 
 	return {
-		active_decisions: activeDecisionSamples.length
-			? activeDecisionSamples.reduce((total, sample) => total + sample.value, 0)
-			: null,
+		active_decisions:
+			activeDecisionSamples.length > 0
+				? activeDecisionSamples.reduce((total, sample) => total + sample.value, 0)
+				: null,
 		local_active_decisions: hasDecisionOriginLabels ? countOrigins(LOCAL_DECISION_ORIGINS) : null,
 		community_active_decisions: hasDecisionOriginLabels ? countOrigins(COMMUNITY_DECISION_ORIGINS) : null,
 		decision_origins: [...decisionOriginCounts.entries()]
