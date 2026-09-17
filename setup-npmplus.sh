@@ -2909,6 +2909,15 @@ if [[ -s "$CONF" && ! -e "$DATA_DIR/crowdsec/keep-fail-open" ]]; then
 		sed -i 's|^APPSEC_FAILURE_ACTION=.*|APPSEC_FAILURE_ACTION=deny|' "$CONF"
 		migrated="$migrated${migrated:+ }appsec=passthrough->deny"
 	fi
+	# deny is inert without FALLBACK_REMEDIATION: the lua bouncer maps an AppSec
+	# failure to that value, and a missing key lets every remediation branch in
+	# Allow() fall through to "allow" - a silently fail-open outage posture.
+	# Present values are left alone: captcha is a deliberate choice, and the lua
+	# bouncer coerces anything invalid to ban anyway.
+	if grep -q '^APPSEC_URL=http' "$CONF" && ! grep -q '^FALLBACK_REMEDIATION=' "$CONF"; then
+		printf '\nFALLBACK_REMEDIATION=ban\n' >>"$CONF"
+		migrated="$migrated${migrated:+ }fallback-remediation=seeded"
+	fi
 	if [[ -n "$migrated" ]]; then
 		docker compose -f "$DATA_DIR/compose.yaml" restart npmplus >/dev/null 2>&1
 		log "migrated fail-open posture: $migrated (npmplus restarted)"

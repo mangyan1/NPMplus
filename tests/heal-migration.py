@@ -43,10 +43,11 @@ class HealMigrationTests(unittest.TestCase):
 		(self.data / "lapi-ui.key").write_bytes(b"fixture-ui-key\n")
 		(self.data / "lapi-ui-machine.key").write_bytes(b"fixture-machine-key\n")
 
-	def write_conf(self, *, appsec_url="http://172.21.0.2:7422", action="passthrough", mode="live"):
-		self.data.joinpath("crowdsec.conf").write_bytes(
-			CONF_LIVE.format(appsec_url=appsec_url, action=action).replace("MODE=live", f"MODE={mode}").encode()
-		)
+	def write_conf(self, *, appsec_url="http://172.21.0.2:7422", action="passthrough", mode="live", fallback=None):
+		conf = CONF_LIVE.format(appsec_url=appsec_url, action=action).replace("MODE=live", f"MODE={mode}")
+		if fallback is not None:
+			conf += f"FALLBACK_REMEDIATION={fallback}\n"
+		self.data.joinpath("crowdsec.conf").write_bytes(conf.encode())
 
 	def heal(self, **env):
 		# Rewrite only absolute host paths; the fixtures keep their opt/... shape.
@@ -95,7 +96,10 @@ docker() {
 		self.assertIn("MODE=stream", self.conf())
 		self.assertIn("APPSEC_FAILURE_ACTION=deny", self.conf())
 		self.assertIn("restart npmplus", self.calls())
-		self.assertIn("migrated fail-open posture: mode=live->stream appsec=passthrough->deny", self.heal_log())
+		self.assertIn(
+			"migrated fail-open posture: mode=live->stream appsec=passthrough->deny fallback-remediation=seeded",
+			self.heal_log(),
+		)
 
 	def test_keep_fail_open_marker_disables_the_migration(self):
 		self.write_conf()
@@ -117,11 +121,28 @@ docker() {
 		self.assertNotIn("appsec=passthrough->deny", self.heal_log())
 
 	def test_an_already_fail_closed_conf_is_untouched(self):
-		self.write_conf(action="deny", mode="stream")
+		self.write_conf(action="deny", mode="stream", fallback="ban")
 		result = self.heal()
 		self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 		self.assertNotIn("restart npmplus", self.calls())
 		self.assertNotIn("migrated", self.heal_log())
+
+	def test_deny_without_a_fallback_remediation_gets_it_seeded(self):
+		# the lua bouncer ignores APPSEC_FAILURE_ACTION=deny when FALLBACK_REMEDIATION
+		# is absent: AppSec outages then fail open with no error anywhere
+		self.write_conf(action="deny", mode="stream")
+		result = self.heal()
+		self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+		self.assertIn("FALLBACK_REMEDIATION=ban", self.conf())
+		self.assertIn("restart npmplus", self.calls())
+		self.assertIn("migrated fail-open posture: fallback-remediation=seeded", self.heal_log())
+
+	def test_a_deliberate_captcha_fallback_is_left_alone(self):
+		self.write_conf(action="deny", mode="stream", fallback="captcha")
+		result = self.heal()
+		self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+		self.assertIn("FALLBACK_REMEDIATION=captcha", self.conf())
+		self.assertNotIn("restart npmplus", self.calls())
 
 	def heal_log(self):
 		path = self.root / "var/log/npmplus-crowdsec-heal.log"

@@ -258,6 +258,22 @@ elif [[ "$appsec_action" == "passthrough" ]]; then
 else
 	ok "AppSec fails closed (action=$appsec_action)"
 fi
+fallback_rem=$(sed -n 's/^FALLBACK_REMEDIATION=//p' "$BOUNCER_CONF" 2>/dev/null | head -1)
+if [[ -n "$appsec_url" && "$appsec_action" == "deny" ]]; then
+	if [[ "$fallback_rem" == "ban" ]]; then
+		ok "AppSec deny has a fallback remediation (ban)"
+	elif [[ -z "$fallback_rem" ]]; then
+		bad "APPSEC_FAILURE_ACTION=deny is inert: FALLBACK_REMEDIATION is unset"
+		note "without it every AppSec outage fails open despite the deny action;"
+		note "the daily heal seeds FALLBACK_REMEDIATION=ban automatically, or set it yourself"
+		fail=1
+	elif [[ "$fallback_rem" == "captcha" ]]; then
+		note "FALLBACK_REMEDIATION=captcha only fails closed when a captcha provider is configured"
+	else
+		bad "FALLBACK_REMEDIATION=$fallback_rem is not a valid fallback (ban or captcha)"
+		fail=1
+	fi
+fi
 
 hdr "9. recent crowdsec auth errors (2h)"
 auth_errors=$(docker logs crowdsec --since 2h 2>&1 | grep -iE "api key|bouncer|403" | tail -8)
