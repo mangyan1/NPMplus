@@ -595,7 +595,7 @@ test("stored nginx-syntax payloads are neutralized when configs regenerate", asy
 
 	const conf = readFileSync(`/data/nginx/proxy_host/${created.body.id}.conf`, { encoding: "utf8" });
 	// positive control: the regenerated config is for this host
-	assert.ok(conf.includes("stored-payload.example.com"), "host config did not regenerate");
+	assert.ok(conf.includes("server_name stored-payload.example.com;"), "host config did not regenerate");
 	assert.ok(!conf.includes("pwn-stored"), "stored access-list address rendered into the config");
 	assert.ok(!conf.includes("upstream z"), "stored auth-request upstream rendered into the config");
 });
