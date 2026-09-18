@@ -6,6 +6,7 @@ import { Button } from "src/components";
 import { useCreateCrowdsecBan } from "src/hooks";
 import { intl, T } from "src/locale";
 import EasyModal, { type InnerModalProps } from "src/modules/easyModal";
+import { showError } from "src/notifications";
 
 interface ShowProps {
 	onCreated?: () => void;
@@ -36,7 +37,11 @@ const ManualBanModal = EasyModal.create(({ visible, remove, onCreated, initialTa
 		setError(null);
 		setInvalidFields([]);
 		try {
-			await createBan.mutateAsync({ value: value.trim(), duration, type, reason: reason.trim() });
+			const result = await createBan.mutateAsync({ value: value.trim(), duration, type, reason: reason.trim() });
+			// the ban itself succeeded, but a missing audit record is an
+			// accountability gap the operator has to know about - the unban path
+			// already warns about it
+			if (!result.auditLogged) showError(intl.formatMessage({ id: "crowdsec.audit-warning" }));
 			onCreated?.();
 			remove();
 		} catch (err: any) {

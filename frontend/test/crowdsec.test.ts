@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { CrowdsecDecision, CrowdsecMetrics } from "../src/api/backend/getCrowdsecDecisions.ts";
 import { midTruncate, presentScenarioId, scenarioCategory, scenarioLabel } from "../src/pages/Crowdsec/scenarios.ts";
-import { appsecStatus, appsecTrafficAvailable, boundedCount } from "../src/pages/Crowdsec/shared.ts";
+import { appsecStatus, appsecTrafficAvailable, boundedCount, notificationPlan } from "../src/pages/Crowdsec/shared.ts";
 import { attackMixSegments, decisionTarget } from "../src/pages/Crowdsec/utils.ts";
 
 const decision = (id: number, value: string, scenario = "http-probing"): CrowdsecDecision => ({
@@ -111,4 +111,48 @@ test("WAF status distinguishes missing, stale, disabled and exposed metrics", ()
 	assert.equal(appsecStatus({ ...metrics, available: false }).label, "crowdsec.appsec.status-monitoring-unavailable");
 	assert.equal(appsecStatus({ ...metrics, appsecConfigured: false }).label, "crowdsec.appsec.status-disabled");
 	assert.equal(appsecStatus(metrics).label, "crowdsec.appsec.status-active");
+});
+
+test("an ongoing ban signal is announced once, however much its count moves", () => {
+	// the dedupe marker is per type; keying it on the count (bans-3, bans-4)
+	// re-notified the operator on every poll that saw a different number
+	const seen = new Set<string>();
+	const first = notificationPlan([{ type: "active-bans", count: 3 }], false, (type) => seen.has(type));
+	assert.deepEqual(first, { announce: "active-bans", forget: [] });
+	seen.add(first.announce as string);
+	assert.equal(notificationPlan([{ type: "active-bans", count: 4 }], false, (type) => seen.has(type)).announce, null);
+	assert.equal(
+		notificationPlan([{ type: "active-bans", count: 99 }], false, (type) => seen.has(type)).announce,
+		null,
+	);
+});
+
+test("a signal that clears is forgotten, so a recurrence notifies again", () => {
+	const seenType = notificationPlan([], false, (type) => type === "active-bans");
+	assert.deepEqual(seenType, { announce: null, forget: ["active-bans"] });
+	// after the marker is dropped the same condition announces again
+	assert.equal(notificationPlan([{ type: "active-bans" }], false, () => false).announce, "active-bans");
+});
+
+test("an outage announces itself and leaves the other markers untouched", () => {
+	// the insight signals are unknown during an outage, so forgetting them would
+	// re-notify a ban wave the operator was already told about
+	assert.deepEqual(
+		notificationPlan(undefined, true, () => false),
+		{ announce: "lapi", forget: [] },
+	);
+	assert.deepEqual(
+		notificationPlan(undefined, true, (type) => type === "lapi"),
+		{ announce: null, forget: [] },
+	);
+	// recovery forgets the outage marker so the next one is announced
+	assert.deepEqual(
+		notificationPlan([], false, (type) => type === "lapi"),
+		{ announce: null, forget: ["lapi"] },
+	);
+});
+
+test("a spike outranks an ongoing ban count", () => {
+	const both = notificationPlan([{ type: "active-bans" }, { type: "attack-spike" }], false, () => false);
+	assert.equal(both.announce, "attack-spike");
 });

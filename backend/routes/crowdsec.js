@@ -51,7 +51,7 @@ router
 				`/v1/decisions?scenarios_containing=${HONEYPOT_SCENARIO}&origins=${LOCAL_DECISION_ORIGINS.join(",")}&limit=501`,
 			).catch(() => null),
 		]);
-		const decisions = payload ? normalizeCrowdsecDecisions(payload) : null;
+		const decisions = payload ? readContract(normalizeCrowdsecDecisions, payload, "decisions") : null;
 		const active = new Set(
 			decisions
 				?.slice(0, 500)
@@ -139,6 +139,19 @@ const queryString = (value, maxLength = 256) =>
 const queryInteger = (value, fallback, minimum, maximum) => {
 	const parsed = typeof value === "string" ? Number.parseInt(value, 10) : Number.NaN;
 	return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : fallback;
+};
+
+// The normalizers throw on a LAPI contract mismatch. Answer one stable 502 from
+// every reader: Express 5 would otherwise forward the raw throw as a 500
+// "Internal Error", which the UI reports as a backend crash rather than an
+// upstream contract problem.
+const readContract = (normalize, payload, label) => {
+	try {
+		return normalize(payload);
+	} catch (err) {
+		debug(logger, `CrowdSec ${label} contract mismatch: ${err}`);
+		throw publicError("crowdsec.invalid-response", 502);
+	}
 };
 
 const topCounts = (counts, limit = INSIGHTS_TOP_N) =>
@@ -330,13 +343,7 @@ router
 		if (origin === "local") decisionQuery.set("origins", LOCAL_DECISION_ORIGINS.join(","));
 		if (origin === "community") decisionQuery.set("origins", COMMUNITY_DECISION_ORIGINS.join(","));
 		const payload = await lapiFetch(`/v1/decisions?${decisionQuery}`);
-		let decisions;
-		try {
-			decisions = normalizeCrowdsecDecisions(payload);
-		} catch (err) {
-			debug(logger, `CrowdSec decisions contract mismatch: ${err}`);
-			throw publicError("crowdsec.invalid-response", 502);
-		}
+		const decisions = readContract(normalizeCrowdsecDecisions, payload, "decisions");
 		if (!paginated) {
 			res.status(200).send({
 				items: decisions.slice(0, LAPI_DECISION_LIMIT),
@@ -461,14 +468,7 @@ router
 			with_decisions: "false",
 		});
 		const payload = await lapiMachineFetch(`/v1/alerts?${query}`);
-		let alerts;
-		try {
-			alerts = normalizeCrowdsecAlerts(payload);
-		} catch (err) {
-			debug(logger, `CrowdSec alerts contract mismatch: ${err}`);
-			throw publicError("crowdsec.invalid-response", 502);
-		}
-		res.status(200).send(alerts);
+		res.status(200).send(readContract(normalizeCrowdsecAlerts, payload, "alerts"));
 	});
 
 // Paginated alert history. CrowdSec's LAPI exposes a bounded newest-first
@@ -511,24 +511,17 @@ router
 		// one bounded sample so a short page cannot hide later attack records.
 		const fetchLimit = HISTORY_MAX_ITEMS + 1;
 		const sample = await readAlertsSample(windowHours, fetchLimit);
-		let alerts;
-		let normalizedCount;
-		try {
-			const normalized = normalizeCrowdsecAlerts(sample.items);
-			normalizedCount = normalized.length;
-			alerts = normalized
-				.slice(0, HISTORY_MAX_ITEMS)
-				// the activity feed is an attack feed: blocklist syncs are noise here too
-				.filter(isAttackAlert)
-				.filter((alert) => {
-					const timestamp = Date.parse(alertTime(alert));
-					return timestamp >= Date.now() - windowHours * 3600_000 && timestamp <= Date.now();
-				})
-				.sort((a, b) => Date.parse(alertTime(b)) - Date.parse(alertTime(a)) || b.id - a.id);
-		} catch (err) {
-			debug(logger, `CrowdSec history contract mismatch: ${err}`);
-			throw publicError("crowdsec.invalid-response", 502);
-		}
+		const normalized = readContract(normalizeCrowdsecAlerts, sample.items, "history");
+		const normalizedCount = normalized.length;
+		const alerts = normalized
+			.slice(0, HISTORY_MAX_ITEMS)
+			// the activity feed is an attack feed: blocklist syncs are noise here too
+			.filter(isAttackAlert)
+			.filter((alert) => {
+				const timestamp = Date.parse(alertTime(alert));
+				return timestamp >= Date.now() - windowHours * 3600_000 && timestamp <= Date.now();
+			})
+			.sort((a, b) => Date.parse(alertTime(b)) - Date.parse(alertTime(a)) || b.id - a.id);
 		const filtered = filterCrowdsecAlerts(alerts, filters);
 		const start = (page - 1) * pageSize;
 		res.status(200).send({
@@ -666,7 +659,7 @@ router
 		// it needs to know where the instance is; null just means the map
 		// degrades to marking the origins only
 		const home = await getHomeLocation();
-		const normalizedAlerts = normalizeCrowdsecAlerts(sample.items);
+		const normalizedAlerts = readContract(normalizeCrowdsecAlerts, sample.items, "insights");
 		// blocklist syncs are bookkeeping, not attacks: they never appear in
 		// attack stats, but truncation still reflects the raw sample size
 		const now = Date.now();
@@ -677,11 +670,14 @@ router
 				const timestamp = Date.parse(alertTime(alert));
 				return timestamp >= now - windowHours * 3600_000 && timestamp <= now;
 			});
-		const countries = {};
-		const asns = {};
-		const ips = {};
-		const scenarios = {};
-		const targets = {};
+		// attacker-influenced values (a Host header, a request URI) are used as
+		// keys here, so the maps must not inherit Object.prototype: "constructor"
+		// would otherwise seed a bogus row with a string count
+		const countries = Object.create(null);
+		const asns = Object.create(null);
+		const ips = Object.create(null);
+		const scenarios = Object.create(null);
+		const targets = Object.create(null);
 		const locationCounts = new Map();
 		for (const alert of alerts) {
 			if (alert.scenario) scenarios[alert.scenario] = (scenarios[alert.scenario] ?? 0) + 1;
@@ -706,7 +702,8 @@ router
 			}
 		}
 		const activity = activityBuckets(alerts, windowHours, now);
-		const decisions = decisionPayload === null ? null : normalizeCrowdsecDecisions(decisionPayload);
+		const decisions =
+			decisionPayload === null ? null : readContract(normalizeCrowdsecDecisions, decisionPayload, "insights");
 		// honeypot bans arrive as origin "cscli" but get their own dashboard card;
 		// keep them out of the local active-bans figure so the two never double-count
 		const localDecisions =
@@ -720,12 +717,15 @@ router
 		// a full sample means the buckets only cover the newest tail of the window,
 		// so the spike baseline is structurally deflated - never call that a spike
 		const sampled = normalizedAlerts.length > INSIGHTS_ALERT_LIMIT || sample.fallback;
+		// Signal ids are stable per type, not per observation: the UI dedupes
+		// notifications on them, so a count or bucket that changes between polls
+		// must not re-announce an ongoing condition as if it were new.
 		const signals = [];
 		if (!sampled && attackSpike(activity))
-			signals.push({ id: `spike-${activity.at(-1).start}`, severity: "warning", type: "attack-spike" });
+			signals.push({ id: "attack-spike", severity: "warning", type: "attack-spike" });
 		if (activeDecisions > 0 && !decisionsTruncated)
 			signals.push({
-				id: `bans-${activeDecisions}`,
+				id: "active-bans",
 				severity: "info",
 				type: "active-bans",
 				count: activeDecisions,
@@ -803,7 +803,7 @@ router
 	.all(jwtdecode())
 	.get(async (req, res) => {
 		if (!(await requireAdmin(res))) {
-			res.status(403).send({ error: { message: "access-denied" } });
+			res.status(403).send({ error: { message: "access.denied" } });
 			return;
 		}
 		const requested = queryInteger(req.query.window_hours, 24, 1, 168);

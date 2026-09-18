@@ -20,7 +20,7 @@ import { OverviewSkeleton, TableSkeleton } from "./LoadingSkeleton";
 import Metric from "./Metric";
 import SystemMetrics from "./SystemMetrics";
 import type { DashboardTab, KpiKind } from "./shared";
-import { anubisServiceStatus, appsecStatus, boundedCount, honeypotStatus } from "./shared";
+import { anubisServiceStatus, appsecStatus, boundedCount, honeypotStatus, notificationPlan } from "./shared";
 import WafMonitoring from "./WafMonitoring";
 
 const AttackMap = lazy(() => import("./AttackMap"));
@@ -77,22 +77,23 @@ const CrowdsecDashboard = () => {
 	useEffect(() => {
 		if (!notificationsEnabled || typeof Notification === "undefined" || Notification.permission !== "granted")
 			return;
-		if (!insights.isError) localStorage.removeItem(`${LAST_SIGNAL_KEY}.lapi`);
-		const signal = insights.isError
-			? undefined
-			: (insights.data?.signals.find((item) => item.type === "attack-spike") ??
-				insights.data?.signals.find((item) => item.type === "active-bans"));
-		const signalId = signal?.id ?? (insights.isError ? "lapi-unavailable" : "");
-		const signalType = insights.isError ? "lapi" : (signal?.type ?? "unknown");
-		if (!signalId || localStorage.getItem(`${LAST_SIGNAL_KEY}.${signalType}`) === signalId) return;
-		const body = insights.isError
-			? intl.formatMessage({ id: "crowdsec.notification.unavailable" })
-			: signal?.type === "attack-spike"
-				? intl.formatMessage({ id: "crowdsec.notification.spike" })
-				: intl.formatMessage({ id: "crowdsec.notification.bans" }, { count: signal?.count ?? 0 });
-		const notice = new Notification(intl.formatMessage({ id: "crowdsec.title" }), { body, tag: signalId });
+		const { announce, forget } = notificationPlan(
+			insights.data?.signals,
+			insights.isError,
+			(type) => localStorage.getItem(`${LAST_SIGNAL_KEY}.${type}`) !== null,
+		);
+		for (const type of forget) localStorage.removeItem(`${LAST_SIGNAL_KEY}.${type}`);
+		if (!announce) return;
+		const count = insights.data?.signals.find((item) => item.type === announce)?.count ?? 0;
+		const body =
+			announce === "lapi"
+				? intl.formatMessage({ id: "crowdsec.notification.unavailable" })
+				: announce === "attack-spike"
+					? intl.formatMessage({ id: "crowdsec.notification.spike" })
+					: intl.formatMessage({ id: "crowdsec.notification.bans" }, { count });
+		const notice = new Notification(intl.formatMessage({ id: "crowdsec.title" }), { body, tag: announce });
 		notice.onclick = () => notice.close();
-		localStorage.setItem(`${LAST_SIGNAL_KEY}.${signalType}`, signalId);
+		localStorage.setItem(`${LAST_SIGNAL_KEY}.${announce}`, "true");
 	}, [notificationsEnabled, insights.data?.signals, insights.isError]);
 
 	const toggleNotifications = async () => {
@@ -252,10 +253,12 @@ const CrowdsecDashboard = () => {
 										<T id={notificationLabel} />
 									</span>
 								</Button>
+								{/* the polls refetch every 10-60s; a background refetch must not
+								    disable the refresh button or swallow the click */}
 								<Button
 									actionType="secondary"
 									variant="outline"
-									isLoading={insights.isFetching || metrics.isFetching || anubis.isFetching}
+									isLoading={insights.isLoading || metrics.isLoading || anubis.isLoading}
 									aria-label={intl.formatMessage({ id: "crowdsec.refresh" })}
 									onClick={refresh}
 								>
@@ -448,9 +451,12 @@ const CrowdsecDashboard = () => {
 										<div className="text-secondary small mb-2">
 											<T id="crowdsec.insights.asns" />
 										</div>
+										{/* the chips are labelled `AS64500` / `DIGITALOCEAN-ASN`, but the
+										    free-text search matches as_name and as_number separately, so
+										    the chip must go through the documented asn: field token */}
 										<QuickFilters
 											items={insights.data.topAsns}
-											onSelect={(value) => quickFilter(setSearch, value)}
+											onSelect={(value) => quickFilter(setSearch, `asn:${value}`)}
 										/>
 									</div>
 									<div className="col-lg">

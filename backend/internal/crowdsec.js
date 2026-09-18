@@ -135,7 +135,10 @@ export const readHoneypotBridge = async () => {
 			invalid: value.invalid,
 			pendingBytes: value.pending_bytes,
 		};
-	} catch {
+	} catch (err) {
+		// do not degrade silently: an unreadable bridge file only ever showed up
+		// as a permanent "unavailable" badge with nothing in the logs
+		debug(logger, `Anubis honeypot bridge is unreadable: ${err}`);
 		return { status: "unavailable", checkedAt: null };
 	}
 };
@@ -149,7 +152,11 @@ export const lapiFetch = async (path) => {
 	}
 	if (!key) throw publicError("crowdsec.not-wired", 503);
 
-	const response = await fetchCrowdsec(`${LAPI_URL}${path}`, { headers: { "X-Api-Key": key } });
+	// the LAPI rewrites the registered bouncer's type/version from this header,
+	// so a bouncer-key read must identify itself exactly like a machine one
+	const response = await fetchCrowdsec(`${LAPI_URL}${path}`, {
+		headers: { "X-Api-Key": key, "User-Agent": LAPI_USER_AGENT },
+	});
 	if (!response.ok) {
 		throw publicError(
 			response.status === 401 || response.status === 403 ? "crowdsec.bad-key" : "crowdsec.lapi-error",

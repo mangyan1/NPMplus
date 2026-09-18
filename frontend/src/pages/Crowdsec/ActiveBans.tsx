@@ -108,7 +108,7 @@ const ActiveBans = () => {
 					<Button
 						actionType="secondary"
 						variant="outline"
-						isLoading={query.isFetching}
+						isLoading={query.isLoading}
 						onClick={() => query.refetch()}
 					>
 						<IconRefresh size={16} />
@@ -282,7 +282,7 @@ const ActiveBans = () => {
 							<Button
 								actionType="secondary"
 								variant="outline"
-								disabled={page === 1 || query.isFetching}
+								disabled={page === 1 || query.isLoading}
 								onClick={() => setPage((value) => Math.max(1, value - 1))}
 							>
 								<IconChevronLeft size={16} />
@@ -291,7 +291,7 @@ const ActiveBans = () => {
 							<Button
 								actionType="secondary"
 								variant="outline"
-								disabled={!query.data.hasNext || query.isFetching}
+								disabled={!query.data.hasNext || query.isLoading}
 								onClick={() => setPage((value) => value + 1)}
 							>
 								<T id="crowdsec.next" />

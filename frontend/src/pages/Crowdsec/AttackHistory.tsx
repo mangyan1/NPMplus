@@ -279,10 +279,15 @@ const AttackHistory = ({
 							/>
 						</span>
 						<div className="btn-list">
+							{/* loading = never resolved here; in scan mode the cursor for
+							    the next batch comes from the current response, so an
+							    in-flight batch fetch must block the click */}
 							<button
 								type="button"
 								className="btn btn-outline-secondary"
-								disabled={activePage === 1 || history.isFetching}
+								disabled={
+									activePage === 1 || history.isLoading || (Boolean(scan) && history.isFetching)
+								}
 								onClick={() =>
 									scan
 										? setScan({ ...scan, page: Math.max(1, activePage - 1) })
@@ -295,7 +300,9 @@ const AttackHistory = ({
 							<button
 								type="button"
 								className="btn btn-outline-secondary"
-								disabled={!history.data.hasNext || history.isFetching}
+								disabled={
+									!history.data.hasNext || history.isLoading || (Boolean(scan) && history.isFetching)
+								}
 								onClick={() => {
 									if (scan && history.data.nextCursor)
 										setScan({
