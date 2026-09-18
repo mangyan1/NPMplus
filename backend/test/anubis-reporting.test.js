@@ -37,6 +37,26 @@ test("bridge evidence validates counters and distinguishes stale from failed", a
 	assert.equal((await readHoneypotBridge()).status, "unavailable");
 });
 
+test("an unreadable bridge file is reported once per outage, not once per poll", async (t) => {
+	const messages = [];
+	t.mock.method(console, "log", (...args) => messages.push(args.join(" ")));
+	const reported = () => messages.filter((line) => line.includes("honeypot bridge is unreadable")).length;
+	const healthy = { checked_at: Date.now(), status: "idle", applied: 0, failed: 0, invalid: 0, pending_bytes: 0 };
+	// a successful read clears the streak, so this stands alone whatever ran before
+	await writeFile("/data/anubis/honeypot-bridge.json", JSON.stringify(healthy));
+	await readHoneypotBridge();
+	const before = reported();
+	await writeFile("/data/anubis/honeypot-bridge.json", JSON.stringify({ ...healthy, failed: -1 }));
+	for (let poll = 0; poll < 3; poll++) assert.equal((await readHoneypotBridge()).status, "unavailable");
+	assert.equal(reported() - before, 1, "the same outage was logged on every poll");
+	// recovery rearms the report, so an operator sees the next outage too
+	await writeFile("/data/anubis/honeypot-bridge.json", JSON.stringify(healthy));
+	await readHoneypotBridge();
+	await writeFile("/data/anubis/honeypot-bridge.json", JSON.stringify({ ...healthy, failed: -1 }));
+	await readHoneypotBridge();
+	assert.equal(reported() - before, 2, "a recovered bridge did not rearm the report");
+});
+
 test("Anubis HTTP response headers prove reachability even when its body is oversized", async (t) => {
 	t.mock.method(globalThis, "fetch", async (input) =>
 		String(input).includes("anubis-fixture")
