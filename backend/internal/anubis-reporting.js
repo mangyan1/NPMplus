@@ -4,7 +4,7 @@ import { isIP } from "node:net";
 import path from "node:path";
 import db from "../db.js";
 import { parsePrometheusText } from "../lib/crowdsec-contract.js";
-import { debug, global as logger } from "../logger.js";
+import { clearOutage, debug, global as logger, reportOutage } from "../logger.js";
 import ProxyHost from "../models/proxy_host.js";
 
 const DIRECTORY = path.dirname(process.env.ANUBIS_HONEYPOT_LOG_FILE || "/data/anubis/honeypot.addrs");
@@ -257,8 +257,11 @@ const collectAnubis = async () => {
 			try {
 				const file = await readFile(name, tail);
 				await ingest(file.text, name === "anubis-metrics.prom" ? file.time : Date.now());
+				// an installation without Anubis never grows these files, so the
+				// collector runs every 60s over sources that will not appear
+				clearOutage(`anubis:${name}`);
 			} catch (err) {
-				debug(logger, `Anubis reporting ${name}: ${err.message}`);
+				reportOutage(`anubis:${name}`, logger, `Anubis reporting ${name}: ${err.message}`);
 			}
 		}
 		await db()("anubis_event")

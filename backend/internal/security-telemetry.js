@@ -1,7 +1,7 @@
 import { open } from "node:fs/promises";
 import http from "node:http";
 import db from "../db.js";
-import { debug, global as logger } from "../logger.js";
+import { clearOutage, global as logger, reportOutage } from "../logger.js";
 import ProxyHost from "../models/proxy_host.js";
 import { collectAnubis } from "./anubis-reporting.js";
 
@@ -219,8 +219,12 @@ const collect = async () => {
 		]) {
 			try {
 				await recordSnapshot(source, await read());
+				// a source that is not installed at all - no host firewall
+				// observer, or nginx without the CrowdSec bouncer - would fail
+				// on every one of these 60s ticks
+				clearOutage(`telemetry:${source}`);
 			} catch (err) {
-				debug(logger, `Security telemetry ${source}: ${err.message}`);
+				reportOutage(`telemetry:${source}`, logger, `Security telemetry ${source}: ${err.message}`);
 			}
 		}
 	} finally {

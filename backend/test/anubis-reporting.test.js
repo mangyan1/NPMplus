@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import test from "node:test";
+import { migrateUp } from "../migrate.js";
 import { isolatedPath } from "./helpers/environment.js";
 
 process.env.AUTH_REQUEST_ANUBIS_UPSTREAM = "http://anubis-fixture:8923";
@@ -9,7 +10,9 @@ process.env.ANUBIS_HONEYPOT_LOG_FILE = isolatedPath("/data/anubis/honeypot.addrs
 await mkdir("/data/crowdsec", { recursive: true });
 await writeFile("/data/crowdsec/fixture.key", "fixture");
 await mkdir("/data/anubis", { recursive: true });
+await migrateUp();
 const { readRecentHoneypotIps, readHoneypotBridge } = await import("../internal/crowdsec.js");
+const { collectAnubis } = await import("../internal/anubis-reporting.js");
 const { default: router } = await import("../routes/crowdsec.js");
 
 test("honeypot log reports retained scope without accepting partial addresses", async () => {
@@ -55,6 +58,24 @@ test("an unreadable bridge file is reported once per outage, not once per poll",
 	await writeFile("/data/anubis/honeypot-bridge.json", JSON.stringify({ ...healthy, failed: -1 }));
 	await readHoneypotBridge();
 	assert.equal(reported() - before, 2, "a recovered bridge did not rearm the report");
+});
+
+test("each Anubis source reports its absence once, and separately", async (t) => {
+	const messages = [];
+	t.mock.method(console, "log", (...args) => messages.push(args.join(" ")));
+	const sources = ["anubis-metrics.prom", "honeypot.addrs", "honeypot-attempts.log"];
+	// an installation without Anubis never grows these files
+	for (const name of sources) await unlink(`/data/anubis/${name}`).catch(() => {});
+	for (let tick = 0; tick < 3; tick++) await collectAnubis();
+	const reported = messages.filter((line) => line.includes("Anubis reporting"));
+	const count = (name) => reported.filter((line) => line.includes(name)).length;
+	// one line per source rather than one per source per tick, and three separate
+	// slots: a single shared one would let the first missing file silence the rest
+	assert.deepEqual(
+		sources.map(count),
+		[1, 1, 1],
+		`expected one report per source, got ${reported.length}: ${reported.join(" | ")}`,
+	);
 });
 
 test("Anubis HTTP response headers prove reachability even when its body is oversized", async (t) => {

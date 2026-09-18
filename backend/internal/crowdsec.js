@@ -7,7 +7,7 @@ import { isIP } from "node:net";
 import nodePath from "node:path";
 import process from "node:process";
 import { fetchWithTimeout, readBoundedJson } from "../lib/bounded-fetch.js";
-import { debug, global as globalLogger, express as logger } from "../logger.js";
+import { clearOutage, debug, global as globalLogger, express as logger, reportOutage } from "../logger.js";
 import PACKAGE from "../package.json" with { type: "json" };
 
 // biome-ignore lint/style/useExportsLast: exports sit next to the code they describe
@@ -106,10 +106,6 @@ export const readRecentHoneypotIps = async () => {
 	return { status: "ready", items, log: { ...log, entries: items.length, uniqueIps: new Set(items).size } };
 };
 
-// the dashboard polls the anubis route every 10s, so a permanently unreadable
-// bridge file must be reported once per outage rather than once per poll
-let honeypotBridgeFailureLogged = false;
-
 export const readHoneypotBridge = async () => {
 	try {
 		const file = await open(nodePath.join(nodePath.dirname(HONEYPOT_LOG_PATH), "honeypot-bridge.json"), "r");
@@ -131,7 +127,7 @@ export const readHoneypotBridge = async () => {
 		)
 			throw new Error("Invalid bridge status");
 		const age = Date.now() - value.checked_at;
-		honeypotBridgeFailureLogged = false;
+		clearOutage("anubis:honeypot-bridge");
 		return {
 			status: age > 450_000 || age < -5000 ? "stale" : value.status,
 			checkedAt: new Date(value.checked_at).toISOString(),
@@ -144,12 +140,8 @@ export const readHoneypotBridge = async () => {
 		// do not degrade silently: an unreadable bridge file only ever showed up
 		// as a permanent "unavailable" badge with nothing in the logs. `debug()`
 		// mutes this module's express scope by design, so this one goes to the
-		// global logger - and only once per outage, since the anubis route that
-		// reads it is polled every 10s
-		if (!honeypotBridgeFailureLogged) {
-			debug(globalLogger, `Anubis honeypot bridge is unreadable: ${err}`);
-			honeypotBridgeFailureLogged = true;
-		}
+		// global logger
+		reportOutage("anubis:honeypot-bridge", globalLogger, `Anubis honeypot bridge is unreadable: ${err}`);
 		return { status: "unavailable", checkedAt: null };
 	}
 };
