@@ -48,6 +48,8 @@ const internalStream = {
 
 		if (createCertificate) {
 			delete thisData.certificate_id;
+		} else if (Number(thisData.certificate_id) > 0) {
+			await internalCertificate.get(access, { id: thisData.certificate_id });
 		}
 
 		access.can("streams:manage");
@@ -101,6 +103,8 @@ const internalStream = {
 
 		if (createCertificate) {
 			delete thisData.certificate_id;
+		} else if (Number(thisData.certificate_id) > 0) {
+			await internalCertificate.get(access, { id: thisData.certificate_id });
 		}
 
 		access.can("streams:manage");

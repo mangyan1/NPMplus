@@ -62,6 +62,9 @@ const internalProxyHost = {
 
 		if (createCertificate) {
 			delete thisData.certificate_id;
+		} else if (Number(thisData.certificate_id) > 0) {
+			// a delegated manager may only attach a certificate they can see
+			await internalCertificate.get(access, { id: thisData.certificate_id });
 		}
 
 		access.can("proxy_hosts:manage");
@@ -141,6 +144,9 @@ const internalProxyHost = {
 
 		if (createCertificate) {
 			delete thisData.certificate_id;
+		} else if (Number(thisData.certificate_id) > 0) {
+			// a delegated manager may only attach a certificate they can see
+			await internalCertificate.get(access, { id: thisData.certificate_id });
 		}
 
 		access.can("proxy_hosts:manage");

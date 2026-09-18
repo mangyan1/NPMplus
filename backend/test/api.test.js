@@ -283,6 +283,20 @@ test("the new user can log in and hits the permission wall on admin routes", asy
 });
 
 test("peon can still read proxy hosts (view permission)", async () => {
+	// new non-admin users start hidden on every resource (upstream fce815df),
+	// so the read grant comes from the admin; the cross-field validation on
+	// permission updates requires access lists and certificates to be visible
+	// alongside the hosts that use them
+	assert.equal(
+		(await api("GET", "/api/nginx/proxy-hosts", { cookie: peonCookie })).status,
+		403,
+		"a freshly created user must not see any hosts",
+	);
+	const grant = await api("PUT", `/api/users/${peonId}/permissions`, {
+		cookie: adminCookie,
+		body: { proxy_hosts: "view", access_lists: "view", certificates: "view" },
+	});
+	assert.equal(grant.status, 200, grant.text);
 	const res = await api("GET", "/api/nginx/proxy-hosts", { cookie: peonCookie });
 	assert.equal(res.status, 200);
 	assert.deepEqual(res.body, []);
