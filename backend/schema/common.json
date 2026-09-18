@@ -189,7 +189,11 @@
 			"example": "allow"
 		},
 		"address": {
+			"description": "IP, CIDR or hostname for an allow/deny rule; renders into generated nginx configs, so nginx syntax is rejected here",
 			"type": "string",
+			"pattern": "^[^\\s;{}$#\"'\\\\]+$",
+			"minLength": 1,
+			"maxLength": 100,
 			"example": "192.168.0.11"
 		},
 		"access_items": {

@@ -426,6 +426,166 @@ test("a delegated manager cannot attach another user's access list to their host
 	assert.equal(own.status, 200, own.text);
 });
 
+// --- delegated-manager nginx config injection ---
+//
+// The access-list client address and the per-host auth-request upstream are
+// the only strings that render into generated nginx configs without a
+// charset restriction; every sibling field (domain_names, forward_host,
+// location paths, ...) is pattern- or enum-guarded. A delegated manager can
+// create their own lists and hosts, so the API must reject nginx syntax in
+// both fields, and regeneration must neutralize rows stored before the
+// guard existed.
+
+const injectorLogin = async () => {
+	await insertUser({
+		email: "injector@example.com",
+		password: "Injector-Pass-1",
+		roles: ["user"],
+		permissions: { proxy_hosts: "manage", access_lists: "manage" },
+	});
+	return api("POST", "/api/tokens", {
+		body: { identity: "injector@example.com", secret: "Injector-Pass-1" },
+	});
+};
+
+test("a delegated manager cannot inject nginx syntax through an access-list address", async (t) => {
+	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
+	const login = await injectorLogin();
+	assert.equal(login.status, 200, login.text);
+	const injectorCookie = sessionCookieOf(login);
+
+	const injected = await api("POST", "/api/nginx/access-lists", {
+		cookie: injectorCookie,
+		body: {
+			name: "inject-acl",
+			satisfy_any: true,
+			clients: [
+				{
+					directive: "allow",
+					// closes the location block, opens a filesystem-serving
+					// one, reopens the block so the template balances; the
+					// trailing # turns the filter's appended ; into a comment
+					address: "1.2.3.4;\nlocation /pwn { alias /data/; autoindex on; }\nlocation / {\n#",
+				},
+			],
+		},
+	});
+	assert.equal(injected.status, 400, injected.text);
+});
+
+test("access-list addresses still accept ip, cidr and hostname forms", async (t) => {
+	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
+
+	const created = await api("POST", "/api/nginx/access-lists", {
+		cookie: adminCookie,
+		body: {
+			name: "legit-acl",
+			satisfy_any: false,
+			clients: [
+				{ directive: "allow", address: "10.0.0.5" },
+				{ directive: "allow", address: "192.168.0.0/24" },
+				{ directive: "allow", address: "2001:db8::/32" },
+				{ directive: "allow", address: "office.example.com" },
+				{ directive: "deny", address: "2001:db8:a:b::/64" },
+			],
+		},
+	});
+	assert.equal(created.status, 201, created.text);
+});
+
+test("a delegated manager cannot inject nginx syntax through the auth-request upstream", async (t) => {
+	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
+	const login = await injectorLogin();
+	assert.equal(login.status, 200, login.text);
+	const injectorCookie = sessionCookieOf(login);
+
+	const created = await api("POST", "/api/nginx/proxy-hosts", {
+		cookie: injectorCookie,
+		body: {
+			domain_names: ["inject-upstream.example.com"],
+			forward_scheme: "http",
+			forward_host: "127.0.0.1",
+			forward_port: 8080,
+			npmplus_auth_request: "anubis",
+			// escapes the upstream block and appends a filesystem-serving
+			// server{} while keeping every derived render site parseable
+			npmplus_auth_request_upstream:
+				"https://127.0.0.2:443;\n}\nserver { listen 80; location / { alias /; autoindex on; } }\nupstream z {\nserver 127.0.0.1:80;\n#:443",
+		},
+	});
+	assert.equal(created.status, 400, created.text);
+});
+
+test("a conforming auth-request upstream is accepted", async (t) => {
+	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
+
+	const created = await api("POST", "/api/nginx/proxy-hosts", {
+		cookie: adminCookie,
+		body: {
+			domain_names: ["auth-ok.example.com"],
+			forward_scheme: "http",
+			forward_host: "127.0.0.1",
+			forward_port: 8080,
+			npmplus_auth_request: "anubis",
+			npmplus_auth_request_upstream: "https://127.0.0.1:8923",
+		},
+	});
+	assert.equal(created.status, 201, created.text);
+});
+
+test("stored nginx-syntax payloads are neutralized when configs regenerate", async (t) => {
+	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
+
+	const acl = await api("POST", "/api/nginx/access-lists", {
+		cookie: adminCookie,
+		body: {
+			name: "stored-payload-acl",
+			satisfy_any: true,
+			clients: [{ directive: "allow", address: "10.0.0.1" }],
+		},
+	});
+	assert.equal(acl.status, 201, acl.text);
+
+	const created = await api("POST", "/api/nginx/proxy-hosts", {
+		cookie: adminCookie,
+		body: {
+			domain_names: ["stored-payload.example.com"],
+			forward_scheme: "http",
+			forward_host: "127.0.0.1",
+			forward_port: 8080,
+			npmplus_access_list_type: "custom",
+			npmplus_access_list_ids: [acl.body.id],
+			npmplus_auth_request: "anubis",
+			npmplus_auth_request_upstream: "https://127.0.0.1:8923",
+		},
+	});
+	assert.equal(created.status, 201, created.text);
+
+	// rows as they could have been stored before the guards existed: the API
+	// can no longer write these values, so simulate legacy rows directly
+	const clientModel = (await import("../models/access_list_client.js")).default;
+	const proxyHostModel = (await import("../models/proxy_host.js")).default;
+	await clientModel.query().where({ access_list_id: acl.body.id }).patch({
+		address: "1.2.3.4;\nlocation /pwn-stored { alias /; }\nlocation / {\n#",
+	});
+	await proxyHostModel.query().findById(created.body.id).patch({
+		npmplus_auth_request_upstream:
+			"https://127.0.0.2:443;\n}\nserver { listen 80; location / { alias /; } }\nupstream z {\nserver 127.0.0.1:80;\n#:443",
+	});
+
+	const updated = await api("PUT", `/api/nginx/proxy-hosts/${created.body.id}`, {
+		cookie: adminCookie,
+		body: { forward_port: 8081 },
+	});
+	assert.equal(updated.status, 200, updated.text);
+
+	const conf = readFileSync(`/data/nginx/proxy_host/${created.body.id}.conf`, { encoding: "utf8" });
+	// positive control: the regenerated config is for this host
+	assert.ok(conf.includes("stored-payload.example.com"), "host config did not regenerate");
+	assert.ok(!conf.includes("pwn-stored"), "stored access-list address rendered into the config");
+	assert.ok(!conf.includes("upstream z"), "stored auth-request upstream rendered into the config");
+});
+
 // --- proxy host forward-destination reachability probe ---
 
 // a real listening socket on an ephemeral port, so the tcp probe has a

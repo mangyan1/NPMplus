@@ -253,6 +253,33 @@ cp() {
         self.assertIn("another NPMplus maintenance job", result.stderr)
         self.assertFalse((self.root / "stopped").exists())
 
+    def test_restore_rejects_archive_members_outside_the_backup_layout(self):
+        # A planted archive that carries valid-looking backup members plus a
+        # traversal member must be refused BEFORE extraction: plain GNU tar
+        # writes `..` paths outside the staging tree, and the restore runs as
+        # root. The staging tree sits five levels below the fixture root.
+        evil = self.root / "evil.tar.gz"
+        database = self.root / "incoming/opt/npmplus/npmplus/database.backup.sqlite"
+        with tarfile.open(evil, "w:gz") as archive:
+            directory = tarfile.TarInfo("opt/npmplus")
+            directory.type = tarfile.DIRTYPE
+            archive.addfile(directory)
+            member = tarfile.TarInfo("opt/npmplus/npmplus/database.backup.sqlite")
+            member.size = database.stat().st_size
+            with database.open("rb") as payload:
+                archive.addfile(member, payload)
+            escape = tarfile.TarInfo("../../../../../pwned-marker")
+            escape.size = 0
+            archive.addfile(escape)
+        result = self.shell(
+            RESTORE
+            + '\nDATA_DIR="/opt/npmplus"\nCROWDSEC_DIR="/opt/crowdsec"\nCOMPOSE_FILE="$DATA_DIR/compose.yaml"\n'
+            + 'run_restore "$FIXTURE_ROOT/evil.tar.gz"\n'
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("refusing to extract", result.stderr)
+        self.assertFalse((self.root / "pwned-marker").exists())
+
     def test_backup_succeeds_without_crowdsec(self):
         result = self.shell(BACKUP)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr + (self.root / "var/log/npmplus-backup.log").read_text())

@@ -1347,7 +1347,19 @@ run_restore() (
 	fi
 	local has_crowdsec=0 has_anubis_policy=0
 	grep -qE '^opt/crowdsec/' <<<"$listing" && has_crowdsec=1
-	grep -qE '^opt/anubis.yaml$' <<<"$listing" && has_anubis_policy=1
+	grep -qE '^opt/anubis\.yaml$' <<<"$listing" && has_anubis_policy=1
+	# the restore runs as root and backups are routinely scp'd through the
+	# world-writable /tmp, so the archive itself is untrusted input: plain GNU
+	# tar follows `..` members and symlink members out of any staging tree.
+	# Every member must stay inside the backup layout the daily backup writes.
+	if grep -qE '(^|/)\.\.(/|$)' <<<"$listing"; then
+		echo "backup contains a path traversal member - refusing to extract" >&2
+		return 1
+	fi
+	if grep -qvE '^(opt/npmplus/|opt/crowdsec/|opt/anubis\.yaml$)' <<<"$listing"; then
+		echo "backup contains unexpected member paths - refusing to extract" >&2
+		return 1
+	fi
 
 	if [[ ! -s "$COMPOSE_FILE" ]]; then
 		echo "no installation found - run --install first, then --restore" >&2
@@ -1373,10 +1385,15 @@ run_restore() (
 	mkdir -p /var/backups/npmplus
 	staging=$(mktemp -d "/var/backups/npmplus/pre-restore-$ts.XXXXXX")
 
-	# extract into a staging dir first; only a complete extraction is applied
+	# extract into a staging dir first; only a complete extraction is applied.
+	# Only the validated members are extracted, so nothing outside the backup
+	# layout is ever written even if the listing check were bypassed.
 	extract="$staging/extract"
 	mkdir -m 700 "$extract"
-	if ! tar -xzf "$source" -C "$extract"; then
+	local -a extract_members=(opt/npmplus)
+	[[ "$has_crowdsec" == 1 ]] && extract_members+=(opt/crowdsec)
+	[[ "$has_anubis_policy" == 1 ]] && extract_members+=(opt/anubis.yaml)
+	if ! tar -xzf "$source" -C "$extract" "${extract_members[@]}"; then
 		rm -rf "$extract"
 		echo "extraction failed - nothing was changed" >&2
 		return 1

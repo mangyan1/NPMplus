@@ -14,6 +14,23 @@ const __dirname = dirname(__filename);
 
 const nodeExecFilePromises = promisify(nodeExecFile);
 
+// nginx metacharacters (incl. whitespace) must never survive into an
+// allow/deny address or an auth-request upstream: both render into
+// generated nginx configs
+const accessRuleSyntaxPattern = /[\s;{}$#"'\\]/;
+const authRequestUpstreamPattern = /^https?:\/\/([^/:]+|\[[a-fA-F0-9:]+\]):[0-9]+$/;
+
+/**
+ * Auth-request upstreams must be a bare scheme://host:port - the same shape
+ * envs.sh enforces for AUTH_REQUEST_*_UPSTREAM. Anything else is treated as
+ * absent when picking the effective upstream so a stored payload can never
+ * reach a config template.
+ *
+ * @param   {String}  value
+ * @returns {Boolean}
+ */
+const isValidAuthRequestUpstream = (value) => typeof value === "string" && authRequestUpstreamPattern.test(value);
+
 const writeHash = async () => {
 	const referencedEnvVars = new Set();
 	const templateFiles = await readdir(`${__dirname}/../templates`);
@@ -107,6 +124,11 @@ const getRenderEngine = () => {
 		 */
 		sharedRenderEngine.registerFilter("nginxAccessRule", (v) => {
 			if (typeof v.directive !== "undefined" && typeof v.address !== "undefined" && v.directive && v.address) {
+				// addresses render into generated nginx configs; a row stored
+				// before the schema pattern existed may still carry nginx
+				// syntax, so drop such rules instead of rendering them
+				// (the deny-all default stays in effect)
+				if (accessRuleSyntaxPattern.test(v.address)) return "";
 				return `${v.directive} ${v.address};`;
 			}
 			return "";
@@ -133,4 +155,12 @@ const getParsedTemplate = async (templatePath) => {
 	return template;
 };
 
-export default { writeHash, execFile, omitRow, omitRows, getRenderEngine, getParsedTemplate };
+export default {
+	writeHash,
+	execFile,
+	omitRow,
+	omitRows,
+	getRenderEngine,
+	getParsedTemplate,
+	isValidAuthRequestUpstream,
+};

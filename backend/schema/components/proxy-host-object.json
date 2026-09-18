@@ -134,8 +134,11 @@
 			"example": "none"
 		},
 		"npmplus_auth_request_upstream": {
+			"description": "scheme://host:port of the auth provider; renders into generated nginx configs, so only a bare upstream URL is accepted (empty means the AUTH_REQUEST_*_UPSTREAM default)",
 			"type": "string",
-			"example": ""
+			"pattern": "^(https?://([^/:]+|\\[[a-fA-F0-9:]+\\]):[0-9]+)?$",
+			"maxLength": 255,
+			"example": "https://anubis:8923"
 		},
 		"advanced_config": {
 			"type": "string",

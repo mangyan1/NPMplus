@@ -366,7 +366,7 @@ const internalNginx = {
 				if (
 					(host.npmplus_auth_request === provider ||
 						(provider === "authentik" && host.npmplus_auth_request === "authentik-send-basic-auth")) &&
-					host.npmplus_auth_request_upstream
+					utils.isValidAuthRequestUpstream(host.npmplus_auth_request_upstream)
 				) {
 					effectiveUpstream = host.npmplus_auth_request_upstream;
 				} else {
@@ -375,7 +375,7 @@ const internalNginx = {
 							(location.npmplus_auth_request === provider ||
 								(provider === "authentik" &&
 									location.npmplus_auth_request === "authentik-send-basic-auth")) &&
-							location.npmplus_auth_request_upstream
+							utils.isValidAuthRequestUpstream(location.npmplus_auth_request_upstream)
 						) {
 							effectiveUpstream = location.npmplus_auth_request_upstream;
 							break;
