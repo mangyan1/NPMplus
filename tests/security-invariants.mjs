@@ -162,6 +162,28 @@ const read = (path) => {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Rule 7: fork-only package.json lines survive upstream merges. The 2026-09-17
+// sync resolved both manifests with upstream's whole file, which silently
+// dropped the fork author attribution and the scripts.test entry CI's
+// `pnpm test` step runs. Upstream's manifests do not carry these lines, so a
+// wholesale-theirs resolution can remove them as a "clean" upstream change.
+// ---------------------------------------------------------------------------
+{
+	for (const path of ["backend/package.json", "frontend/package.json"]) {
+		const manifest = read(path);
+		if (manifest === null) {
+			continue;
+		}
+		if (!/"author"\s*:\s*"[^"]*mangyan1/.test(manifest)) {
+			fail("fork-manifest-lines", `${path} lost the fork author attribution`);
+		}
+		if (!/"test"\s*:\s*"node --test/.test(manifest)) {
+			fail("fork-manifest-lines", `${path} lost the scripts.test entry CI's pnpm test step runs`);
+		}
+	}
+}
+
 if (failures.length > 0) {
 	console.error("security invariant violations:");
 	for (const failure of failures) {
