@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import test from "node:test";
-import { migrateUp } from "../migrate.js";
 import { isolatedPath } from "./helpers/environment.js";
 
 process.env.AUTH_REQUEST_ANUBIS_UPSTREAM = "http://anubis-fixture:8923";
@@ -10,6 +9,10 @@ process.env.ANUBIS_HONEYPOT_LOG_FILE = isolatedPath("/data/anubis/honeypot.addrs
 await mkdir("/data/crowdsec", { recursive: true });
 await writeFile("/data/crowdsec/fixture.key", "fixture");
 await mkdir("/data/anubis", { recursive: true });
+// every module that reaches the database or the config has to be imported after
+// helpers/environment.js has pointed them at this worker's temp tree; a static
+// import here is evaluated before it and opens the production path instead
+const { migrateUp } = await import("../migrate.js");
 await migrateUp();
 const { readRecentHoneypotIps, readHoneypotBridge } = await import("../internal/crowdsec.js");
 const { collectAnubis } = await import("../internal/anubis-reporting.js");
