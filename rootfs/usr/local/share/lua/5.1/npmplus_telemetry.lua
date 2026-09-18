@@ -63,10 +63,12 @@ end
 function M.render()
     -- A reload can preserve shared memory after the bouncer is disabled.
     -- Do not present its old counters as a newly observed active source.
+    -- "reason" is a stable code read by the backend collector, which reports it
+    -- as the disabled state rather than as a read failure: do not reword it.
     if not installed then
         ngx.status = 503
         ngx.header.content_type = "application/json"
-        ngx.say('{"error":"CrowdSec observation disabled"}')
+        ngx.say('{"error":"CrowdSec observation disabled","reason":"bouncer-not-installed"}')
         return
     end
     local dict = ngx.shared.npmplus_telemetry

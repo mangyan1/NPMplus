@@ -13,6 +13,18 @@ const COUNTERS = ["checks", "inspected", "errors", "unreadable", "bans", "waf_ba
 const FIREWALL_COUNTERS = ["input_packets", "forward_packets", "input_bytes", "forward_bytes"];
 const empty = (names = COUNTERS) => Object.fromEntries(names.map((key) => [key, 0]));
 const validCounters = (values, names) => names.every((key) => Number.isSafeInteger(values?.[key]) && values[key] >= 0);
+// The exporter refuses with a stable code when nginx has no CrowdSec bouncer
+// installed. That is a supported configuration, not a fault, so the reading
+// becomes the disabled state. Anything else - other codes, prose, an unreadable
+// body - stays a read failure and is reported as unavailable.
+const DISABLED_REASON = "bouncer-not-installed";
+const refusalState = (body) => {
+	try {
+		return JSON.parse(body).reason === DISABLED_REASON ? { disabled: true } : null;
+	} catch {
+		return null;
+	}
+};
 const readNginx = () =>
 	new Promise((resolve, reject) => {
 		const request = http.get(
@@ -27,9 +39,15 @@ const readNginx = () =>
 				});
 				response.on("error", reject);
 				response.on("end", () => {
+					const body = Buffer.concat(chunks).toString("utf8");
 					try {
-						if (response.statusCode !== 200) throw new Error("Telemetry unavailable");
-						resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+						if (response.statusCode !== 200) {
+							const state = refusalState(body);
+							if (!state) throw new Error("Telemetry unavailable");
+							resolve(state);
+							return;
+						}
+						resolve(JSON.parse(body));
 					} catch (err) {
 						reject(err);
 					}
@@ -56,6 +74,18 @@ const readFirewall = async () => {
 const recordSnapshot = async (source, raw, now = Date.now()) => {
 	const nginx = source === "nginx";
 	const names = nginx ? COUNTERS : FIREWALL_COUNTERS;
+	// A disabled source observed nothing, so no counters are invented and no
+	// interval is credited as covered. The reading still has to be persisted:
+	// the API answers from stored rows, and only a fresh reading can tell
+	// "switched off on purpose" from "not answering", so the marker is replaced
+	// by the next real snapshot and ages into stale like any other row.
+	if (nginx && raw?.disabled === true) {
+		await db()("security_telemetry")
+			.insert({ source, bucket: -1, data: JSON.stringify({ time: now, disabled: true }) })
+			.onConflict(["source", "bucket"])
+			.merge();
+		return;
+	}
 	const time = nginx ? now : raw.collected_at;
 	if (
 		!raw ||
@@ -94,7 +124,11 @@ const recordSnapshot = async (source, raw, now = Date.now()) => {
 		const previousRow = await trx("security_telemetry").where({ source, bucket: -1 }).first();
 		const previous = previousRow ? JSON.parse(previousRow.data) : null;
 		if (previous && time <= previous.time) return;
-		const continuous = previous && previous.epoch === snapshot.epoch && time - previous.time <= MAX_GAP;
+		// A disabled marker keeps no counter baseline: resuming inside the accepted
+		// interval must not read the bouncer's whole cumulative counters as a delta.
+		// The marker carries no epoch, so this also holds by construction.
+		const continuous =
+			previous && !previous.disabled && previous.epoch === snapshot.epoch && time - previous.time <= MAX_GAP;
 		const start = Math.floor((time - 1) / BUCKET) * BUCKET;
 		const bucketRow = await trx("security_telemetry").where({ source, bucket: start }).first();
 		const bucket = bucketRow ? JSON.parse(bucketRow.data) : { covered_ms: 0, hosts: {}, incomplete: false };
@@ -167,6 +201,13 @@ const readTelemetry = async (hours = 24, now = Date.now()) => {
 		if (!layer) continue;
 		const value = JSON.parse(row.data);
 		if (Number(row.bucket) === -1) {
+			// A disabled source was never observed: it keeps null timestamps and says
+			// only why. It still ages, so reads that start failing again cannot leave
+			// "switched off" on the dashboard forever.
+			if (value.disabled === true) {
+				layer.status = now - value.time > MAX_GAP ? "stale" : "disabled";
+				continue;
+			}
 			layer.observed_at = new Date(value.time).toISOString();
 			layer.status = now - value.time > MAX_GAP || value.time > now + 5000 ? "stale" : "observed";
 			if (row.source === "firewall")
@@ -238,4 +279,4 @@ const startTelemetry = () => {
 	timer.unref();
 };
 
-export { readTelemetry, recordSnapshot, startTelemetry };
+export { readTelemetry, recordSnapshot, refusalState, startTelemetry };

@@ -399,6 +399,7 @@
 	"crowdsec.target": "Target",
 	"crowdsec.telemetry.all-hosts": "All observed proxy hosts",
 	"crowdsec.telemetry.challenges": "Challenge actions",
+	"crowdsec.telemetry.disabled": "Disabled: the CrowdSec bouncer is not enabled in nginx",
 	"crowdsec.telemetry.enforcement": "Observed enforcement",
 	"crowdsec.telemetry.errors": "AppSec response errors",
 	"crowdsec.telemetry.firewall": "Firewall observation",

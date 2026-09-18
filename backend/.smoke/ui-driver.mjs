@@ -954,6 +954,13 @@ check(
 	"missing telemetry history renders unknown counts instead of zeros",
 	(await enforcement.getByText("—", { exact: true }).count()) === 4,
 );
+telemetryState = "disabled";
+await page.getByRole("button", { name: "Refresh", exact: true }).click();
+await enforcement.getByText("Disabled: the CrowdSec bouncer is not enabled in nginx", { exact: true }).waitFor();
+check(
+	"history recorded before the bouncer was switched off is still shown",
+	(await enforcement.getByText("—", { exact: true }).count()) === 0,
+);
 telemetryState = "observed";
 await page.goto("http://localhost:5173/nginx/proxy", { waitUntil: "networkidle" });
 await page.getByRole("heading", { name: "Proxy Hosts", exact: true }).waitFor();

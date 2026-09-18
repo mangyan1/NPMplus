@@ -1,6 +1,8 @@
 // biome-ignore lint/correctness/noNodejsModules: this file is executed by Node's test runner.
 import assert from "node:assert/strict";
 // biome-ignore lint/correctness/noNodejsModules: this file is executed by Node's test runner.
+import { readFileSync } from "node:fs";
+// biome-ignore lint/correctness/noNodejsModules: this file is executed by Node's test runner.
 import test from "node:test";
 import type { CrowdsecDecision, CrowdsecMetrics } from "../src/api/backend/getCrowdsecDecisions.ts";
 import { midTruncate, presentScenarioId, scenarioCategory, scenarioLabel } from "../src/pages/Crowdsec/scenarios.ts";
@@ -150,6 +152,16 @@ test("an outage announces itself and leaves the other markers untouched", () => 
 		notificationPlan([], false, (type) => type === "lapi"),
 		{ announce: null, forget: ["lapi"] },
 	);
+});
+
+test("every telemetry status the API can report has an English label", () => {
+	// EnforcementTelemetry builds its label id from the status string, so an
+	// unlabelled status renders the raw id. Keep this list in step with the
+	// Layer union in src/api/backend/getSecurityTelemetry.ts.
+	const file = new URL("../translations/ui/en.json", import.meta.url);
+	const messages = JSON.parse(readFileSync(file, "utf8")) as Record<string, string>;
+	for (const status of ["observed", "stale", "unavailable", "disabled"])
+		assert.ok(messages[`crowdsec.telemetry.${status}`], `crowdsec.telemetry.${status} has no English label`);
 });
 
 test("a spike outranks an ongoing ban count", () => {

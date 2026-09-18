@@ -10,7 +10,9 @@ export interface HttpCounters {
 	challenges: number;
 }
 interface Layer {
-	status: "unavailable" | "stale" | "observed";
+	// "disabled" is reported for nginx while no CrowdSec bouncer is enabled in it:
+	// the observation is switched off on purpose rather than unreadable.
+	status: "unavailable" | "stale" | "observed" | "disabled";
 	observedAt: string | null;
 	coveredMs: number;
 	incomplete: boolean;

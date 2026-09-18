@@ -1,8 +1,9 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { beforeEach, test } from "node:test";
 import db from "../db.js";
-import { readTelemetry, recordSnapshot } from "../internal/security-telemetry.js";
+import { readTelemetry, recordSnapshot, refusalState } from "../internal/security-telemetry.js";
 import { migrateUp } from "../migrate.js";
 
 await migrateUp();
@@ -64,6 +65,47 @@ test("firewall samples are timestamped packet observations and stale repeats are
 	assert.equal(result.nginx.totals.bans, 0);
 	assert.equal(result.firewall.forward_rule, false);
 	await assert.rejects(recordSnapshot("firewall", firewall, start + 600_000));
+});
+test("a refused reading is a state only for a code this reader knows", async () => {
+	// the exporter's code and the one recognized here are one contract in two
+	// languages; rewording either side alone would silently turn this into a fault
+	const lua = await readFile(
+		new URL("../../rootfs/usr/local/share/lua/5.1/npmplus_telemetry.lua", import.meta.url),
+		"utf8",
+	);
+	assert.match(lua, /"reason":"bouncer-not-installed"/);
+	assert.deepEqual(refusalState('{"error":"CrowdSec observation disabled","reason":"bouncer-not-installed"}'), {
+		disabled: true,
+	});
+	assert.equal(refusalState('{"error":"CrowdSec observation disabled"}'), null);
+	assert.equal(refusalState('{"reason":"bouncer-not-installed-anyway"}'), null);
+	assert.equal(refusalState("telemetry unavailable"), null);
+});
+test("a switched-off bouncer is reported as disabled without fabricating observation", async () => {
+	await recordSnapshot("nginx", { disabled: true }, start);
+	const result = await readTelemetry(1, start + 60_000);
+	assert.equal(result.nginx.status, "disabled");
+	assert.equal(result.nginx.observed_at, null);
+	assert.equal(result.nginx.covered_ms, 0);
+	assert.deepEqual(result.nginx.hosts, []);
+	// a marker the collector stopped refreshing describes the past, not the present
+	assert.equal((await readTelemetry(1, start + 600_000)).nginx.status, "stale");
+	// the next real reading replaces the marker rather than leaving nginx disabled
+	await recordSnapshot("nginx", sample(10), start + 600_000);
+	assert.equal((await readTelemetry(1, start + 660_000)).nginx.status, "observed");
+});
+test("a disabled marker keeps no counter baseline, so resuming cannot replay counters", async () => {
+	await recordSnapshot("nginx", sample(100), start);
+	await recordSnapshot("nginx", { disabled: true }, start + 60_000);
+	await recordSnapshot("nginx", sample(600), start + 120_000);
+	await recordSnapshot("nginx", sample(600), start + 240_000);
+	const result = await readTelemetry(1, start + 300_000);
+	// the 500 requests the bouncer counted while it was switched off are not
+	// claimed as observed traffic, and the interrupted interval stays partial
+	assert.equal(result.nginx.totals.bans, 0);
+	assert.equal(result.nginx.covered_ms, 120_000);
+	assert.equal(result.nginx.incomplete, true);
+	assert.equal(result.nginx.status, "observed");
 });
 test("invalid/oversized host cardinality is rejected and old buckets are pruned", async () => {
 	await assert.rejects(

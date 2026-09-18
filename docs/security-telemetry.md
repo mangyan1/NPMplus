@@ -84,6 +84,11 @@ been inspected as part of this clarification.
   counts appear. Missing intervals remain **partial history**. An observed zero is
   different from unavailable data, which displays a dash. After 150 seconds without
   a fresh observation, source status becomes stale and rule verification is withheld.
+  A source that reports itself switched off - currently nginx while no CrowdSec
+  bouncer is enabled in it - displays **disabled** instead of unavailable. Nothing is
+  observed and no interval is credited as covered, so returning traffic is never
+  reported as if it had been watched, but totals recorded before it was switched off
+  remain visible. The state still ages into stale if the collector stops refreshing it.
 - The per-host response is bounded to 200 entries. Totals include other recorded
   hosts when history spans more IDs; a separate warning marks the truncated list.
   The dictionary capacity limit instead drops observations and marks history partial.
@@ -105,7 +110,11 @@ expose the Unix exporter or mount the Docker socket into NPMplus.
 For custom Compose installations, nginx/WAF history can work with the new image
 while firewall observations remain unavailable unless equivalent installer-managed
 host tooling is present. AppSec-disabled installations can still record decision
-ban actions, while their AppSec response totals can legitimately remain zero.
+ban actions, while their AppSec response totals can legitimately remain zero. An
+installation that does not enable CrowdSec's nginx bouncer reports the nginx
+observation as disabled rather than unavailable: that names a supported
+configuration instead of an unreadable source. Enable the bouncer to collect AppSec
+and ban activity; this does not affect firewall observations, which have no such state.
 Existing database backups include retained telemetry. Restoring an archive restores
 its history; collection gaps after restore remain visible.
 

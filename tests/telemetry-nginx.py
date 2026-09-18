@@ -123,11 +123,15 @@ http {{
                 nginx_config.write_text(nginx_config.read_text().replace('require("npmplus_telemetry").install(cs); ', ""))
                 subprocess.run(["nginx", "-p", folder, "-c", str(nginx_config), "-s", "reload"], check=True)
                 for _ in range(30):
-                    status = self.request("/telemetry")[0]
+                    status, body = self.request("/telemetry")
                     if status == 503:
                         break
                     time.sleep(0.1)
                 self.assertEqual(status, 503)
+                # the backend collector recognizes this one code and reports the
+                # disabled state instead of a read failure; rewording it here
+                # silently turns a switched-off source back into an unavailable one
+                self.assertEqual(json.loads(body)["reason"], "bouncer-not-installed")
             finally:
                 process.terminate()
                 process.wait(timeout=10)
