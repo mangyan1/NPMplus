@@ -100,6 +100,7 @@ test("CrowdSec alerts keep attacker details while stripping sensitive payloads",
 	assert.deepEqual(alerts, [
 		{
 			id: 9,
+			kind: "",
 			scenario: "http-bad-user-agent",
 			message: "blocked",
 			start_at: "2026-09-03T00:00:00Z",

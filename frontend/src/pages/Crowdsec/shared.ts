@@ -1,6 +1,6 @@
 import type { AnubisStatus, CrowdsecMetrics } from "src/api/backend";
 
-export type DashboardTab = "overview" | "activity" | "bans" | "waf" | "system";
+export type DashboardTab = "attackers" | "overview" | "activity" | "bans" | "waf" | "system";
 export type KpiKind = "attacks" | "local" | "community" | "anubis";
 
 export const boundedCount = (value?: number | null, truncated = false) =>

@@ -26,9 +26,12 @@ const alert = (id, extra = {}) => ({
 	created_at: new Date(Date.now() - 10_000 * id).toISOString(),
 	...extra,
 });
-const request = async (path, query = {}) => {
+const request = async (path, query = {}, params = {}) => {
 	let body;
 	const res = {
+		set() {
+			return this;
+		},
 		locals: { access: { canAdmin: () => true } },
 		status() {
 			return this;
@@ -40,7 +43,7 @@ const request = async (path, query = {}) => {
 	const handler = router.stack
 		.find((layer) => layer.route?.path === path)
 		.route.stack.find((layer) => layer.method === "get").handle;
-	await handler({ query }, res);
+	await handler({ query, params }, res);
 	return body;
 };
 const fixture = (t, { decisions = [], alerts = [], fallback = false } = {}) => {
@@ -247,6 +250,59 @@ test("cursor preserves nanosecond recording order and expires after one hour", a
 	await assert.rejects(request("/history/alerts", { cursor: first.next_cursor }), {
 		message: "crowdsec.history.cursor-invalid",
 	});
+});
+
+test("attacker timeline requests one IP and rejects unrelated or community decisions", async (t) => {
+	const calls = [];
+	t.mock.method(globalThis, "fetch", async (input) => {
+		const url = new URL(input);
+		calls.push(url);
+		if (url.pathname.endsWith("/login")) return Response.json({ token: "fixture" });
+		if (url.pathname.endsWith("/alerts"))
+			return Response.json([
+				alert(1, { source: { ip: "192.0.2.1" } }),
+				alert(2, { source: { ip: "192.0.2.10" } }),
+				alert(3, { source: { ip: "192.0.2.1" }, simulated: true }),
+			]);
+		return Response.json([
+			decision(1, { value: "192.0.2.1" }),
+			decision(2, { value: "192.0.2.10" }),
+			decision(3, { value: "192.0.2.1", origin: "capi" }),
+		]);
+	});
+	const result = await request("/attackers/timeline", { ip: "192.0.2.1" });
+	assert.deepEqual(
+		result.items.map((item) => item.id),
+		[1],
+	);
+	assert.deepEqual(
+		result.decisions.map((item) => item.id),
+		[1],
+	);
+	assert.equal(result.decisions_available, true);
+	assert.equal(calls.find((url) => url.pathname.endsWith("/alerts")).searchParams.get("value"), "192.0.2.1");
+	assert.equal(calls.find((url) => url.pathname.endsWith("/decisions")).searchParams.get("ip"), "192.0.2.1");
+});
+
+test("attacker events paginate retained sanitized evidence and flag missing records", async (t) => {
+	t.mock.method(globalThis, "fetch", async (input) => {
+		if (new URL(input).pathname.endsWith("/login")) return Response.json({ token: "fixture" });
+		return Response.json(
+			alert(1, {
+				events_count: 50,
+				events: Array.from({ length: 30 }, (_, i) => ({
+					timestamp: String(i),
+					meta: [{ key: "uri", value: `/path-${i}?secret=hidden` }],
+				})),
+			}),
+		);
+	});
+	const result = await request("/attackers/events/:id", { page: "2" }, { id: "1" });
+	assert.equal(result.retained, 30);
+	assert.equal(result.truncated, true);
+	assert.equal(result.has_next, false);
+	assert.equal(result.alert.events.length, 5);
+	assert.equal(result.alert.events[0].meta[0].value, "/path-25");
 });
 
 test("cursor rejects malformed recording times rather than inventing a boundary", async (t) => {

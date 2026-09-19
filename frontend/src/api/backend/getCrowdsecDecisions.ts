@@ -42,6 +42,7 @@ export interface CrowdsecEvent {
 }
 
 export interface CrowdsecAlert {
+	kind?: string;
 	id: number;
 	message: string;
 	scenario: string;

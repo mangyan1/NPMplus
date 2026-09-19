@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { filterCrowdsecAlerts, isAttackAlert, normalizeCrowdsecAlerts } from "../lib/crowdsec-contract.js";
+import { canonicalIp } from "./anubis-reporting.js";
 import { lapiMachineFetch, publicError, readCrowdsecJson } from "./crowdsec.js";
 
 const secret = randomBytes(32);
@@ -33,8 +34,8 @@ const decode = (cursor, binding, now) => {
 };
 
 // One user-requested batch, no unbounded loop or background alert database.
-const scanAlertHistory = async ({ windowHours, filters, cursor = "", now = Date.now() }) => {
-	const binding = sign(JSON.stringify({ windowHours, filters }));
+const scanAlertHistory = async ({ windowHours, filters, sourceIp = "", cursor = "", now = Date.now() }) => {
+	const binding = sign(JSON.stringify({ windowHours, filters, sourceIp }));
 	const state = cursor
 		? decode(cursor, binding, now)
 		: {
@@ -55,6 +56,10 @@ const scanAlertHistory = async ({ windowHours, filters, cursor = "", now = Date.
 		sort: "DESC",
 		with_decisions: "false",
 	});
+	if (sourceIp) {
+		params.set("scope", "ip");
+		params.set("value", sourceIp);
+	}
 	const read = () =>
 		lapiMachineFetch(`/v1/alerts?${params}`, "GET", true, {
 			readJson: (response) => readCrowdsecJson(response, limit === 101 ? 12 * 1024 * 1024 : 4 * 1024 * 1024),
@@ -95,6 +100,7 @@ const scanAlertHistory = async ({ windowHours, filters, cursor = "", now = Date.
 		batch
 			.map(({ alert }) => alert)
 			.filter(isAttackAlert)
+			.filter((alert) => !sourceIp || canonicalIp(alert.source.ip || alert.source.value) === sourceIp)
 			.filter((alert) => {
 				const time = Date.parse(alert.start_at || alert.created_at || alert.stop_at);
 				return time >= state.start && time <= state.end;

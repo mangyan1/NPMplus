@@ -11,6 +11,7 @@ import ActiveBans from "./ActiveBans";
 import ActivityStrip from "./ActivityStrip";
 import AnimatedLogo from "./AnimatedLogo";
 import AppsecSummary from "./AppsecSummary";
+import Attackers from "./Attackers";
 import AttackHistory from "./AttackHistory";
 import AttackMix from "./AttackMix";
 import styles from "./Dashboard.module.css";
@@ -52,10 +53,11 @@ const QuickFilters = ({ items, onSelect }: { items: CrowdsecInsightsItem[]; onSe
 const CrowdsecDashboard = () => {
 	const { locale } = useLocaleState();
 	const queryClient = useQueryClient();
-	const [tab, setTab] = useState<DashboardTab>("overview");
+	const [tab, setTab] = useState<DashboardTab>("attackers");
 	const [kpi, setKpi] = useState<KpiKind | null>(null);
 	const [windowHours, setWindowHours] = useState(24);
 	const [page, setPage] = useState(1);
+	const [attackerRefresh, setAttackerRefresh] = useState(0);
 	const [search, setSearch] = useState("");
 	const [scenario, setScenario] = useState("");
 	const [country, setCountry] = useState("");
@@ -124,12 +126,14 @@ const CrowdsecDashboard = () => {
 	// the toolbar refresh must also cover the activity and bans tables, whose
 	// queries live in the tab components rather than this page
 	const refresh = async () => {
+		setAttackerRefresh((value) => value + 1);
 		await Promise.all([insights.refetch(), metrics.refetch(), anubis.refetch()]);
 		await queryClient.invalidateQueries({ queryKey: ["crowdsec-decisions"] });
 		await queryClient.invalidateQueries({ queryKey: ["crowdsec-alert-history"] });
 		await queryClient.invalidateQueries({ queryKey: ["security-telemetry"] });
 	};
 	const tabs: { id: DashboardTab; label: string }[] = [
+		{ id: "attackers", label: "crowdsec.attackers.title" },
 		{ id: "overview", label: "crowdsec.tabs.overview" },
 		{ id: "activity", label: "crowdsec.tabs.activity" },
 		{ id: "bans", label: "crowdsec.tabs.bans" },
@@ -480,6 +484,9 @@ const CrowdsecDashboard = () => {
 								</div>
 							</>
 						))}
+					{tab === "attackers" && (
+						<Attackers key={`${windowHours}-${attackerRefresh}`} windowHours={windowHours} />
+					)}
 					{tab === "activity" && (
 						<AttackHistory
 							{...{

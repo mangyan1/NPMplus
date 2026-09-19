@@ -15,8 +15,10 @@ Set `NPMPLUS_TEST_IMAGE` to exercise another locally available image.
 
 The runner creates randomly named containers and data volumes, publishes only on loopback with dynamically assigned ports,
 waits for Docker health, and removes its containers and volumes in a `finally` block. Credentials are synthetic.
-It runs the API privilege/replay checks, modal interactions, and first-admin setup/MFA browser walkthrough.
+It runs the API privilege/replay checks, modal interactions, the CrowdSec dashboard browser harness, and first-admin setup/MFA browser walkthrough.
 The `security-browser` GitHub workflow builds the checked-out source and runs the same command on pushes and pull requests.
+The dashboard harness intercepts its APIs with synthetic observations, including attacker history, timeline ordering,
+event pagination, refresh failure, and desktop/390px/320px layouts. Backend tests separately verify those API contracts.
 
 Modal coverage includes user and permission saves, password setting, invalid forms, cancellation, deletion, certificate
 forms, and audit details. Only a synthetic certificate and its failed renewal response are intercepted: renewal starts as
@@ -25,6 +27,9 @@ by the backend certificate tests. Other API requests use the actual container ba
 
 Screenshots contain synthetic data, remain ignored locally, and are retained for seven days in CI. The runner does not
 upload browser traces, cookies, enrollment secrets, or container logs.
+For a private local log review, set `NPMPLUS_TEST_LOG_DIR` to an ignored directory before running the harness.
+Logs are captured before cleanup, are limited to 8 MiB per container, and are never uploaded by the workflow.
+Treat them as private even though the test accounts are synthetic.
 
 The older SQLite upgrade fixture is `backend/test/sqlite-upgrade.test.js`, included in the normal backend test suite.
 It reconstructs the pre-replay schema, seeds an existing MFA account and proxy, then invokes the production migration path

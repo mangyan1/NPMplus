@@ -132,7 +132,7 @@ const normalizeCrowdsecDecisions = (payload) => {
 	});
 };
 
-const normalizeCrowdsecAlerts = (payload) => {
+const normalizeCrowdsecAlerts = (payload, { eventOffset = 0, eventLimit = EVENT_LIMIT } = {}) => {
 	if (payload === null || typeof payload === "undefined") return [];
 	if (!Array.isArray(payload)) throw new TypeError("CrowdSec alerts response is not an array");
 
@@ -146,7 +146,7 @@ const normalizeCrowdsecAlerts = (payload) => {
 		const eventsCount = Number(alert.events_count);
 		const events = [];
 		if (Array.isArray(alert.events)) {
-			for (const event of alert.events.slice(0, EVENT_LIMIT)) {
+			for (const event of alert.events.slice(eventOffset, eventOffset + eventLimit)) {
 				const normalized = normalizeEvent(event);
 				if (normalized) events.push(normalized);
 			}
@@ -154,6 +154,7 @@ const normalizeCrowdsecAlerts = (payload) => {
 		return {
 			id,
 			scenario: optionalString(alert.scenario),
+			kind: optionalString(alert.kind),
 			message: optionalString(alert.message),
 			start_at: optionalString(alert.start_at),
 			stop_at: optionalString(alert.stop_at),
@@ -323,7 +324,14 @@ const summarizeCrowdsecMetrics = (samples) => {
 // so the dashboard keeps them out of attack counts and rankings
 const BLOCKLIST_SYNC_SCENARIO_RE = /^update : \+\d+\/-\d+ IPs$/;
 const isBlocklistSyncAlert = (alert) => BLOCKLIST_SYNC_SCENARIO_RE.test(alert?.scenario ?? "");
-const isAttackAlert = (alert) => !alert.simulated && !isBlocklistSyncAlert(alert) && alert.scenario !== "manual/web-ui";
+const MANUAL_SCENARIO_RE = /^manual '/i;
+const isAttackAlert = (alert) =>
+	!alert.simulated &&
+	!isBlocklistSyncAlert(alert) &&
+	alert.scenario !== "manual/web-ui" &&
+	!MANUAL_SCENARIO_RE.test(alert.scenario) &&
+	!["capi", "papi"].includes(alert.kind) &&
+	(alert.kind !== "cscli" || alert.scenario === "anubis-honeypot");
 const coordinate = (value, limit) => {
 	const number = optionalFiniteNumber(value);
 	return number !== null && Math.abs(number) <= limit ? number : null;

@@ -1,18 +1,6 @@
 // Browser-level CrowdSec dashboard smoke test with intercepted API fixtures.
-import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import path from "node:path";
 import process from "node:process";
-
-const npmCommand = process.platform === "win32" ? "cmd.exe" : "npm";
-const npmArgs = process.platform === "win32" ? ["/d", "/s", "/c", "npm root -g"] : ["root", "-g"];
-const globalRoot = process.env.PLAYWRIGHT_ROOT ?? execFileSync(npmCommand, npmArgs).toString().trim();
-const playwrightEntry = path.join(globalRoot, "playwright", "index.mjs");
-if (!existsSync(playwrightEntry)) {
-	console.error("playwright is not installed globally. Install it with: npm i -g playwright");
-	process.exit(1);
-}
-const { chromium } = await import(`file://${playwrightEntry.replace(/\\/g, "/")}`);
+import { chromium } from "playwright";
 
 const iso = (ms) => new Date(Date.now() + ms).toISOString();
 const decisions = [
@@ -148,6 +136,7 @@ let appsecConfigured = true;
 let metricsMissing = false;
 let metricsFailure = false;
 let anubisReportFailure = false;
+let attackerFailure = false;
 let countsTruncated = false;
 let telemetryState = "observed";
 const check = (name, ok, detail = "") => {
@@ -200,6 +189,75 @@ const api = async (route) => {
 			},
 		});
 	}
+	if (apiPath === "/crowdsec/attackers") {
+		if (attackerFailure)
+			return route.fulfill({
+				status: 503,
+				contentType: "application/json",
+				body: JSON.stringify({ error: { message: "crowdsec.lapi-error" } }),
+			});
+		const complete = url.searchParams.get("advance") === "older";
+		const empty = url.searchParams.get("search") === "no-match";
+		return respond({
+			session: "fixture",
+			revision: "older",
+			items: empty
+				? []
+				: [
+						{
+							ip: "198.51.100.7",
+							country: "DE",
+							asName: "Example ASN",
+							asNumber: "64496",
+							firstSeen: iso(-7200000),
+							lastSeen: iso(-3600000),
+							alerts: complete ? 3 : 2,
+							events: 30,
+							scenarios: ["crowdsecurity/http-probing"],
+							targets: ["browser.example.test"],
+						},
+					],
+			matched: empty ? 0 : 1,
+			scanned: complete ? 3 : 2,
+			complete,
+			truncated: false,
+			start: iso(-86400000),
+			end: iso(0),
+			page: 1,
+			hasNext: false,
+		});
+	}
+	if (apiPath === "/crowdsec/attackers/timeline") {
+		const older = url.searchParams.get("cursor") === "older";
+		return respond({
+			items: older
+				? [{ ...alerts[0], id: 98, startAt: iso(-7200000), scenario: "crowdsecurity/http-sensitive-files" }]
+				: alerts,
+			nextCursor: older ? null : "older",
+			hasNext: !older,
+			start: iso(-86400000),
+			end: iso(0),
+			truncated: false,
+			decisionsAvailable: true,
+			decisionsTruncated: false,
+			decisions: [decisions[1]],
+		});
+	}
+	if (apiPath.startsWith("/crowdsec/attackers/events/"))
+		return respond({
+			alert: {
+				...alerts[0],
+				eventsCount: 30,
+				events:
+					url.searchParams.get("page") === "2"
+						? [{ timestamp: iso(-3500000), meta: [{ key: "target_uri", value: "/second-page" }] }]
+						: alerts[0].events,
+			},
+			retained: 26,
+			page: Number(url.searchParams.get("page") || 1),
+			hasNext: url.searchParams.get("page") !== "2",
+			truncated: true,
+		});
 	if (apiPath === "/crowdsec/metrics" && metricsFailure)
 		return route.fulfill({
 			status: 503,
@@ -436,11 +494,13 @@ const api = async (route) => {
 };
 
 const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM || undefined });
-const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, ignoreHTTPSErrors: true });
+page.setDefaultTimeout(15000);
 const browserErrors = [];
 let expectedManualBanError = false;
 page.on("console", (message) => {
 	if (message.type() !== "error") return;
+	if (attackerFailure && message.text().includes("503")) return;
 	if (accountFailure && message.text().includes("503")) return;
 	if ((metricsFailure || anubisReportFailure) && message.text().includes("503")) return;
 	if (
@@ -458,11 +518,81 @@ page.on("pageerror", (error) => {
 });
 await page.route("**/api/**", (route) => api(route));
 await page.addInitScript((expires) => localStorage.setItem("auth", expires), iso(86400 * 1000));
-await page.goto("http://localhost:5173/crowdsec", { waitUntil: "networkidle" });
+const baseUrl = process.env.SMOKE_BASE_URL || "http://localhost:5173";
+await page.goto(`${baseUrl}/crowdsec`, { waitUntil: "networkidle" });
 
 await page.getByRole("heading", { name: "Security overview" }).waitFor({ timeout: 15000 });
 check("security dashboard has one sticky toolbar", (await page.locator(".sticky-top").count()) === 1);
-check("dashboard exposes five focused tabs", (await page.getByRole("tab").count()) === 5);
+check("dashboard exposes six focused tabs", (await page.getByRole("tab").count()) === 6);
+check(
+	"attackers is the default working view",
+	(await page.getByRole("tab", { name: "Attackers", exact: true }).getAttribute("aria-selected")) === "true",
+);
+await page.getByRole("button", { name: "198.51.100.7", exact: true }).waitFor();
+await page.screenshot({ path: "backend/.smoke/security-attackers-desktop.png", fullPage: true });
+await page.getByRole("button", { name: "Load older history", exact: true }).click();
+await page.getByText(/Reached the end of retained alerts/).waitFor();
+await page.getByLabel("Search IP, country, ASN, host or detection").fill("no-match");
+await page.getByRole("button", { name: "Search", exact: true }).click();
+await page.getByText(/No matching source IPs in the loaded history/).waitFor();
+await page.getByLabel("Search IP, country, ASN, host or detection").fill("");
+await page.getByRole("button", { name: "Search", exact: true }).click();
+await page.getByRole("button", { name: "198.51.100.7", exact: true }).click();
+const investigation = page.getByRole("dialog");
+await investigation.getByText(/not proof of successful exploitation/).waitFor();
+await investigation.getByRole("button", { name: "Load older history" }).click();
+await investigation.locator("ol > li").nth(1).waitFor();
+check(
+	"timeline orders older evidence before newer detections",
+	(await investigation.locator("ol > li").first().innerText()).includes("http-sensitive-files"),
+);
+await investigation.getByRole("button", { name: "Details", exact: true }).last().click();
+await investigation.getByText(/26 retained event records/).waitFor();
+await investigation.getByRole("button", { name: "Next", exact: true }).click();
+await investigation.getByText("/second-page", { exact: false }).waitFor();
+await page.screenshot({ path: "backend/.smoke/security-attacker-timeline-desktop.png", animations: "disabled" });
+await page.keyboard.press("Escape");
+await investigation.waitFor({ state: "hidden" });
+for (const width of [390, 320]) {
+	await page.setViewportSize({ width, height: 900 });
+	check(
+		`attacker list fits ${width}px`,
+		await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+	);
+	await page.screenshot({
+		path: `backend/.smoke/security-attackers-${width}.png`,
+		fullPage: true,
+		animations: "disabled",
+	});
+	await page.getByRole("button", { name: "198.51.100.7", exact: true }).click();
+	await page.getByRole("dialog").waitFor();
+	check(
+		`attacker timeline fits ${width}px`,
+		await page.getByRole("dialog").evaluate((element) => element.scrollWidth <= element.clientWidth),
+	);
+	await page.waitForFunction(
+		() => document.querySelector('[role="dialog"]').getBoundingClientRect().right <= innerWidth + 1,
+	);
+	await page.screenshot({ path: `backend/.smoke/security-attacker-timeline-${width}.png`, animations: "disabled" });
+	await page.keyboard.press("Escape");
+	await page.getByRole("dialog").waitFor({ state: "hidden" });
+}
+await page.setViewportSize({ width: 1280, height: 900 });
+attackerFailure = true;
+await page.getByRole("button", { name: "Search", exact: true }).click();
+// Change the filter to force a fresh request while retaining the previous result.
+await page.getByLabel("Search IP, country, ASN, host or detection").fill("failure");
+await page.getByRole("button", { name: "Search", exact: true }).click();
+await page.getByText(/Refresh history to retry or start a new snapshot/).waitFor();
+check(
+	"attacker refresh errors retain prior source rows",
+	await page.getByRole("button", { name: "198.51.100.7", exact: true }).isVisible(),
+);
+attackerFailure = false;
+await page.getByLabel("Search IP, country, ASN, host or detection").fill("");
+await page.getByRole("button", { name: "Refresh history", exact: true }).click();
+await page.getByRole("button", { name: "198.51.100.7", exact: true }).waitFor();
+await page.getByRole("tab", { name: "Overview", exact: true }).click();
 check(
 	"dashboard header reports AppSec state",
 	(await page.getByText("AppSec metrics available", { exact: true }).count()) >= 1,
@@ -637,17 +767,17 @@ check(
 await anubisModal.locator("summary").filter({ hasText: "Host configuration" }).click();
 await anubisModal.locator("summary").filter({ hasText: "Honeypot observation" }).click();
 await page.waitForFunction(() => getComputedStyle(document.querySelector('[role="dialog"]')).opacity === "1");
-await page.screenshot({ path: ".smoke/ui-security-anubis.png", animations: "disabled" });
+await page.screenshot({ path: "backend/.smoke/ui-security-anubis.png", animations: "disabled" });
 await page.setViewportSize({ width: 320, height: 900 });
 check("honeypot details fit a 320px viewport", await anubisModal.evaluate((el) => el.scrollWidth <= el.clientWidth));
-await page.screenshot({ path: ".smoke/ui-security-anubis-mobile.png", animations: "disabled" });
+await page.screenshot({ path: "backend/.smoke/ui-security-anubis-mobile.png", animations: "disabled" });
 await anubisModal.locator("summary").filter({ hasText: "Honeypot observation" }).click();
 await anubisModal.getByText("2001:db8::1234", { exact: true }).first().scrollIntoViewIfNeeded();
 check(
 	"Anubis IPv6 history stays within the mobile modal",
 	await anubisModal.evaluate((el) => el.scrollWidth <= el.clientWidth),
 );
-await page.screenshot({ path: ".smoke/ui-security-anubis-history-mobile.png", animations: "disabled" });
+await page.screenshot({ path: "backend/.smoke/ui-security-anubis-history-mobile.png", animations: "disabled" });
 await page.setViewportSize({ width: 1280, height: 900 });
 anubisReportFailure = true;
 await anubisModal.getByLabel("Anubis reporting window").selectOption("6");
@@ -705,7 +835,7 @@ check(
 	"WAF traffic visualization has an accessible summary",
 	(await page.getByRole("img", { name: /AppSec inspected 12 requests/i }).count()) === 1,
 );
-await page.screenshot({ path: ".smoke/ui-security-dashboard-waf.png", fullPage: true });
+await page.screenshot({ path: "backend/.smoke/ui-security-dashboard-waf.png", fullPage: true });
 
 appsecConfigured = false;
 await page.reload({ waitUntil: "networkidle" });
@@ -767,14 +897,14 @@ check(
 	(await attackEvidence.innerText()).includes("1 retained event") &&
 		(await attackEvidence.innerText()).includes("does not prove"),
 );
-await page.screenshot({ path: ".smoke/ui-attack-evidence.png", fullPage: true, animations: "disabled" });
+await page.screenshot({ path: "backend/.smoke/ui-attack-evidence.png", fullPage: true, animations: "disabled" });
 const evidenceViewport = page.viewportSize();
 await page.setViewportSize({ width: 320, height: 900 });
 check(
 	"attack evidence fits phone width",
 	await attackEvidence.evaluate((el) => el.getBoundingClientRect().width <= 320),
 );
-await attackEvidence.screenshot({ path: ".smoke/ui-attack-evidence-mobile.png", animations: "disabled" });
+await attackEvidence.screenshot({ path: "backend/.smoke/ui-attack-evidence-mobile.png", animations: "disabled" });
 await page.setViewportSize(evidenceViewport);
 await historyPanel.locator('button[aria-expanded="true"]').first().click();
 
@@ -787,13 +917,13 @@ check(
 await historyPanel.getByRole("button", { name: "Next", exact: true }).click();
 await historyPanel.getByText("2001:db8::1234", { exact: true }).waitFor();
 check("extended history renders IPv6 offenders", (await historyPanel.innerText()).includes("1 match in this batch"));
-await page.screenshot({ path: ".smoke/ui-security-history.png", fullPage: true });
+await page.screenshot({ path: "backend/.smoke/ui-security-history.png", fullPage: true });
 await page.setViewportSize({ width: 320, height: 844 });
 check(
 	"history exploration controls and IPv6 values fit 320px",
 	await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
 );
-await page.screenshot({ path: ".smoke/ui-security-history-mobile.png", fullPage: true });
+await page.screenshot({ path: "backend/.smoke/ui-security-history-mobile.png", fullPage: true });
 await historyPanel.getByRole("button", { name: "Previous", exact: true }).click();
 await historyPanel.getByText("0 matches in this batch", { exact: true }).waitFor();
 check(
@@ -805,7 +935,7 @@ await historyPanel.getByText("198.51.100.7", { exact: true }).waitFor();
 await page.setViewportSize({ width: 1280, height: 900 });
 
 await page.getByRole("tab", { name: "Overview" }).click();
-await page.screenshot({ path: ".smoke/ui-security-dashboard.png", fullPage: true });
+await page.screenshot({ path: "backend/.smoke/ui-security-dashboard.png", fullPage: true });
 await page.setViewportSize({ width: 390, height: 844 });
 check(
 	"security dashboard fits a narrow viewport",
@@ -819,7 +949,7 @@ const narrowTabLayout = await page.getByRole("tab").evaluateAll((tabs) => {
 	};
 });
 check(
-	"all five tabs form three unclipped rows on mobile",
+	"all six tabs form three unclipped rows on mobile",
 	narrowTabLayout.rows === 3 && narrowTabLayout.allVisible,
 	JSON.stringify(narrowTabLayout),
 );
@@ -828,9 +958,9 @@ check(
 	"WAF monitoring fits a narrow viewport",
 	await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
 );
-await page.screenshot({ path: ".smoke/ui-security-dashboard-waf-mobile.png", fullPage: true });
+await page.screenshot({ path: "backend/.smoke/ui-security-dashboard-waf-mobile.png", fullPage: true });
 await page.getByRole("tab", { name: "Overview" }).click();
-await page.screenshot({ path: ".smoke/ui-security-dashboard-mobile.png", fullPage: true });
+await page.screenshot({ path: "backend/.smoke/ui-security-dashboard-mobile.png", fullPage: true });
 await page.setViewportSize({ width: 320, height: 720 });
 check(
 	"security dashboard and tabs fit a 320px viewport",
@@ -850,7 +980,7 @@ check(
 		.evaluate((button) => button.scrollWidth <= button.clientWidth),
 );
 await page.locator("#crowdsec-active-bans .btn-loading").waitFor({ state: "hidden" });
-await page.screenshot({ path: ".smoke/ui-security-dashboard-320.png", fullPage: true, animations: "disabled" });
+await page.screenshot({ path: "backend/.smoke/ui-security-dashboard-320.png", fullPage: true, animations: "disabled" });
 
 check(
 	"mobile decisions expose targets, expiry and unban without horizontal scrolling",
@@ -879,9 +1009,9 @@ await page.setViewportSize({ width: 1280, height: 900 });
 await page.getByRole("button", { name: "Enable dark mode", exact: true }).click();
 await page.setViewportSize({ width: 320, height: 720 });
 await page.waitForTimeout(250);
-await page.screenshot({ path: ".smoke/ui-security-bans-dark-320.png", fullPage: true, animations: "disabled" });
+await page.screenshot({ path: "backend/.smoke/ui-security-bans-dark-320.png", fullPage: true, animations: "disabled" });
 await page.setViewportSize({ width: 1280, height: 900 });
-await page.screenshot({ path: ".smoke/ui-security-bans-dark.png", fullPage: true, animations: "disabled" });
+await page.screenshot({ path: "backend/.smoke/ui-security-bans-dark.png", fullPage: true, animations: "disabled" });
 await page.getByRole("button", { name: "Enable light mode", exact: true }).click();
 
 await page.getByRole("button", { name: "Add IP ban", exact: true }).click();
@@ -901,6 +1031,7 @@ await page.setViewportSize({ width: 1280, height: 900 });
 metricsMissing = true;
 countsTruncated = true;
 await page.reload({ waitUntil: "networkidle" });
+await page.getByRole("tab", { name: "Overview", exact: true }).click();
 check(
 	"capped local counts are visibly lower bounds",
 	(await page.getByRole("button", { name: /Local active decisions/i }).innerText()).includes("500+"),
@@ -911,7 +1042,7 @@ check(
 	(await page.getByRole("img", { name: /AppSec inspected 0 requests/i }).count()) === 0 &&
 		(await page.locator("#crowdsec-tab-panel").innerText()).includes("—"),
 );
-await page.screenshot({ path: ".smoke/ui-security-dashboard-missing-metrics.png", fullPage: true });
+await page.screenshot({ path: "backend/.smoke/ui-security-dashboard-missing-metrics.png", fullPage: true });
 metricsMissing = false;
 countsTruncated = false;
 await page.reload({ waitUntil: "networkidle" });
@@ -956,13 +1087,16 @@ check(
 );
 telemetryState = "disabled";
 await page.getByRole("button", { name: "Refresh", exact: true }).click();
-await enforcement.getByText("Disabled: the CrowdSec bouncer is not enabled in nginx", { exact: true }).waitFor();
+await enforcement
+	.getByText("Disabled: the CrowdSec bouncer is not enabled in nginx", { exact: false })
+	.first()
+	.waitFor();
 check(
 	"history recorded before the bouncer was switched off is still shown",
 	(await enforcement.getByText("—", { exact: true }).count()) === 0,
 );
 telemetryState = "observed";
-await page.goto("http://localhost:5173/nginx/proxy", { waitUntil: "networkidle" });
+await page.goto(`${baseUrl}/nginx/proxy`, { waitUntil: "networkidle" });
 await page.getByRole("heading", { name: "Proxy Hosts", exact: true }).waitFor();
 check("proxy-host list shows when Anubis is enabled", (await page.getByText("Anubis enabled").count()) === 1);
 await page.getByRole("button", { name: "Add Proxy Host" }).click();
@@ -977,7 +1111,7 @@ check(
 	"Anubis guidance distinguishes browser sites from APIs",
 	(await proxyModal.getByText(/Leave it off for APIs, webhooks, and licensing services/).count()) === 1,
 );
-await page.screenshot({ path: ".smoke/ui-proxy-host-protection.png", fullPage: true });
+await page.screenshot({ path: "backend/.smoke/ui-proxy-host-protection.png", fullPage: true });
 await page.setViewportSize({ width: 390, height: 844 });
 await authRequest.scrollIntoViewIfNeeded();
 check(
@@ -987,11 +1121,11 @@ check(
 		return box.left >= 0 && box.right <= window.innerWidth && dialog.scrollWidth <= dialog.clientWidth;
 	}),
 );
-await page.screenshot({ path: ".smoke/ui-proxy-host-protection-mobile.png", fullPage: true });
+await page.screenshot({ path: "backend/.smoke/ui-proxy-host-protection-mobile.png", fullPage: true });
 await appsecToggle.uncheck();
 check("proxy-host AppSec protection can be turned off", !(await appsecToggle.isChecked()));
 await proxyModal.getByRole("button", { name: /close/i }).click();
-await page.goto("http://127.0.0.1:5173/settings");
+await page.goto(`${baseUrl}/settings`);
 const forbiddenOption = page.getByRole("radio", { name: "Animated forbidden page (403)", exact: true });
 await forbiddenOption.locator("..").click();
 await Promise.all([
@@ -1024,12 +1158,12 @@ check(
 	(await page.locator("#navbar-menu").count()) === 0,
 );
 check("account recovery reports HTTP status", await page.getByText("HTTP 503", { exact: true }).isVisible());
-await page.screenshot({ path: ".smoke/ui-account-recovery-320.png", fullPage: true });
+await page.screenshot({ path: "backend/.smoke/ui-account-recovery-320.png", fullPage: true });
 accountFailure = false;
 await page.getByRole("button", { name: "Retry", exact: true }).click();
 await page.locator('#navbar-menu a[href="/settings"]').waitFor({ state: "attached" });
 check("retry restores admin navigation", (await page.locator('#navbar-menu a[href="/crowdsec"]').count()) === 1);
-const expiredPage = await browser.newPage();
+const expiredPage = await browser.newPage({ ignoreHTTPSErrors: true });
 await expiredPage.addInitScript(
 	(expires) => {
 		if (!sessionStorage.getItem("expired-profile-fixture")) {
@@ -1041,7 +1175,7 @@ await expiredPage.addInitScript(
 );
 await expiredPage.route("**/api/**", (route) => api(route));
 sessionRejected = true;
-await expiredPage.goto("http://127.0.0.1:5173/settings");
+await expiredPage.goto(`${baseUrl}/settings`);
 await expiredPage.locator('input[name="password"]').waitFor();
 check(
 	"HTML 401 clears the expired session and shows login",

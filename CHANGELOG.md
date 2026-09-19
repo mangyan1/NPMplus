@@ -12,6 +12,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ### Changed
 
+- Made Attackers the default CrowdSec view, with server-paginated source-IP groups, searchable observations, bounded older-history loading, and a chronological investigation drawer. Event evidence loads on demand with secret filtering and explicit retention limits; local decisions remain distinct from confirmed blocking or compromise. Extended Docker browser coverage and optional private local log capture. See [investigation guidance](docs/attacker-investigation.md).
+
 - Added an automatic Docker API/browser security workflow using pinned Playwright and the exact checked-out image, with disposable loopback-only test containers. Browser coverage includes initial setup, MFA replay, modal validation/cancellation, user and permission saves, and deletion; certificate renewal error handling uses an isolated response fixture.
 - Added a SQLite upgrade regression starting with the pre-replay schema and an existing MFA account and proxy. It verifies preserved data, login, replay rejection, and repeated startup.
 - Removed redundant Bootstrap dismiss attributes from React-managed modal buttons. Baseline and updated browser checks pass; this is modal lifecycle cleanup, not a newly confirmed vulnerability.

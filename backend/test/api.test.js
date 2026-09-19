@@ -831,6 +831,10 @@ test("security telemetry requires admin access and represents an empty collector
 });
 
 test("extended alert history retains the admin gate", async () => {
+	for (const path of ["/attackers", "/attackers/timeline?ip=192.0.2.1", "/attackers/events/1"]) {
+		assert.equal((await api("GET", `/api/crowdsec${path}`)).status, 403);
+		assert.equal((await api("GET", `/api/crowdsec${path}`, { cookie: peonCookie })).status, 403);
+	}
 	assert.equal((await api("GET", "/api/crowdsec/history/alerts?cursor=")).status, 403);
 	assert.equal((await api("GET", "/api/crowdsec/history/alerts?cursor=", { cookie: peonCookie })).status, 403);
 });

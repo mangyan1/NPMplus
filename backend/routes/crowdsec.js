@@ -13,6 +13,7 @@ import {
 	readHoneypotBridge,
 	readRecentHoneypotIps,
 } from "../internal/crowdsec.js";
+import { readAttackerCatalog } from "../internal/crowdsec-attackers.js";
 import { scanAlertHistory } from "../internal/crowdsec-history.js";
 import { getHomeLocation } from "../internal/home-location.js";
 import { readTelemetry } from "../internal/security-telemetry.js";
@@ -532,6 +533,99 @@ router
 			matched: filtered.length,
 			window_hours: windowHours,
 			truncated: normalizedCount >= fetchLimit || sample.fallback,
+		});
+	});
+
+router
+	.route("/attackers")
+	.options((_, res) => res.sendStatus(204))
+	.all(jwtdecode())
+	.get(async (req, res) => {
+		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
+		res.set("Cache-Control", "no-store");
+		res.send(
+			await readAttackerCatalog({
+				windowHours: queryInteger(req.query.window_hours, 24, 1, 720),
+				session: queryString(req.query.session, 64),
+				advance: queryString(req.query.advance, 64),
+				page: queryInteger(req.query.page, 1, 1, 100),
+				search: queryString(req.query.search),
+				sort: queryString(req.query.sort, 16),
+			}),
+		);
+	});
+
+router
+	.route("/attackers/timeline")
+	.options((_, res) => res.sendStatus(204))
+	.all(jwtdecode())
+	.get(async (req, res) => {
+		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
+		const ip = canonicalIp(req.query.ip);
+		if (!ip) return res.status(400).send({ error: { message: "crowdsec.invalid-target" } });
+		res.set("Cache-Control", "no-store");
+		const history = await scanAlertHistory({
+			windowHours: queryInteger(req.query.window_hours, 24, 1, 720),
+			filters: {},
+			sourceIp: ip,
+			cursor: req.query.cursor ?? "",
+		});
+		const query = new URLSearchParams({ ip, origins: LOCAL_DECISION_ORIGINS.join(","), limit: "101" });
+		let decisions = null;
+		try {
+			decisions = readContract(
+				normalizeCrowdsecDecisions,
+				await lapiFetch(`/v1/decisions?${query}`),
+				"decisions",
+			);
+		} catch (err) {
+			debug(logger, `Attacker decisions unavailable: ${err.message}`);
+		}
+		res.send({
+			...history,
+			decisions_available: decisions !== null,
+			decisions_checked_at: new Date().toISOString(),
+			decisions_truncated: decisions !== null && decisions.length > 100,
+			decisions:
+				decisions
+					?.slice(0, 100)
+					.filter(
+						(item) =>
+							!item.simulated &&
+							item.scope.toLowerCase() === "ip" &&
+							canonicalIp(item.value) === ip &&
+							LOCAL_DECISION_ORIGINS.includes(item.origin.toLowerCase()),
+					) ?? [],
+		});
+	});
+
+router
+	.route("/attackers/events/:id")
+	.options((_, res) => res.sendStatus(204))
+	.all(jwtdecode())
+	.get(async (req, res) => {
+		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
+		const id = parseCrowdsecDecisionId(req.params.id);
+		if (!id) return res.status(400).send({ error: { message: "crowdsec.invalid-target" } });
+		const page = queryInteger(req.query.page, 1, 1, 1000);
+		const payload = await lapiMachineFetch(`/v1/alerts/${id}`, "GET", true, {
+			readJson: (response) => readCrowdsecJson(response, HISTORY_MAX_RESPONSE_BYTES),
+		});
+		const [alert] = readContract(
+			(items) => normalizeCrowdsecAlerts(items, { eventOffset: (page - 1) * 25, eventLimit: 25 }),
+			[payload],
+			"alert events",
+		);
+		if (alert.id !== id || !isAttackAlert(alert))
+			return res.status(404).send({ error: { message: "item-not-found" } });
+		const retained = Array.isArray(payload.events) ? payload.events.length : 0;
+		res.set("Cache-Control", "no-store");
+		res.send({
+			alert,
+			retained,
+			page,
+			has_next: retained > page * 25,
+			truncated: retained < alert.events_count || retained > 25000,
 		});
 	});
 

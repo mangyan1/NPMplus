@@ -1,6 +1,8 @@
 // Disposable Docker integration target; run from the repository root after building the image.
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 const image = process.env.NPMPLUS_TEST_IMAGE || "npmplus:security-ci";
@@ -62,11 +64,37 @@ try {
 	]);
 	run("security-regressions.mjs", api);
 	run("modal-ui.mjs", api);
+	run("ui-driver.mjs", api);
 	const setup = await start("setup", ["INITIAL_SETUP_TOKEN=local-security-setup-token-20260919-only"]);
 	run("security-ui.mjs", setup);
 	console.log("PASS Docker security and browser integration");
 } finally {
 	for (const name of containers) {
+		if (process.env.NPMPLUS_TEST_LOG_DIR) {
+			try {
+				mkdirSync(process.env.NPMPLUS_TEST_LOG_DIR, { recursive: true });
+				const logs = spawnSync("docker", ["logs", "--timestamps", name], {
+					encoding: "utf8",
+					maxBuffer: 8 * 1024 * 1024,
+				});
+				writeFileSync(
+					path.join(process.env.NPMPLUS_TEST_LOG_DIR, `${name}.log`),
+					`${logs.stdout || ""}\n${logs.stderr || ""}`,
+				);
+				const nginxLog = spawnSync(
+					"docker",
+					["exec", name, "tail", "-n", "100", "/usr/local/nginx/logs/error.log"],
+					{ encoding: "utf8" },
+				);
+				writeFileSync(
+					path.join(process.env.NPMPLUS_TEST_LOG_DIR, `${name}-nginx.log`),
+					`${nginxLog.stdout || ""}\n${nginxLog.stderr || ""}`,
+				);
+				if (logs.error || logs.status !== 0) console.error(`Log capture incomplete: ${name}`);
+			} catch {
+				console.error(`Log capture failed: ${name}`);
+			}
+		}
 		const result = spawnSync("docker", ["rm", "-f", name], { encoding: "utf8" });
 		if (result.status !== 0) console.error(`Container cleanup failed: ${name}`);
 	}
