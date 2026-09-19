@@ -6,7 +6,7 @@ import authModel from "../models/auth.js";
 import TokenModel from "../models/token.js";
 import userModel from "../models/user.js";
 import mfa from "./mfa.js";
-import { assertTokenSession, issueSessionToken } from "./token-session.js";
+import { assertTokenSession, consumeChallengeSession, issueSessionToken } from "./token-session.js";
 import totp from "./totp.js";
 
 const ERROR_MESSAGE_INVALID_AUTH = "Invalid email or password";
@@ -258,19 +258,16 @@ export default {
 			throw new errs.AuthError(ERROR_MESSAGE_INVALID_CODE, ERROR_MESSAGE_INVALID_CODE_I18N);
 		}
 
-		const signed = await issueSessionToken(
-			Token,
-			{
-				iss: "api",
-				iat: await issuedAfter(user.npmplus_token_valid_after),
-				attrs: {
-					id: userId,
-				},
-				scope: ["user"],
-				expiresIn: "1h",
+		await consumeChallengeSession(tokenData.sid);
+		const signed = await issueSessionToken(Token, {
+			iss: "api",
+			iat: await issuedAfter(user.npmplus_token_valid_after),
+			attrs: {
+				id: userId,
 			},
-			tokenData.sid,
-		);
+			scope: ["user"],
+			expiresIn: "1h",
+		});
 
 		return {
 			token: signed.token,

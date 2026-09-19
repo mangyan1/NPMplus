@@ -12,6 +12,13 @@ export const assertTokenSession = async (sid) => {
 	}
 };
 
+export const consumeChallengeSession = async (sid) => {
+	// Deleting, rather than extending, makes the pre-authentication identity
+	// single-use even when different valid second factors arrive concurrently.
+	const consumed = await sessions().where({ id: sid }).where("expires_at", ">", now()).delete();
+	if (consumed !== 1) throw new errs.AuthError("Invalid or expired challenge token");
+};
+
 // Every refresh keeps the same session identity. Updating an existing row
 // (never upserting it) prevents a concurrent refresh from undoing logout.
 export const issueSessionToken = async (token, payload, sid = null) => {

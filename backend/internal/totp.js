@@ -36,7 +36,7 @@ const internalTotp = {
 			label: user.email,
 			secret,
 		});
-		const auth = await authModel.getPasswordAuth(userId);
+		const auth = await authModel.getPasswordAuthSnapshot(userId);
 
 		if (!auth) throw new errs.ItemNotFoundError("Auth not found");
 
@@ -49,12 +49,14 @@ const internalTotp = {
 		const meta = auth.meta || {};
 		meta.totp_pending_secret = secret;
 
-		await authModel
+		const pending = await authModel
 			.query()
 			.where("id", auth.id)
 			.andWhere("user_id", userId)
 			.andWhere("type", "password")
+			.whereRaw(`${authModel.metaCast} = ?`, ["meta", auth.meta_snapshot])
 			.patch({ meta });
+		if (pending !== 1) throw new errs.ValidationError("TOTP setup has changed. Please retry.");
 
 		return { secret, otpauth_url };
 	},
@@ -72,7 +74,7 @@ const internalTotp = {
 			throw new errs.PermissionError("TOTP can only be managed for your own account");
 		}
 		const user = await internalUser.get(access, { id: userId });
-		const auth = await authModel.getPasswordAuth(userId);
+		const auth = await authModel.getPasswordAuthSnapshot(userId);
 		const secret = auth?.meta?.totp_pending_secret || false;
 
 		if (!secret) {
@@ -94,12 +96,14 @@ const internalTotp = {
 		};
 		delete meta.totp_pending_secret;
 
-		await authModel
+		const enabled = await authModel
 			.query()
 			.where("id", auth.id)
 			.andWhere("user_id", userId)
 			.andWhere("type", "password")
-			.patch({ meta });
+			.whereRaw(`${authModel.metaCast} = ?`, ["meta", auth.meta_snapshot])
+			.patch({ meta, npmplus_totp_last_used_step: result.timeStep });
+		if (enabled !== 1) throw new errs.ValidationError("TOTP setup has changed. Please retry.");
 
 		await userModel
 			.query()
@@ -139,7 +143,7 @@ const internalTotp = {
 			.where("id", auth.id)
 			.andWhere("user_id", userId)
 			.andWhere("type", "password")
-			.patch({ meta });
+			.patch({ meta, npmplus_totp_last_used_step: null });
 
 		if (audit) {
 			const user = await internalUser.get(access, { id: userId });
@@ -163,10 +167,10 @@ const internalTotp = {
 	 * @returns {Promise<boolean>}
 	 */
 	verifyCode: async (userId, code) => {
-		const auth = await authModel.getPasswordAuth(userId);
+		const auth = await authModel.getPasswordAuthSnapshot(userId);
 		const secret = auth?.meta?.totp_secret || false;
 
-		if (!secret) {
+		if (!secret || auth.meta.totp_enabled !== true) {
 			return false;
 		}
 
@@ -182,7 +186,20 @@ const internalTotp = {
 			}),
 		});
 
-		return result.valid;
+		if (!result.valid) return false;
+		// Claim the matched step atomically. Concurrent logins and stale reads
+		// must not reuse a code or authenticate against a replaced enrollment.
+		const consumed = await authModel
+			.query()
+			.where("id", auth.id)
+			.whereRaw(`${authModel.metaCast} = ?`, ["meta", auth.meta_snapshot])
+			.where((query) =>
+				query
+					.whereNull("npmplus_totp_last_used_step")
+					.orWhere("npmplus_totp_last_used_step", "<", result.timeStep),
+			)
+			.patch({ npmplus_totp_last_used_step: result.timeStep });
+		return consumed === 1;
 	},
 };
 
