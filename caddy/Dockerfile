@@ -9,6 +9,12 @@ ARG X_NET_VERSION=v0.57.0
 # requests missing both :authority and Host headers.
 ARG GRPC_VERSION=v1.83.2
 ARG CEL_GO_VERSION=v0.29.2
+# Caddy 2.11.4 pins the OTLP log modules at v0.19.0. That exporter accepted a
+# TLS certificate without validating it (CVE-2026-81871, fixed in v0.21.0).
+# The log modules carry their own v0.x line, so pin the whole set to the
+# aligned otel v1.45.0 release instead of the exporter alone.
+ARG OTEL_VERSION=v1.45.0
+ARG OTEL_LOG_VERSION=v0.21.0
 
 # Caddy 2.11.4 predates cel-go 0.29's InterpretableV2 API. This two-line
 # compatibility patch is taken from upstream commit b2693fb63a30e6d7be0972c3645e9a2c0a500e93.
@@ -26,7 +32,13 @@ RUN apk upgrade --no-cache -a && \
 		--replace "github.com/google/cel-go=github.com/google/cel-go@$CEL_GO_VERSION" \
 		--replace "golang.org/x/crypto=golang.org/x/crypto@$X_CRYPTO_VERSION" \
 		--replace "golang.org/x/net=golang.org/x/net@$X_NET_VERSION" \
-		--replace "google.golang.org/grpc=google.golang.org/grpc@$GRPC_VERSION" && \
+		--replace "google.golang.org/grpc=google.golang.org/grpc@$GRPC_VERSION" \
+		--replace "go.opentelemetry.io/otel=go.opentelemetry.io/otel@$OTEL_VERSION" \
+		--replace "go.opentelemetry.io/otel/log=go.opentelemetry.io/otel/log@$OTEL_LOG_VERSION" \
+		--replace "go.opentelemetry.io/otel/sdk/log=go.opentelemetry.io/otel/sdk/log@$OTEL_LOG_VERSION" \
+		--replace "go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc@$OTEL_LOG_VERSION" \
+		--replace "go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@$OTEL_LOG_VERSION" \
+		--replace "go.opentelemetry.io/otel/exporters/stdout/stdoutlog=go.opentelemetry.io/otel/exporters/stdout/stdoutlog@$OTEL_LOG_VERSION" && \
 	/usr/bin/caddy version
 
 FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b

@@ -4,6 +4,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Moved the fork Caddy build's OTLP log modules to the otel v1.45.0 line (`otlploggrpc`, `otlploghttp`, and `stdoutlog` v0.21.0 with otel core v1.45.0). Caddy 2.11.4 pins `otlploggrpc` v0.19.0, and a newly published advisory (CVE-2026-81871, MEDIUM, TLS certificate validation in the log gRPC exporter) turned the release gate red for an image that had scanned clean since 2026-09-16. The rebuilt image reports zero findings at MEDIUM,HIGH,CRITICAL and keeps Caddy 2.11.4 with the existing cel-go, x/crypto, x/net, and gRPC pins.
+
 ## v2.15.1-mangyan1.rc.8 - 2026-09-19
 
 Eighth public release candidate of the security-focused fork.
