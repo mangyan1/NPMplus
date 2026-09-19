@@ -2657,6 +2657,12 @@ NPMPLUS_SAFE_UPDATE_ACTIVE=true "$SETUP" --update || revert
 # crowdsec hub: refresh the detection signatures (parsers/scenarios/collections);
 # a container image update alone never touches them and they live outside the image
 if docker compose -f "$COMPOSE_FILE" ps --status running --format '{{.Name}}' 2>/dev/null | grep -qx crowdsec; then
+	# the image entrypoint bridges its preloaded datafiles into the data dir as
+	# absolute symlinks into /staging. Our read_only rootfs makes that target
+	# unwritable, so hub upgrade follows the link into an EROFS and aborts the
+	# whole upgrade - at container start too, where it is silenced. Replace the
+	# links with real files; the entrypoint's own -e guard then leaves them be.
+	docker exec crowdsec sh -c 'cd /var/lib/crowdsec/data && for f in *; do if [ -L "$f" ] && [ ! -d "$f" ]; then cp -Lpf "$f" "$f.tmp" && mv -f "$f.tmp" "$f"; fi; done' 2>/dev/null || true
 	docker exec crowdsec cscli hub update
 	docker exec crowdsec cscli hub upgrade || log "cscli hub upgrade reported failures (kept, check: docker exec crowdsec cscli hub list)"
 fi

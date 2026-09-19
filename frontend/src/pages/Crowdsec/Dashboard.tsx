@@ -133,8 +133,8 @@ const CrowdsecDashboard = () => {
 		await queryClient.invalidateQueries({ queryKey: ["security-telemetry"] });
 	};
 	const tabs: { id: DashboardTab; label: string }[] = [
-		{ id: "attackers", label: "crowdsec.attackers.title" },
 		{ id: "overview", label: "crowdsec.tabs.overview" },
+		{ id: "attackers", label: "crowdsec.attackers.title" },
 		{ id: "activity", label: "crowdsec.tabs.activity" },
 		{ id: "bans", label: "crowdsec.tabs.bans" },
 		{ id: "waf", label: "crowdsec.tabs.waf" },

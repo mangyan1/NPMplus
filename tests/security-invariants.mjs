@@ -184,6 +184,33 @@ const read = (path) => {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Rule 8: the crowdsec data dir is dereferenced before the hub refresh. The
+// image entrypoint links its preloaded datafiles into /var/lib/crowdsec/data as
+// absolute symlinks into /staging, and the read_only hardening turns that
+// target read-only: `cscli hub upgrade` follows the link into an EROFS and
+// aborts the whole upgrade. The container's own copy of that call is silenced
+// with `|| true`, so the failure is a single warning line in an update log and
+// no detection signature ever refreshes. Reported from the field 2026-09-19.
+// ---------------------------------------------------------------------------
+{
+	const setup = read("setup-npmplus.sh");
+	if (setup !== null) {
+		const upgradeAt = setup.indexOf("docker exec crowdsec cscli hub upgrade");
+		const dereferenceAt = setup.search(
+			/docker exec crowdsec sh -c 'cd \/var\/lib\/crowdsec\/data[\s\S]{0,400}?cp -Lpf/,
+		);
+		if (upgradeAt === -1) {
+			fail("crowdsec-datafiles", "setup-npmplus.sh no longer refreshes the crowdsec hub");
+		} else if (dereferenceAt === -1 || dereferenceAt > upgradeAt) {
+			fail(
+				"crowdsec-datafiles",
+				"setup-npmplus.sh must dereference /var/lib/crowdsec/data before `cscli hub upgrade` (read_only /staging symlinks abort it with EROFS)",
+			);
+		}
+	}
+}
+
 if (failures.length > 0) {
 	console.error("security invariant violations:");
 	for (const failure of failures) {
