@@ -1,16 +1,10 @@
 // biome-ignore-all lint/suspicious/noMisplacedAssertion: standalone browser smoke assertions
 // Fresh-install and MFA clicks against a disposable local container, no API mocks.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { generate } from "otplib";
+import { chromium } from "playwright";
 
-const command = process.platform === "win32" ? "cmd.exe" : "npm";
-const args = process.platform === "win32" ? ["/d", "/s", "/c", "npm root -g"] : ["root", "-g"];
-const root = process.env.PLAYWRIGHT_ROOT || execFileSync(command, args).toString().trim();
-const entry = path.join(root, "playwright", "index.mjs").replaceAll("\\", "/");
-const { chromium } = await import(`file://${entry}`);
 const base = process.env.SMOKE_BASE_URL || "https://127.0.0.1:28182";
 assert.ok(["127.0.0.1", "localhost"].includes(new URL(base).hostname));
 const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM || undefined });
