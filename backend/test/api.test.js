@@ -1004,3 +1004,52 @@ test("a revoked session is rejected on every request, not only the first after r
 	// same cookie object, brand-new request: must hit the revocation check
 	assert.equal((await api("GET", "/api/nginx/proxy-hosts", { cookie })).status, 401);
 });
+
+test("delegated proxy CRUD cannot publish local sockets or named upstreams", async (t) => {
+	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
+	await insertUser({
+		email: "socket-manager@example.com",
+		password: "Socket-Manager-1",
+		roles: ["user"],
+		permissions: { proxy_hosts: "manage" },
+	});
+	const login = await api("POST", "/api/tokens", {
+		body: { identity: "socket-manager@example.com", secret: "Socket-Manager-1" },
+	});
+	assert.equal(login.status, 200, login.text);
+	const cookie = sessionCookieOf(login);
+	const body = {
+		domain_names: ["socket-audit.example.com"],
+		forward_scheme: "http",
+		forward_host: "127.0.0.1",
+		forward_port: 8080,
+	};
+	for (const host of ["unix:/run/nginx-control.sock", "unix:/tmp/application.sock", "cu_internal"]) {
+		const rejected = await api("POST", "/api/nginx/proxy-hosts", {
+			cookie,
+			body: { ...body, forward_host: host, forward_port: null },
+		});
+		assert.equal(rejected.status, 403, rejected.text);
+	}
+	const created = await api("POST", "/api/nginx/proxy-hosts", { cookie, body });
+	assert.equal(created.status, 201, created.text);
+	const url = `/api/nginx/proxy-hosts/${created.body.id}`;
+	const updated = await api("PUT", url, {
+		cookie,
+		body: { forward_host: "unix:/run/nginx-control.sock", forward_port: null },
+	});
+	assert.equal(updated.status, 403, updated.text);
+	const location = {
+		path: "/private",
+		forward_scheme: "http",
+		forward_host: "unix:/run/npmplus.sock",
+		forward_port: null,
+		npmplus_access_list_ids: [],
+		npmplus_access_list_type: "global",
+	};
+	const custom = await api("PUT", url, { cookie, body: { locations: [location] } });
+	assert.equal(custom.status, 403, custom.text);
+	const unchanged = await api("GET", url, { cookie });
+	assert.equal(unchanged.body.forward_host, "127.0.0.1");
+	assert.equal((await api("DELETE", url, { cookie })).status, 200);
+});

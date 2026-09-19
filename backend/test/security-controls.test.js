@@ -58,6 +58,39 @@ test("delegated users cannot introduce a local filesystem proxy target", () => {
 	);
 });
 
+test("local sockets and named upstreams require administrator authorization", () => {
+	for (const host of ["unix:/tmp/app.sock", "unix:relative.sock", "cu_private"]) {
+		const destination = { forward_scheme: "http", forward_host: host, forward_port: null };
+		assert.throws(
+			() => assertPrivilegedNginxFields(delegatedAccess, destination),
+			(error) => error.status === 403,
+		);
+		assert.throws(
+			() => assertPrivilegedNginxFields(delegatedAccess, { locations: [{ ...destination, path: "/app" }] }),
+			(error) => error.status === 403,
+		);
+		assert.doesNotThrow(() => assertPrivilegedNginxFields({ canAdmin: () => true }, destination));
+		assert.doesNotThrow(() => assertPrivilegedNginxFields(delegatedAccess, { enabled: false }, destination));
+		assert.throws(
+			() => assertPrivilegedNginxFields(delegatedAccess, { forward_host: "unix:/tmp/other.sock" }, destination),
+			(error) => error.status === 403,
+		);
+	}
+	assert.throws(
+		() => assertPrivilegedNginxFields(delegatedAccess, { forwarding_host: "cu_private", forwarding_port: "" }),
+		(error) => error.status === 403,
+	);
+});
+
+test("management sockets cannot be published even by an administrator", () => {
+	for (const host of ["unix:/run/nginx-control.sock", "unix:/run/../run/npmplus.sock", "unix://run/goaccess.sock"]) {
+		assert.throws(
+			() => assertPrivilegedNginxFields({ canAdmin: () => true }, { forward_host: host }),
+			(error) => error.status === 403,
+		);
+	}
+});
+
 test("delegated users cannot change the local-path fastcgi port on an existing host", () => {
 	// the local-path fastcgi target renders from forward_port
 	// (fastcgi_pass unix:/run/php{{ forward_port }}.sock), so changing it must
