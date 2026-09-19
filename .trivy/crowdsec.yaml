@@ -1,31 +1,32 @@
+# Reassessed against current upstream image scans on 2026-09-19; expiry unchanged.
 vulnerabilities:
   - id: CVE-2026-14456
     expired_at: 2026-10-04
-    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships libcrypto3 3.5.7-r0. Scanner lists fixes: 3.5.8-r0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-25681
     expired_at: 2026-10-04
-    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.55.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-27136
     expired_at: 2026-10-04
-    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.55.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-32286
     expired_at: 2026-10-04
-    statement: "Optional PostgreSQL driver is inactive in the standard SQLite deployment; awaiting upstream rebuild."
+    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships github.com/jackc/pgproto3/v2 v2.3.3. Scanner lists no fixed version. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-33814
     expired_at: 2026-10-04
-    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.53.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-39821
     expired_at: 2026-10-04
-    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.55.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-46600
     expired_at: 2026-10-04
-    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.56.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-56852
     expired_at: 2026-10-04
-    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships golang.org/x/text v0.32.0. Scanner lists fixes: 0.39.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-84304
     expired_at: 2026-10-04
-    statement: "CrowdSec 1.8.1 upstream image; loopback-only APIs; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships google.golang.org/grpc v1.83.0. Scanner lists fixes: 1.83.1. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-84445
     expired_at: 2026-10-04
-    statement: "CrowdSec 1.8.1 upstream image; LAPI serves plain HTTP, not an xDS gRPC server; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships google.golang.org/grpc v1.83.0. Scanner lists fixes: 1.82.2, 1.83.2, 1.85.0-dev.0.20260825072537-93e31b48545e. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."

@@ -1,37 +1,38 @@
+# Reassessed against current upstream image scans on 2026-09-19; expiry unchanged.
 vulnerabilities:
   - id: CVE-2026-33818
     expired_at: 2026-10-04
-    statement: "Anubis 1.27.0 upstream image; loopback-only listener; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream Anubis 1.27.0 still ships Go standard library v1.26.5. Scanner lists fixes: 1.25.13, 1.26.6, 1.27.0-rc.3. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-39821
     expired_at: 2026-10-04
-    statement: "Anubis 1.27.0 upstream image; loopback-only listener; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream Anubis 1.27.0 still ships Go standard library v1.26.5. Scanner lists fixes: 1.25.13, 1.26.6, 1.27.0-rc.3. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-46600
     expired_at: 2026-10-04
-    statement: "Anubis 1.27.0 upstream image; loopback-only listener; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream Anubis 1.27.0 still ships Go standard library v1.26.5. Scanner lists fixes: 1.26.6, 1.27.0-rc.3. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-56852
     expired_at: 2026-10-04
-    statement: "Anubis 1.27.0 upstream image; loopback-only listener; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream Anubis 1.27.0 still ships golang.org/x/text v0.38.0. Scanner lists fixes: 0.39.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-56853
     expired_at: 2026-10-04
-    statement: "Anubis 1.27.0 upstream image; loopback-only listener; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream Anubis 1.27.0 still ships Go standard library v1.26.5. Scanner lists fixes: 1.25.13, 1.26.6, 1.27.0-rc.3. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-56858
     expired_at: 2026-10-04
-    statement: "Anubis 1.27.0 upstream image; loopback-only listener; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream Anubis 1.27.0 still ships Go standard library v1.26.5. Scanner lists fixes: 1.25.13, 1.26.6, 1.27.0-rc.3. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-56859
     expired_at: 2026-10-04
-    statement: "Anubis 1.27.0 upstream image; loopback-only listener; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream Anubis 1.27.0 still ships Go standard library v1.26.5. Scanner lists fixes: 1.25.13, 1.26.6, 1.27.0-rc.3. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-56860
     expired_at: 2026-10-04
-    statement: "Anubis 1.27.0 upstream image; loopback-only listener; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream Anubis 1.27.0 still ships Go standard library v1.26.5. Scanner lists fixes: 1.25.13, 1.26.6, 1.27.0-rc.3. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-56862
     expired_at: 2026-10-04
-    statement: "Anubis 1.27.0 upstream image; loopback-only listener; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream Anubis 1.27.0 still ships Go standard library v1.26.5. Scanner lists fixes: 1.25.13, 1.26.6, 1.27.0-rc.3. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-84304
     expired_at: 2026-10-04
-    statement: "Anubis 1.27.0 upstream image; loopback-only listener; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream Anubis 1.27.0 still ships google.golang.org/grpc v1.81.1. Scanner lists fixes: 1.83.1. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-84445
     expired_at: 2026-10-04
-    statement: "Anubis 1.27.0 upstream image; standard net/http deployment, not an xDS gRPC server; awaiting an upstream Go rebuild."
+    statement: "Rechecked 2026-09-19: upstream Anubis 1.27.0 still ships google.golang.org/grpc v1.81.1. Scanner lists fixes: 1.82.2, 1.83.2, 1.85.0-dev.0.20260825072537-93e31b48545e. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: GHSA-hrxh-6v49-42gf
     expired_at: 2026-10-04
-    statement: "Unused gRPC/xDS path in the standard Anubis deployment; awaiting an upstream rebuild."
+    statement: "Rechecked 2026-09-19: upstream Anubis 1.27.0 still ships google.golang.org/grpc v1.81.1. Scanner lists fixes: 1.82.1. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
