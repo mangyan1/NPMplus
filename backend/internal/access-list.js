@@ -13,6 +13,8 @@ import internalNginx from "./nginx.js";
 import internalProxyHostAccessList from "./proxy-host-access-list.js";
 
 const omissions = () => ["is_deleted", "owner.is_deleted"];
+// biome-ignore lint/suspicious/noControlCharactersInRegex: reject htpasswd record delimiters and control bytes
+const invalidUsername = /[:\u0000-\u001f\u007f]/;
 
 const internalAccessList = {
 	/**
@@ -462,6 +464,15 @@ const internalAccessList = {
 
 		if (items?.length > 0) {
 			for (const item of items) {
+				// Legacy rows also reach this writer during nginx regeneration.
+				// Drop invalid records, keeping the auth file present and fail-closed.
+				if (
+					typeof item.username !== "string" ||
+					invalidUsername.test(item.username) ||
+					item.username.length > 255
+				) {
+					continue;
+				}
 				if (item.username?.length > 0 && item.password?.length > 0) {
 					logger.info(`Adding: ${item.username}`);
 

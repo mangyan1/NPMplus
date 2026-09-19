@@ -204,7 +204,9 @@
 				"properties": {
 					"username": {
 						"type": "string",
-						"minLength": 1
+						"minLength": 1,
+						"maxLength": 255,
+						"pattern": "^[^:\\u0000-\\u001f\\u007f]+$"
 					},
 					"password": {
 						"type": "string"

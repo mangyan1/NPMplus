@@ -34,7 +34,7 @@ fs.mkdirSync(path.join(root, "data/npmplus"), { recursive: true });
 // native driver uses the explicit test database path from lib/config.js.
 for (const [target, names] of [
 	[fs, ["existsSync", "readFileSync", "writeFileSync", "mkdirSync", "rmSync", "statSync"]],
-	[fsp, ["readFile", "writeFile", "mkdir", "rm", "readdir", "stat", "access", "open", "unlink"]],
+	[fsp, ["readFile", "writeFile", "appendFile", "mkdir", "rm", "readdir", "stat", "access", "open", "unlink"]],
 ]) {
 	for (const name of names) {
 		const original = target[name].bind(target);

@@ -1053,3 +1053,36 @@ test("delegated proxy CRUD cannot publish local sockets or named upstreams", asy
 	assert.equal(unchanged.body.forward_host, "127.0.0.1");
 	assert.equal((await api("DELETE", url, { cookie })).status, 200);
 });
+
+test("access-list usernames reject record delimiters and preserve ordinary credentials", async () => {
+	for (const username of [
+		"user:injected",
+		"user\ninjected",
+		"user\rinjected",
+		"user\u0000",
+		"user\t",
+		"x".repeat(256),
+	]) {
+		const result = await api("POST", "/api/nginx/access-lists", {
+			cookie: adminCookie,
+			body: { name: "invalid-user", items: [{ username, password: "test-password" }] },
+		});
+		assert.equal(result.status, 400, result.text);
+	}
+	const created = await api("POST", "/api/nginx/access-lists", {
+		cookie: adminCookie,
+		body: { name: "valid-user", items: [{ username: "valid.user@example.com", password: "test-password" }] },
+	});
+	assert.equal(created.status, 201, created.text);
+	const updated = await api("PUT", `/api/nginx/access-lists/${created.body.id}`, {
+		cookie: adminCookie,
+		body: { items: [{ username: "bad:record", password: "test-password" }] },
+	});
+	assert.equal(updated.status, 400, updated.text);
+	const { default: accessLists } = await import("../internal/access-list.js");
+	await accessLists.writeData("/data/access/legacy-audit", [
+		{ username: "injected\nrecord", password: "synthetic-hash" },
+		{ username: "valid", password: "synthetic-hash" },
+	]);
+	assert.equal(readFileSync("/data/access/legacy-audit", "utf8"), "valid:synthetic-hash\n");
+});
