@@ -21,8 +21,9 @@ See [attack evidence](security-telemetry.md#attack-evidence-details).
 
 ## Deployment
 
-These changes need both installer v1.58 and an image containing the new backend
-and frontend. They are included in RC6 but have not been deployed to the owner's VM.
+These changes need both installer v1.58 or later (v1.59 in RC8) and an image
+containing the new backend and frontend. They are included in RC6 but have not
+been deployed to the owner's VM.
 
 The installer installs `npmplus-collect-anubis` with a one-minute cron. It resolves
 the installer-managed Anubis container's bridge-network IPv4 address and reads its

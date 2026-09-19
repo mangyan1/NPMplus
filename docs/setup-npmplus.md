@@ -4,15 +4,15 @@
 
 The installer intentionally does not deploy PHP-FPM. This fork treats NPMplus as a reverse proxy and security boundary; every proxied application remains responsible for its own runtime, application files, updates, and health checks. Keep the `PHP83`, `PHP84`, and `PHP85` options disabled unless you deliberately leave this recommended deployment model and accept the advanced compatibility tradeoffs documented in `ADVANCED.md`.
 
-The recommended installer is the pinned **v2.15.1-mangyan1.rc.7** release candidate, which is SHA-256-verified and resolves its images to immutable digests; it does not move the stable `latest` channel. The maintained `develop` channel contains the newest fixes between releases and remains available for rolling test deployments.
+The recommended installer is the pinned **v2.15.1-mangyan1.rc.8** release candidate, which is SHA-256-verified and resolves its images to immutable digests; it does not move the stable `latest` channel. The maintained `develop` channel contains the newest fixes between releases and remains available for rolling test deployments.
 
 ## Fresh installation
 
 Download the current release-candidate script and checksum, verify them, review the script, and run it on a test server:
 
 ```bash
-wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.7/setup-npmplus.sh &&
-wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.7/setup-npmplus.sh.sha256 &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.8/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.8/setup-npmplus.sh.sha256 &&
 sha256sum -c setup-npmplus.sh.sha256 &&
 less setup-npmplus.sh &&
 sudo bash setup-npmplus.sh
@@ -22,7 +22,7 @@ The version-pinned installer is verified against its checksum file before it is 
 
 On a new server, select **Install NPMplus**. On an existing installation, the same command offers safe update, CrowdSec doctor, startup/reboot diagnostics, advanced reconfiguration, and uninstall. The interactive installation prompts cover the initial administrator, CrowdSec and AppSec, the firewall bouncer, Anubis, Caddy, Cloudflare trust, UFW, and unattended security upgrades. The recommended defaults enable CrowdSec, AppSec, the firewall bouncer, and Anubis. Existing UFW rules are preserved unless a reset is explicitly approved. Before a reset, the script detects the active SSH port and asks for confirmation so it does not assume port 22.
 
-RC7 is the current release candidate. It contains everything in RC6 plus the September 16 upstream reconciliation: the plain-JavaScript frontend (the TypeScript toolchain is removed from the frontend; the remaining fork TypeScript sources run through Node 24 type stripping), the simplified permission model, the nginx control-API reload, server-managed nicknames, and the lua-nginx-module rc5 build bump. It is being tested against real traffic before promotion.
+RC8 is the current release candidate. It contains everything in RC7 plus the September 19 security round: the fail-closed CrowdSec bouncer posture (the daily heal migrates an existing fail-open config, installer v1.59), single-use TOTP login challenges with a replay-state migration that runs automatically, administrator-only Unix-socket and custom upstream destinations, the closed access-list IDOR and fail-closed permission guards, the CrowdSec dashboard fixes, the new Attackers investigation view, the upstream reconciliation through `fce815df`, and nginx 1.31.6. It is being tested against real traffic before promotion.
 
 The generated Compose file is `/opt/npmplus/compose.yaml`. Registry channels are pulled and resolved to immutable `sha256` image digests before that file is written. An explicitly supplied initial administrator password is passed through a root-only, one-time Docker secret under `/run`, never embedded in Compose. After the API confirms that the account exists, the script removes its Compose references, recreates NPMplus without the secret mount, confirms health, and only then erases the file. Setup script v1.16 also scrubs legacy inline `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` entries before an update snapshot is created.
 
@@ -111,15 +111,15 @@ with the rollback/recovery procedure. No release tag is moved by this upgrade.
 
 ### Protection opt-ins
 
-The version-pinned commands below target RC7. Rolling `develop` users should use
+The version-pinned commands below target RC8. Rolling `develop` users should use
 the branch installer above with the same update flags instead of downloading an
 older release installer.
 
 An ordinary update preserves the existing AppSec setting. To opt an existing installer-managed CrowdSec deployment into AppSec, run the safe update once with the explicit flag:
 
 ```bash
-wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.7/setup-npmplus.sh &&
-wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.7/setup-npmplus.sh.sha256 &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.8/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.8/setup-npmplus.sh.sha256 &&
 sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh --update --enable-appsec
 ```
@@ -129,8 +129,8 @@ The opt-in is included in the same snapshot, health-check, and automatic-rollbac
 Fresh installs default protected startup to on when the installer-managed firewall bouncer is selected. Existing installations preserve their current behavior unless this explicit opt-in is used:
 
 ```bash
-wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.7/setup-npmplus.sh &&
-wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.7/setup-npmplus.sh.sha256 &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.8/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.8/setup-npmplus.sh.sha256 &&
 sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh --update --enable-strict-boot
 ```
@@ -142,8 +142,8 @@ The firewall bouncer uses its supported iptables/ipset backend with both `INPUT`
 If every public hostname sharing the origin IP is Cloudflare orange-clouded, the optional origin lock can be enabled in the fresh-install prompt or during the same safe update:
 
 ```bash
-wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.7/setup-npmplus.sh &&
-wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.7/setup-npmplus.sh.sha256 &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.8/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.8/setup-npmplus.sh.sha256 &&
 sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh --update --enable-strict-boot --enable-cloudflare-origin-lock
 ```
@@ -374,7 +374,7 @@ v1.57 and the accompanying image add bridge status and pending-ban evidence; old
 tooling displays "Not observed". Allow one five-minute cron interval after updating.
 See [Anubis reporting](anubis-reporting.md) for reporting definitions and limitations.
 
-Installer v1.58 and its accompanying image also add **Anubis outcomes**, expandable
+Installer v1.58 or later (v1.59 in RC8) and its accompanying image also add **Anubis outcomes**, expandable
 host/location configuration coverage, and timestamped observation/ban history in
 that modal. Metrics stay private and run on a one-minute collector; windowed values
 need a baseline and a completed five-minute interval. See [Anubis reporting](anubis-reporting.md)

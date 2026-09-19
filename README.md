@@ -20,7 +20,7 @@ It is based on [ZoeyVid/NPMplus](https://github.com/ZoeyVid/NPMplus) and the ori
 | Maintain the fork and merge ZoeyVid updates | [Fork maintenance guide](FORK.md) |
 | Everything else (updates, boot, backups internals, diagnostics) | [Setup and operations guide](docs/setup-npmplus.md) · [Advanced reference](ADVANCED.md) |
 
-The recommended installer is the pinned **v2.15.1-mangyan1.rc.7** release candidate, which is SHA-256-verified and resolves its images to immutable digests. The maintained `develop` channel contains the newest fixes between releases and remains available for rolling test deployments from the [develop branch](https://github.com/mangyan1/NPMplus/tree/develop).
+The recommended installer is the pinned **v2.15.1-mangyan1.rc.8** release candidate, which is SHA-256-verified and resolves its images to immutable digests. The maintained `develop` channel contains the newest fixes between releases and remains available for rolling test deployments from the [develop branch](https://github.com/mangyan1/NPMplus/tree/develop).
 
 ## Before you start
 
@@ -39,13 +39,13 @@ The installer can install Docker if it is missing. It asks before making importa
 For the recommended maintained build, copy this entire command, paste it into a **test server** terminal, and press Enter:
 
 ```bash
-wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.7/setup-npmplus.sh &&
-wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.7/setup-npmplus.sh.sha256 &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.8/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.8/setup-npmplus.sh.sha256 &&
 sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh
 ```
 
-This downloads the version-pinned RC7 installer and verifies it against its SHA-256 file before running it. Review the script before running it on a production host. Rolling `develop` builds remain available for maintainers directly from the [branch](https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh).
+This downloads the version-pinned RC8 installer and verifies it against its SHA-256 file before running it. Review the script before running it on a production host. Rolling `develop` builds remain available for maintainers directly from the [branch](https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh).
 
 Select **Install NPMplus**, then answer the questions shown by the installer. If you are unsure, press Enter to accept the displayed default. The recommended defaults enable CrowdSec, CrowdSec AppSec web-application protection, the firewall bouncer, and Anubis. Anubis's global catch-all challenge defaults off so APIs, licensing servers, webhooks, monitors, and other non-browser clients continue to work. AppSec can still be turned off for an individual proxy host if an application has a confirmed compatibility problem.
 
@@ -97,7 +97,7 @@ sudo /opt/npmplus/setup-npmplus.sh
 - **Restore a backup from an archive** - put old data back onto this machine (see [Migrate to a new server](#migrate-to-a-new-server)).
 - **Uninstall** - final backup, clear description, typed confirmation.
 
-To move to a newer release, use the installer and checksum on that release's page. To stay on rolling `develop`, download the current branch installer and use its safe update. RC7 adds the September 16 upstream reconciliation (the plain-JavaScript frontend, the simplified permission model, and the nginx control-API reload) on top of everything in RC6; `develop` may still be a few commits ahead. See [channel selection and upgrade behavior](docs/setup-npmplus.md#september-12-develop-upgrade).
+To move to a newer release, use the installer and checksum on that release's page. To stay on rolling `develop`, download the current branch installer and use its safe update. RC8 adds the September 19 security round on top of everything in RC7: the fail-closed CrowdSec posture with its automatic heal migration (installer v1.59), single-use TOTP login challenges, administrator-only unix-socket and custom upstream destinations, the CrowdSec dashboard fixes, the new Attackers investigation view, and the upstream reconciliation through `fce815df` with nginx 1.31.6; `develop` may still be a few commits ahead. See [channel selection and upgrade behavior](docs/setup-npmplus.md#september-12-develop-upgrade).
 
 Advanced opt-ins that an ordinary menu update deliberately preserves - enabling AppSec, protected startup, or the Cloudflare origin lock on an existing installation - each need one explicit command: see [Updating](docs/setup-npmplus.md#updating) in the operations guide.
 

@@ -4,6 +4,10 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+## v2.15.1-mangyan1.rc.8 - 2026-09-19
+
+Eighth public release candidate of the security-focused fork.
+
 ### Security
 
 - Restricted Unix-socket and custom upstream destinations to administrators, including custom locations and stream upstream references. Built-in management sockets cannot be selected as proxy destinations.
@@ -42,6 +46,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 - Fixed the six findings of the 2026-09-16 CrowdSec integration audit. The image-seeded bouncer config no longer fails open: `crowdsec.conf.example` ships `MODE=stream` (bans survive LAPI outages, matching the installer path) and `APPSEC_FAILURE_ACTION=deny`, and `enable_crowdsec_appsec` upgrades an empty failure action to `deny` when it wires AppSec (an explicit operator `passthrough` stays untouched). `crowdsec-doctor.sh` gains a step 8d that flags `MODE=live` and AppSec `passthrough` on existing installs. Bouncer/machine key files are created race-free everywhere: `setup-npmplus.sh` routes every key/secret write through the existing `write_root_file` helper (mktemp is 0600 before the atomic rename), and the doctor and the daily heal script set `umask 077` so no creation window is world-readable. The heal cron now reopens the protected public gate only after the firewall bouncer is active with its INPUT/FORWARD rules restored (the doctor's step 8b standard, polled up to ten seconds) instead of after a bare key check. The LAPI certificate chain is validated through the http-level `lua_ssl_trusted_certificate` in `nginx.conf` (restating it inside the CrowdSec include is a duplicate directive that fails `nginx -t` the moment the include is enabled), the doctor's CAPI probe pipes the bouncer key through `curl --config -` instead of argv, the manual-ban failure audit mirrors the delete route's `err.public` gate, and the unused truthy-granting `hasCrowdsecAdminAccess` helper was deleted (backend suite green, 70 tests).
 
 - Fixed the four findings of the 2026-09-16 security quality audit. A delegated manager can no longer attach another user's access list by guessing its integer id: `validateAccessLists` scopes attachable ACL ids to `owner_user_id` for non-admins, closing an IDOR that leaked foreign allow/deny CIDR rules and basic-auth usernames through `expand=access_lists` (admin attaches are unchanged). The permission model now fails closed on malformed inputs: `can()` rejects permission strings without a `type:level` shape, and `canUser()` rejects the anonymous-session sentinel `0` and non-integer/non-positive ids, so the unvalidated `DELETE /api/users/0/sessions` route answers 403 instead of reaching an unauthenticated 500. The nginx privilege guard snapshots `forward_port` for local-path hosts, so changing the fastcgi target port trips the admin-only guard. Both permission guards are pinned as rule 6 in `tests/security-invariants.mjs`, and the backend suite covers the IDOR round-trip, the sentinel 403, and the guard trip (132 tests).
+
+See the [release notes](.github/release-notes/v2.15.1-mangyan1.rc.8.md) for installation and validation guidance.
 
 ## v2.15.1-mangyan1.rc.7 - 2026-09-16
 
