@@ -2390,11 +2390,18 @@ seed_crowdsec_datafiles() { # seed_crowdsec_datafiles <image-ref>
 	# guards with -e for the same reason: a datafile an operator edited
 	# (detect.yaml) must survive a reinstall, and so must everything already
 	# upgraded from the hub. A blind copy would reset both to the image's build.
+	# Directories are staged too (trace), and a link to those is the same
+	# read-only trap for anything that writes into them, so they become real
+	# directories rather than being skipped.
 	if ! docker run --rm --network none --entrypoint sh \
 		-v "$CROWDSEC_DIR/data:/data" "$image_ref" \
 		-c 'cd /staging/var/lib/crowdsec/data || exit 1
 			for f in *; do
-				[ -d "$f" ] && continue
+				if [ -d "$f" ]; then
+					[ -L "/data/$f" ] && rm -f "/data/$f"
+					mkdir -p -m 0700 "/data/$f"
+					continue
+				fi
 				if [ -L "/data/$f" ]; then
 					cp -Lpf "$f" "/data/$f.tmp" && mv -f "/data/$f.tmp" "/data/$f"
 				elif [ ! -e "/data/$f" ]; then
@@ -2694,7 +2701,9 @@ if docker compose -f "$COMPOSE_FILE" ps --status running --format '{{.Name}}' 2>
 	# unwritable, so hub upgrade follows the link into an EROFS and aborts the
 	# whole upgrade - at container start too, where it is silenced. Replace the
 	# links with real files; the entrypoint's own -e guard then leaves them be.
-	docker exec crowdsec sh -c 'cd /var/lib/crowdsec/data && for f in *; do if [ -L "$f" ] && [ ! -d "$f" ]; then cp -Lpf "$f" "$f.tmp" && mv -f "$f.tmp" "$f"; fi; done' 2>/dev/null || true
+	# A linked directory (trace) becomes a real one for the same reason: anything
+	# writing into it would hit the read-only target.
+	docker exec crowdsec sh -c 'cd /var/lib/crowdsec/data && for f in *; do [ -L "$f" ] || continue; if [ -d "$f" ]; then rm -f "$f" && mkdir -p -m 0700 "$f"; else cp -Lpf "$f" "$f.tmp" && mv -f "$f.tmp" "$f"; fi; done' 2>/dev/null || true
 	# a hub refresh is advisory and this wrapper runs under set -e: an unreachable
 	# hub or an offline box must not fail a healthy update, nor skip the health
 	# check below
