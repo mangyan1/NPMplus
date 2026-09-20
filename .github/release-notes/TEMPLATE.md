@@ -3,17 +3,21 @@ Copy this file to .github/release-notes/v<tag>.md and fill it in. release.yml
 refuses a tag whose notes file is missing or empty.
 
 Rules:
-- One change per bullet, one line, about 20 words. If a bullet needs three
-  clauses it is three bullets.
-- No commit hashes, file paths, function names or PR numbers in user-facing
-  lines. Those belong in CHANGELOG.md.
+- Give a line to what a reader acts on or would be surprised by. Everything
+  minor - internal hardening, UI touch-ups, small dashboard fixes - goes in ONE
+  line naming the area ("Minor CrowdSec dashboard fixes: identity, stable error
+  responses, notification dedupe, buttons"). CHANGELOG holds the full list.
+- About 20 words per line. Longer means it is either two bullets or CHANGELOG.
+- No commit hashes, file paths, function names or PR numbers. Those belong in
+  CHANGELOG.md.
 - Delete empty sections. "Action required" always stays.
-- Whole file under about 600 words. Longer than that means the extra detail
-  belongs in CHANGELOG.md, which is where the full record lives.
+- Whole file under about 400 words, boilerplate and install command included.
 - Links must be absolute URLs - relative links do not resolve in a release body.
 - Do not add the image-digest or recommended-stack sections; release.yml
   appends those itself after this file.
 - Keep the three closing paragraphs verbatim.
+- Verify the install command against the previous release: same four lines, only
+  the tag changed.
 -->
 
 <One sentence: which release this is, and who it is for.>
