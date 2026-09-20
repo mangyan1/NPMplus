@@ -33,7 +33,21 @@ jobs:
         run: |
           set -eu
           printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-mangyan1\.(rc\.)?[0-9]+$'
-          test -s ".github/release-notes/$RELEASE_TAG.md"
+          note=".github/release-notes/$RELEASE_TAG.md"
+          test -s "$note"
+          # Release-discipline guardrails (TEMPLATE.md, rule 9 in
+          # tests/security-invariants.mjs): a note that floods the release page
+          # must fail the tag, not get regrouped after publishing.
+          note_words="$(wc -w < "$note")"
+          if [ "$note_words" -gt 400 ]; then
+            echo "::error::release note is $note_words words; the budget is 400 including boilerplate (see .github/release-notes/TEMPLATE.md)" >&2
+            exit 1
+          fi
+          if grep -qE '#[0-9]+|[0-9a-f]{7,40}' "$note"; then
+            echo "::error::release note must not contain PR numbers or commit/image hashes; they belong in CHANGELOG.md" >&2
+            exit 1
+          fi
+          grep -Fq "releases/download/$RELEASE_TAG/setup-npmplus.sh" "$note"
           release_base="${RELEASE_TAG#v}"
           release_base="${release_base%%-mangyan1.*}"
           test "$(tr -d '\r\n' < .version)" = "$release_base"

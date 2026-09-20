@@ -9,7 +9,7 @@
 //
 // Runs as part of lint-and-format. Exit 0 = invariants hold.
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import process from "node:process";
 
 const failures = [];
@@ -228,6 +228,53 @@ const read = (path) => {
 				'setup-npmplus.sh must seed the crowdsec datafiles (seed_crowdsec_datafiles "$CROWDSEC_IMAGE") between `say "starting crowdsec"` and the install-time `up -d crowdsec`',
 			);
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Rule 9: release notes and the README stay a summary, not a dump. The rc.8
+// note shipped as 21 bullets / 790 words and had to be regrouped after
+// publishing (cc215290, 5b8995f7); floods regress silently because every
+// individual bullet looks reasonable. TEMPLATE.md states the budget; this
+// enforces it. History keeps the lighter caps; the newest note - the one a
+// tag would publish - must meet the current budget.
+// ---------------------------------------------------------------------------
+{
+	const words = (text) => (text.match(/\S+/g) || []).length;
+	const notes = [];
+	try {
+		for (const name of readdirSync(".github/release-notes")) {
+			const match = name.match(/^v[\d.]+-mangyan1\.(?:rc\.)?(\d+)\.md$/);
+			if (match) notes.push({ name, seq: Number(match[1]), text: read(`.github/release-notes/${name}`) });
+		}
+	} catch {
+		fail("release-discipline", "cannot read .github/release-notes");
+	}
+	for (const note of notes) {
+		const count = words(note.text || "");
+		if (count > 550) fail("release-discipline", `${note.name} is ${count} words; the release-note budget is 400 (550 for frozen history)`);
+		const bullets = (note.text || "").match(/^- /gm) || [];
+		if (bullets.length > 12) fail("release-discipline", `${note.name} has ${bullets.length} bullets; group minors into one line per area`);
+		for (const marker of ["wget -qO setup-npmplus.sh", "This fork is based on NPMplus by ZoeyVid"]) {
+			if (!(note.text || "").includes(marker)) fail("release-discipline", `${note.name} lost its install command or closing attribution`);
+		}
+	}
+	const newest = notes.reduce((a, b) => (!a || b.seq > a.seq ? b : a), null);
+	if (newest && newest.text) {
+		const count = words(newest.text);
+		if (count > 400) fail("release-discipline", `${newest.name} is ${count} words; the budget for the next release is 400 including boilerplate`);
+		const bulletLines = newest.text.split("\n").filter((line) => /^- /.test(line));
+		if (bulletLines.length > 10) fail("release-discipline", `${newest.name} has ${bulletLines.length} bullets; group minors into one line naming the area`);
+		const longest = Math.max(0, ...bulletLines.map((line) => words(line)));
+		if (longest > 45) fail("release-discipline", `${newest.name} has a ${longest}-word bullet; ~20 per line - longer is either two bullets or CHANGELOG`);
+		if (!newest.text.includes("### Action required")) fail("release-discipline", `${newest.name} is missing the Action required section`);
+		if (/#[0-9]+/.test(newest.text)) fail("release-discipline", `${newest.name} contains PR numbers; they belong in CHANGELOG.md`);
+		if (/[0-9a-f]{7,40}/.test(newest.text)) fail("release-discipline", `${newest.name} contains a commit or image hash; they belong in CHANGELOG.md and the release body`);
+	}
+	const readme = read("README.md");
+	if (readme !== null) {
+		const count = words(readme);
+		if (count > 1300) fail("release-discipline", `README.md is ${count} words; keep it a summary and push detail to docs/`);
 	}
 }
 

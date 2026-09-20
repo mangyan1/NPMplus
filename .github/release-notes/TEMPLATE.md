@@ -12,6 +12,9 @@ Rules:
   CHANGELOG.md.
 - Delete empty sections. "Action required" always stays.
 - Whole file under about 400 words, boilerplate and install command included.
+- Enforced, not advisory: tests/security-invariants.mjs rule 9 checks the note
+  and README budgets on every develop push, and release.yml refuses the tag if
+  the note exceeds the word budget or carries PR numbers or hashes.
 - Links must be absolute URLs - relative links do not resolve in a release body.
 - Do not add the image-digest or recommended-stack sections; release.yml
   appends those itself after this file.
