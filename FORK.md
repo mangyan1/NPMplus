@@ -167,6 +167,11 @@ review rather than restoring it automatically. Keep security implementation,
 regression tests, reporting policies, and scanner exception files maintained.
 Local handoffs and private reports are not available in a fresh clone.
 
+Release notes are user-facing and stay short: one line per change, no commit
+hashes or file paths, with the full record kept in CHANGELOG. `.github/release-notes/TEMPLATE.md`
+carries the skeleton and the rules; `release.yml` refuses a tag whose notes file
+is missing or empty and appends the image-digest sections itself.
+
 The 2026-09-08 tidy extracts the sync workflow into a tested script and the browser
 deployment recovery into a dedicated module. Existing dashboard modules and
 database migrations retain their paths.
