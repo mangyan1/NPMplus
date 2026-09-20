@@ -525,9 +525,12 @@ await page.getByRole("heading", { name: "Security overview" }).waitFor({ timeout
 check("security dashboard has one sticky toolbar", (await page.locator(".sticky-top").count()) === 1);
 check("dashboard exposes six focused tabs", (await page.getByRole("tab").count()) === 6);
 check(
-	"attackers is the default working view",
-	(await page.getByRole("tab", { name: "Attackers", exact: true }).getAttribute("aria-selected")) === "true",
+	"overview is the default working view",
+	(await page.getByRole("tab", { name: "Overview", exact: true }).getAttribute("aria-selected")) === "true",
 );
+// the attacker list below is only reached by navigating to its tab now, so the
+// checks that follow cannot silently depend on it being the landing view again
+await page.getByRole("tab", { name: "Attackers", exact: true }).click();
 await page.getByRole("button", { name: "198.51.100.7", exact: true }).waitFor();
 await page.screenshot({ path: "backend/.smoke/security-attackers-desktop.png", fullPage: true });
 await page.getByRole("button", { name: "Load older history", exact: true }).click();
@@ -622,7 +625,7 @@ await overviewTab.focus();
 await overviewTab.press("ArrowRight");
 check(
 	"dashboard tabs support arrow-key navigation",
-	(await page.getByRole("tab", { name: "Attack activity" }).getAttribute("aria-selected")) === "true",
+	(await page.getByRole("tab", { name: "Attackers", exact: true }).getAttribute("aria-selected")) === "true",
 );
 await overviewTab.click();
 check(

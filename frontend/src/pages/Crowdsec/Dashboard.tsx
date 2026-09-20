@@ -53,7 +53,7 @@ const QuickFilters = ({ items, onSelect }: { items: CrowdsecInsightsItem[]; onSe
 const CrowdsecDashboard = () => {
 	const { locale } = useLocaleState();
 	const queryClient = useQueryClient();
-	const [tab, setTab] = useState<DashboardTab>("attackers");
+	const [tab, setTab] = useState<DashboardTab>("overview");
 	const [kpi, setKpi] = useState<KpiKind | null>(null);
 	const [windowHours, setWindowHours] = useState(24);
 	const [page, setPage] = useState(1);
@@ -133,8 +133,8 @@ const CrowdsecDashboard = () => {
 		await queryClient.invalidateQueries({ queryKey: ["security-telemetry"] });
 	};
 	const tabs: { id: DashboardTab; label: string }[] = [
-		{ id: "attackers", label: "crowdsec.attackers.title" },
 		{ id: "overview", label: "crowdsec.tabs.overview" },
+		{ id: "attackers", label: "crowdsec.attackers.title" },
 		{ id: "activity", label: "crowdsec.tabs.activity" },
 		{ id: "bans", label: "crowdsec.tabs.bans" },
 		{ id: "waf", label: "crowdsec.tabs.waf" },
