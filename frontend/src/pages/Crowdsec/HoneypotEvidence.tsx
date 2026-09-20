@@ -12,6 +12,7 @@ const HoneypotEvidence = ({ ip }: { ip: string }) => {
 		enabled: open,
 		staleTime: 30_000,
 	});
+	const alerts = query.data?.items ?? [];
 	return (
 		<details
 			className="small mt-2 text-break"
@@ -42,12 +43,21 @@ const HoneypotEvidence = ({ ip }: { ip: string }) => {
 				<p role="alert">
 					<T id="crowdsec.evidence.related-error" />
 				</p>
-			) : query.data?.length === 0 ? (
+			) : query.data && !alerts.length ? (
 				<p>
 					<T id="crowdsec.no-alerts" />
 				</p>
 			) : (
-				query.data?.map((alert) => <AttackDetails key={alert.id} alert={alert} />)
+				<>
+					{query.data?.truncated && (
+						<p className="text-secondary">
+							<T id="crowdsec.truncated-alerts" data={{ limit: query.data.limit }} />
+						</p>
+					)}
+					{alerts.map((alert) => (
+						<AttackDetails key={alert.id} alert={alert} />
+					))}
+				</>
 			)}
 		</details>
 	);

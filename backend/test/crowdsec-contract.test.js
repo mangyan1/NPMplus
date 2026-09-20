@@ -140,6 +140,36 @@ test("CrowdSec alerts keep attacker details while stripping sensitive payloads",
 	]);
 });
 
+test("Go-formatted event timestamps become parseable RFC3339", () => {
+	// The browser renders these with date-fns, which rejects Go's layout and
+	// falls back to echoing the raw string: one instant then appeared as
+	// "2026-09-20 03:02:35 +0000 UTC" beside a window rendered "Sep 19, 2026".
+	const [alert] = normalizeCrowdsecAlerts([
+		{
+			id: 12,
+			events: [
+				{ timestamp: "2026-09-20 03:02:35.974509318 +0000 UTC", meta: [] },
+				{ timestamp: "2026-09-20 05:02:35 +0200 CEST", meta: [] },
+				{ timestamp: "2026-09-20T03:02:35Z", meta: [] },
+				// not the Go layout, and not parseable either: left untouched
+				{ timestamp: "2026-09-20 03:02:35", meta: [] },
+			],
+		},
+	]);
+
+	assert.deepEqual(
+		alert.events.map((event) => event.timestamp),
+		[
+			"2026-09-20T03:02:35.974509318+00:00",
+			"2026-09-20T05:02:35+02:00",
+			"2026-09-20T03:02:35Z",
+			"2026-09-20 03:02:35",
+		],
+	);
+	// the conversion must survive the real reader, not just look right
+	assert.equal(Number.isNaN(Date.parse(alert.events[0].timestamp)), false);
+});
+
 test("CrowdSec alert history can be searched and filtered without exposing raw events", () => {
 	const alerts = normalizeCrowdsecAlerts([
 		{

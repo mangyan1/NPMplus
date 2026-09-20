@@ -90,6 +90,44 @@ const alerts = [
 		],
 	},
 ];
+// The per-address alert panel below shows everything the LAPI kept for one
+// address, which is more than the single row the history tab is pinned to.
+// Alert 99's header names a different rule than its event does, so it stands in
+// for a CrowdSec rollup; alert 100 names the same rule in both places, which is
+// the per-rule shape that used to print the rule twice.
+// what the API hands the browser: the backend contract test pins Go's layout
+// being converted to RFC3339 here, so this fixture only has to prove the
+// browser renders the timestamp instead of echoing whatever it was given
+const eventTime = "2026-09-20T03:02:35.974509318+00:00";
+const addressAlerts = [
+	alerts[0],
+	{
+		id: 100,
+		message: "vpatch-env-access from 198.51.100.7",
+		scenario: "crowdsecurity/vpatch-env-access",
+		createdAt: "2026-09-20T03:02:35Z",
+		startAt: "2026-09-20T03:02:35Z",
+		stopAt: "2026-09-20T03:03:05Z",
+		machineId: "npmplus",
+		simulated: false,
+		eventsCount: 1,
+		source: { ...alerts[0].source },
+		events: [
+			{
+				timestamp: eventTime,
+				meta: [
+					{ key: "source_ip", value: "198.51.100.7" },
+					{ key: "method", value: "GET" },
+					{ key: "target_uri", value: "/wp-config.php" },
+					{ key: "http_user_agent", value: "curl/8.4.0" },
+					{ key: "rule_name", value: "crowdsecurity/vpatch-env-access" },
+					{ key: "service", value: "http" },
+				],
+			},
+		],
+	},
+];
+let alertOverflow = false;
 const user = {
 	id: 1,
 	createdOn: iso(-86400 * 1000),
@@ -487,8 +525,14 @@ const api = async (route) => {
 			container: { up: true, error: null, httpStatus: 403 },
 			recent: ["203.0.113.9"],
 		});
-	if (apiPath === "/crowdsec/alerts")
-		return respond(alerts.filter((alert) => url.searchParams.get("value") === alert.source.ip));
+	if (apiPath === "/crowdsec/alerts") {
+		// mirrors the route: it returns at most the cap and says when it cut
+		const matched = addressAlerts.filter((alert) => url.searchParams.get("value") === alert.source.ip);
+		const items = alertOverflow
+			? Array.from({ length: 6 }, (_, index) => ({ ...addressAlerts[0], id: 200 + index }))
+			: matched;
+		return respond({ items: items.slice(0, 5), limit: 5, truncated: items.length > 5 });
+	}
 	console.log(`  [fixture default] ${request.method()} ${request.url()} (path=${apiPath})`);
 	return respond([]);
 };
@@ -704,6 +748,84 @@ check(
 );
 await banSearch.fill("");
 
+// one ban expands into every alert the LAPI kept for that address, so the
+// source line and the evidence caveat belong to the panel, not to each alert
+// the disclosure button is labelled by state, so key off aria-expanded instead
+const toggleBan = (ip) => localTable.locator("tr").filter({ hasText: ip }).locator("button[aria-expanded]").click();
+await toggleBan("198.51.100.7");
+const banEvidence = page.locator("#crowdsec-active-bans td.bg-secondary-lt");
+await banEvidence.getByRole("region", { name: "Alert 100", exact: true }).waitFor();
+const evidenceText = await banEvidence.innerText();
+check(
+	"alert context states the shared source once for every alert it covers",
+	(await banEvidence.getByText("Example ASN").count()) === 1 && (await banEvidence.getByRole("region").count()) === 2,
+	evidenceText,
+);
+check(
+	"the evidence caveat is stated once instead of under every alert",
+	(await banEvidence.getByText("Detection evidence only", { exact: false }).count()) === 1,
+	evidenceText,
+);
+const perRuleAlert = banEvidence.getByRole("region", { name: "Alert 100", exact: true });
+const rollupAlert = banEvidence.getByRole("region", { name: "Alert 99", exact: true });
+check(
+	"a rule matching its own alert header is not printed a second time",
+	(await perRuleAlert.getByText("crowdsecurity/vpatch-env-access", { exact: true }).count()) === 1 &&
+		!(await perRuleAlert.innerText()).includes("grouped several rule matches"),
+	await perRuleAlert.innerText(),
+);
+check(
+	"an alert that rolls up other rules names them and says so",
+	(await rollupAlert.getByText("crowdsecurity/vpatch-env-access", { exact: true }).count()) === 1 &&
+		(await rollupAlert.innerText()).includes("grouped several rule matches"),
+	await rollupAlert.innerText(),
+);
+check(
+	"the requested URL is on the event line, not only in the dump",
+	evidenceText.includes("GET /.env") && evidenceText.includes("GET /wp-config.php"),
+	evidenceText,
+);
+check(
+	"event timestamps are rendered rather than echoed verbatim",
+	!/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/.test(evidenceText),
+	evidenceText,
+);
+// the dump is reference detail behind a disclosure: it stays out of the
+// rendered text until asked for, and its attacker-controlled values stay text
+check(
+	"raw event fields are collapsed out of the rendered detail",
+	(await rollupAlert.locator("details[open]").count()) === 0 &&
+		!(await rollupAlert.innerText()).includes("<img src=x"),
+	await rollupAlert.innerText(),
+);
+await rollupAlert.locator("summary").filter({ hasText: "Raw event fields" }).click();
+const openedText = await rollupAlert.innerText();
+check(
+	"opening the raw fields shows the hostile User-Agent as text",
+	openedText.includes("<img src=x") && (await rollupAlert.locator("img").count()) === 0,
+	openedText,
+);
+check(
+	"fields already stated above are not repeated in the raw dump",
+	!["rule_name:", "source_ip:", "method:", "target_uri:"].some((key) => openedText.includes(key)),
+	openedText,
+);
+await rollupAlert.locator("summary").filter({ hasText: "Raw event fields" }).click();
+
+// a different ban, so the panel refetches with more alerts than the cap allows
+alertOverflow = true;
+await toggleBan("203.0.113.9");
+const cappedEvidence = page.locator("#crowdsec-active-bans td.bg-secondary-lt");
+await cappedEvidence.getByRole("region", { name: "Alert 200", exact: true }).waitFor();
+check(
+	"a capped alert list says so instead of implying a complete history",
+	(await cappedEvidence.innerText()).includes("Only the newest 5 alerts are shown") &&
+		(await cappedEvidence.getByRole("region").count()) === 5,
+	await cappedEvidence.innerText(),
+);
+alertOverflow = false;
+await toggleBan("203.0.113.9");
+
 await page.getByRole("tab", { name: "Overview" }).click();
 await page.getByRole("button", { name: /Honeypot decisions/i }).click();
 const anubisModal = page.getByRole("dialog");
@@ -892,9 +1014,16 @@ check(
 		(await attackEvidence.innerText()).includes("sensitive configuration file"),
 );
 check(
+	"attack details keep the hostile User-Agent out of the default rendering",
+	(await attackEvidence.locator("img").count()) === 0 && !(await attackEvidence.innerText()).includes("<img src=x"),
+);
+// the raw value is still recorded, one disclosure down, and still inert
+await attackEvidence.locator("summary").filter({ hasText: "Raw event fields" }).click();
+check(
 	"attack details render hostile User-Agent as text",
 	(await attackEvidence.locator("img").count()) === 0 && (await attackEvidence.innerText()).includes("<img src=x"),
 );
+await attackEvidence.locator("summary").filter({ hasText: "Raw event fields" }).click();
 check(
 	"attack details show sampling and avoid claiming enforcement",
 	(await attackEvidence.innerText()).includes("1 retained event") &&

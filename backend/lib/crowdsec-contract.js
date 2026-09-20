@@ -81,6 +81,19 @@ const EVENT_META_KEYS = new Set([
 
 const EVENT_LIMIT = 10;
 const URI_SUFFIX_RE = /[?#]/;
+// The LAPI serialises per-event timestamps with Go's time.Time String()
+// ("2026-09-20 03:02:35.123456789 +0000 UTC"), which is not RFC3339. date-fns
+// parseISO rejects it and formatDateTime then echoes the raw string, so the
+// event line read "2026-09-20 03:02:35 +0000 UTC" beside a window rendered
+// "Sep 19, 2026, 21:02:35" - one instant shown as two different days.
+// Normalise at this boundary so every reader gets a parseable value. Go appends
+// the zone name, which is not always "UTC" (a LAPI left on local time prints
+// "CEST" and friends), so accept either shape rather than only "UTC".
+const GO_TIME_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d+)?) ([+-]\d{2})(\d{2})(?: [A-Za-z]+)?$/;
+const rfc3339Timestamp = (value) => {
+	const parts = GO_TIME_RE.exec(value);
+	return parts ? `${parts[1]}T${parts[2]}${parts[3]}:${parts[4]}` : value;
+};
 
 const normalizeEvent = (event) => {
 	if (!event || typeof event !== "object") return null;
@@ -99,7 +112,7 @@ const normalizeEvent = (event) => {
 			if (meta.length >= 32) break;
 		}
 	}
-	const timestamp = typeof event.timestamp === "string" ? event.timestamp : "";
+	const timestamp = typeof event.timestamp === "string" ? rfc3339Timestamp(event.timestamp) : "";
 	return { timestamp, meta };
 };
 

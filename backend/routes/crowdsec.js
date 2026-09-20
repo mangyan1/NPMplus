@@ -462,14 +462,22 @@ router
 			return;
 		}
 
+		// one more than the cap: the LAPI hands back a bounded newest-first page
+		// with no total, so the extra row is what tells the operator the list is
+		// incomplete rather than the whole history of this address
 		const query = new URLSearchParams({
 			scope,
 			value,
-			limit: String(LAPI_ALERT_LIMIT),
+			limit: String(LAPI_ALERT_LIMIT + 1),
 			with_decisions: "false",
 		});
 		const payload = await lapiMachineFetch(`/v1/alerts?${query}`);
-		res.status(200).send(readContract(normalizeCrowdsecAlerts, payload, "alerts"));
+		const alerts = readContract(normalizeCrowdsecAlerts, payload, "alerts");
+		res.status(200).send({
+			items: alerts.slice(0, LAPI_ALERT_LIMIT),
+			limit: LAPI_ALERT_LIMIT,
+			truncated: alerts.length > LAPI_ALERT_LIMIT,
+		});
 	});
 
 // Paginated alert history. CrowdSec's LAPI exposes a bounded newest-first

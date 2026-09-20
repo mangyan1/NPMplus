@@ -16,7 +16,7 @@ import { formatDateTime, intl, T } from "src/locale";
 import { showDeleteConfirmModal, showManualBanModal } from "src/modals";
 import { showError } from "src/notifications";
 import styles from "./ActiveBans.module.css";
-import AttackDetails from "./AttackDetails";
+import AttackDetails, { AlertSource } from "./AttackDetails";
 import { TableSkeleton } from "./LoadingSkeleton";
 import { decisionTarget } from "./utils";
 
@@ -29,7 +29,8 @@ const AlertContext = ({ decision }: { decision: CrowdsecDecision }) => {
 				<T id={query.error?.message || "error.unknown"} />
 			</div>
 		);
-	if (!query.data?.length)
+	const alerts = query.data?.items ?? [];
+	if (!alerts.length)
 		return (
 			<div className="text-secondary small py-2">
 				<T id="crowdsec.no-alerts" />
@@ -37,8 +38,30 @@ const AlertContext = ({ decision }: { decision: CrowdsecDecision }) => {
 		);
 	return (
 		<div className="py-2">
-			{query.data.map((alert: CrowdsecAlert) => (
-				<AttackDetails key={alert.id} alert={alert} />
+			{/* one ban fans out into several alerts - a rule match each, plus the
+			    aggregate crowdsec raises over them - and every one of them names
+			    the same address. State the source and the evidence caveat once
+			    here instead of repeating both under each alert. */}
+			<div className="small">
+				<dl className="mb-2">
+					<dt>
+						<T id="crowdsec.source" />
+					</dt>
+					<dd>
+						<AlertSource source={alerts[0].source} />
+					</dd>
+				</dl>
+				<p className="text-secondary">
+					<T id="crowdsec.evidence.detected" />
+				</p>
+			</div>
+			{query.data?.truncated && (
+				<Alert variant="info" className="small">
+					<T id="crowdsec.truncated-alerts" data={{ limit: query.data.limit }} />
+				</Alert>
+			)}
+			{alerts.map((alert: CrowdsecAlert) => (
+				<AttackDetails key={alert.id} alert={alert} compact />
 			))}
 		</div>
 	);

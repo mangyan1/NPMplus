@@ -85,6 +85,24 @@ test("the decision cap never offers a next page that the API refuses", async (t)
 	assert.equal(page.has_next, false);
 });
 
+test("the per-address alert list admits when the cap hides older alerts", async (t) => {
+	fixture(t, { alerts: Array.from({ length: 9 }, (_, index) => alert(index + 1)) });
+	const page = await request("/alerts", { scope: "Ip", value: "203.0.113.7" });
+	// the LAPI page has no total, so the sixth row is the only evidence that
+	// this address has more alert history than the panel shows
+	assert.equal(page.items.length, 5);
+	assert.equal(page.limit, 5);
+	assert.equal(page.truncated, true);
+});
+
+test("a per-address alert list shorter than the cap is reported as complete", async (t) => {
+	fixture(t, { alerts: [alert(1), alert(2)] });
+	const page = await request("/alerts", { scope: "Ip", value: "203.0.113.7" });
+	assert.equal(page.items.length, 2);
+	assert.equal(page.limit, 5);
+	assert.equal(page.truncated, false);
+});
+
 test("bookkeeping alerts do not prematurely end attack-history pagination", async (t) => {
 	fixture(t, {
 		alerts: [

@@ -118,6 +118,12 @@ export interface CrowdsecHistoryParams {
 	target?: string;
 }
 
+export interface CrowdsecAlertContext {
+	items: CrowdsecAlert[];
+	limit: number;
+	truncated: boolean;
+}
+
 export interface CrowdsecAlertPage {
 	scanMode?: boolean;
 	nextCursor?: string | null;
@@ -193,7 +199,11 @@ export async function getCrowdsecDecisions(
 	);
 }
 
-export async function getCrowdsecAlerts(scope: string, value: string, signal?: AbortSignal): Promise<CrowdsecAlert[]> {
+export async function getCrowdsecAlerts(
+	scope: string,
+	value: string,
+	signal?: AbortSignal,
+): Promise<CrowdsecAlertContext> {
 	return await api.get({ url: "/crowdsec/alerts", params: { scope, value } }, signal);
 }
 

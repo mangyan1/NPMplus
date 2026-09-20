@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-	type CrowdsecAlert,
+	type CrowdsecAlertContext,
 	type CrowdsecDecisionPage,
 	type CrowdsecDecisionParams,
 	getCrowdsecAlerts,
@@ -26,7 +26,7 @@ const useCrowdsecAlerts = (
 	value: string | undefined,
 	enabled: boolean,
 ) =>
-	useQuery<CrowdsecAlert[], Error>({
+	useQuery<CrowdsecAlertContext, Error>({
 		queryKey: ["crowdsec-alerts", decisionId, scope, value],
 		queryFn: ({ signal }) => getCrowdsecAlerts(scope as string, value as string, signal),
 		enabled,
