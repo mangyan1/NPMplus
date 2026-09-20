@@ -17,7 +17,7 @@ a new directory would add merge work without improving the boundary.
 | Installation and recovery | `setup-npmplus.sh`, doctors, `tests/installer-recovery.py` | Compose mounts, rootfs startup, health checks, image channels |
 | Security dashboard | `frontend/src/pages/Crowdsec/`, CrowdSec API/hooks and manual-ban modal | Router, admin menu/permissions, translations, proxy-host controls |
 | Security API and retained observations | CrowdSec routes/internal helpers, Anubis reporting, security telemetry and their tests | `backend/routes/main.js`, startup in `backend/index.js`, database migrations |
-| Browser deployment recovery | `frontend/src/fork/deployment-recovery.ts`, `ErrorBoundary.tsx` | Small startup call in `main.tsx`, route boundary in `Router.tsx`, nginx no-store policy |
+| Browser deployment recovery | `frontend/src/fork/deployment-recovery.ts`, `ErrorBoundary.tsx` | Small startup call in `main.jsx`, route boundary in `Router.jsx`, nginx no-store policy |
 | nginx enforcement observations | `npmplus_telemetry.lua`, private telemetry listener, bouncer instrumentation script | Dockerfile hook, proxy template host ID, rootfs configuration |
 | Fork publishing and maintenance | Fork release/security/smoke workflows, `.github/scripts/upstream-sync.sh`, this guide | Upstream dependency changes, image builds, final-image scans |
 | Security corrections in shared code | Auth, OIDC/MFA, validation, nginx privilege handling, certificate compatibility tests | Review each overlapping upstream change against the relevant regression test |
@@ -85,11 +85,15 @@ attribution and upstream history with merge commits.
 
 Two mistake classes occurred in one day, and both are now guarded:
 
-1. **Never cache anything that embeds per-request identity.** The permission
-   cache (PR #19) is only safe because the four `users-*` permissions embed the
-   calling user's id enum through the per-request `objects` schema and are
-   therefore excluded from validator caching. Any future caching change to
-   `backend/lib/access.js` must preserve that exclusion. The regression pin is
+1. **Never cache anything that embeds per-request identity.** The Ajv
+   permission cache (PR #19) was only safe because the four `users-*`
+   permissions embedded the calling user's id enum through the per-request
+   `objects` schema and were therefore excluded from validator caching. That
+   cache was removed with upstream's plain `can()`/`canUser()` permission
+   model - identity is now per-request by construction, and Rule 4 of
+   `tests/security-invariants.mjs` records the logout-revocation contract that
+   replaced it. If per-request caching ever returns, the exclusion must return
+   with it. The regression pin is
    `cached permission checks never leak one user's id into another's validation`
    in `backend/test/api.test.js` - it fails the suite if a cached validator is
    ever applied to a `users-*` permission, and it was verified to fail against
@@ -116,13 +120,15 @@ drift past them, even under pressure to "just make it work":
   invariants, the change discipline, and the verification ladder. It points
   here and to the tests for rationale.
 - `tests/security-invariants.mjs` runs in `lint-and-format` and fails the
-  build on drift in five load-bearing properties: subprocess output never
+  build on drift in eight load-bearing properties: subprocess output never
   reaching API responses (app.js shape, error-object schema, CommandError
   visibility), the jwtdecode 401-for-rejected-session contract (comment-aware
   so a commented-out 401 cannot satisfy it), the no-store Cache-Control on
-  the admin index and SPA fallback location blocks, the permission-cache
-  identity exclusion (the `!referencesObjects` guard and the per-request
-  objects rebuild), and the bounded-fetch timeout/byte-cap contracts.
+  the admin index and SPA fallback location blocks, per-request logout
+  revocation at the access layer, the bounded-fetch timeout/byte-cap
+  contracts, the merged permission model failing closed on malformed
+  inputs, fork-only package.json lines surviving upstream merges, and the
+  crowdsec data dir being dereferenced before the hub refresh.
 - Every rule in the checker was **negative-verified before being trusted**:
   each guarded file was sabotaged with its real drift pattern, the checker
   had to catch it, and the tree was restored. A check that has never been

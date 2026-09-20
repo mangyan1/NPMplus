@@ -1,6 +1,6 @@
 # Investigating observed attackers
 
-The CrowdSec page opens on **Attackers**. Each row groups one source IP from locally retained detection alerts.
+The CrowdSec page opens on **Overview**; switch to the **Attackers** tab to investigate. Each row groups one source IP from locally retained detection alerts.
 Search by IP, country, ASN, observed host or detector name; sort by most recent observation or alert count.
 The same IP may represent several clients. Community blocklist downloads, manual decisions and simulated alerts do not
 create attacker rows. An expired ban does not remove retained detections.

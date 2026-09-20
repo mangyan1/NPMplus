@@ -2,12 +2,11 @@
 
 ## Supported versions
 
-Security fixes are applied to the current release line and the `develop` branch. Release candidates are provided for testing before a stable release and should not be treated as production-ready until promoted.
+Security fixes are applied to the current release line and the `develop` branch. Only release candidates have been published so far — no stable release exists yet. Release candidates are provided for testing before a stable release and should not be treated as production-ready until promoted.
 
 | Version | Supported |
 | --- | --- |
-| Latest stable release | Yes |
-| Current release candidate | Testing only |
+| Latest release (release candidate) | Yes |
 | `develop` | Development testing |
 | Older releases | No |
 
