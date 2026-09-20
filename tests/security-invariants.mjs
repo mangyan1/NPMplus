@@ -196,9 +196,13 @@ const read = (path) => {
 {
 	const setup = read("setup-npmplus.sh");
 	if (setup !== null) {
-		const upgradeAt = setup.indexOf("docker exec crowdsec cscli hub upgrade");
+		// anchored to the command form: the installer also *names* these commands
+		// in its own operator messages ("... until: docker exec crowdsec cscli hub
+		// upgrade"), and matching that prose would anchor the rule to the wrong
+		// line - it did, the first time the seed message was added.
+		const upgradeAt = setup.search(/^[ \t]*docker exec crowdsec cscli hub upgrade/m);
 		const dereferenceAt = setup.search(
-			/docker exec crowdsec sh -c 'cd \/var\/lib\/crowdsec\/data[\s\S]{0,400}?cp -Lpf/,
+			/^[ \t]*docker exec crowdsec sh -c 'cd \/var\/lib\/crowdsec\/data[\s\S]{0,400}?cp -Lpf/m,
 		);
 		if (upgradeAt === -1) {
 			fail("crowdsec-datafiles", "setup-npmplus.sh no longer refreshes the crowdsec hub");
@@ -206,6 +210,22 @@ const read = (path) => {
 			fail(
 				"crowdsec-datafiles",
 				"setup-npmplus.sh must dereference /var/lib/crowdsec/data before `cscli hub upgrade` (read_only /staging symlinks abort it with EROFS)",
+			);
+		}
+		// The upgrade path repairs an existing install; a fresh one must never
+		// reach that state: the datafiles are seeded while the container is still
+		// down, so the entrypoint finds them and links nothing into /staging.
+		// Drop this and every new install aborts its own startup hub refresh.
+		const installAt = setup.indexOf('say "starting crowdsec"');
+		const installUpAt =
+			installAt === -1 ? -1 : setup.indexOf('docker compose -f "$COMPOSE_FILE" up -d crowdsec', installAt);
+		const seedAt = setup.search(/^[ \t]*seed_crowdsec_datafiles "\$CROWDSEC_IMAGE"/m);
+		if (installAt === -1 || installUpAt === -1) {
+			fail("crowdsec-datafiles", "setup-npmplus.sh no longer starts crowdsec from the installer body");
+		} else if (seedAt === -1 || seedAt < installAt || seedAt > installUpAt) {
+			fail(
+				"crowdsec-datafiles",
+				'setup-npmplus.sh must seed the crowdsec datafiles (seed_crowdsec_datafiles "$CROWDSEC_IMAGE") between `say "starting crowdsec"` and the install-time `up -d crowdsec`',
 			);
 		}
 	}

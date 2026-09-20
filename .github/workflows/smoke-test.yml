@@ -413,6 +413,11 @@ jobs:
             --enable-cloudflare-origin-lock 2>&1 | tee "$update_log"
           grep -q 'update healthy - last good snapshot kept' "$update_log"
           grep -q 'adopting legacy installer-managed firewall bouncer' "$update_log"
+          # The crowdsec hub refresh is the only thing that updates the detection
+          # signatures, and it is non-fatal by design - so a silent failure (the
+          # EROFS abort reported 2026-09-19) is invisible to every other check.
+          # The container's own attempt at startup is silenced too, hence the log.
+          ! grep -q 'cscli hub upgrade reported failures' "$update_log"
           rm -f "$update_log"
           sudo test -x /opt/npmplus/setup-npmplus.sh
           sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=5' /usr/local/bin/npmplus-safe-update

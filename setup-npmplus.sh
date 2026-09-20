@@ -2375,6 +2375,38 @@ remove_native_crowdsec() {
 	fi
 }
 
+# The crowdsec image carries its datafiles in /staging and its entrypoint bridges
+# them into the data dir as absolute symlinks. That is fine on a writable rootfs
+# but fatal under the read_only profile harden_auxiliary_service injects: every
+# `cscli hub upgrade` follows the link into an EROFS and aborts, the container's
+# own attempt at startup included, where it is silenced with `|| true`. So no
+# detection signature ever refreshes. Copy the files into the bind mount before
+# the container's first start instead: the entrypoint only links what is missing,
+# so its own refresh works and nothing has to be repaired afterwards.
+seed_crowdsec_datafiles() { # seed_crowdsec_datafiles <image-ref>
+	local image_ref="$1"
+	install -d -m 0750 "$CROWDSEC_DIR/data"
+	# Fill only what is missing, and replace the entrypoint's own symlinks. It
+	# guards with -e for the same reason: a datafile an operator edited
+	# (detect.yaml) must survive a reinstall, and so must everything already
+	# upgraded from the hub. A blind copy would reset both to the image's build.
+	if ! docker run --rm --network none --entrypoint sh \
+		-v "$CROWDSEC_DIR/data:/data" "$image_ref" \
+		-c 'cd /staging/var/lib/crowdsec/data || exit 1
+			for f in *; do
+				[ -d "$f" ] && continue
+				if [ -L "/data/$f" ]; then
+					cp -Lpf "$f" "/data/$f.tmp" && mv -f "/data/$f.tmp" "/data/$f"
+				elif [ ! -e "/data/$f" ]; then
+					cp -Lpf "$f" "/data/$f"
+				fi
+			done' >/dev/null 2>&1; then
+		echo "could not seed the crowdsec datafiles from $image_ref" >&2
+		echo "signature refreshes will keep failing until: docker exec crowdsec cscli hub upgrade" >&2
+		return 1
+	fi
+}
+
 # the generated host tooling (safe-update, backup, key heal + their crons):
 # one definition, installed by both the interactive setup and --update
 install_host_tooling() {
@@ -2663,7 +2695,10 @@ if docker compose -f "$COMPOSE_FILE" ps --status running --format '{{.Name}}' 2>
 	# whole upgrade - at container start too, where it is silenced. Replace the
 	# links with real files; the entrypoint's own -e guard then leaves them be.
 	docker exec crowdsec sh -c 'cd /var/lib/crowdsec/data && for f in *; do if [ -L "$f" ] && [ ! -d "$f" ]; then cp -Lpf "$f" "$f.tmp" && mv -f "$f.tmp" "$f"; fi; done' 2>/dev/null || true
-	docker exec crowdsec cscli hub update
+	# a hub refresh is advisory and this wrapper runs under set -e: an unreachable
+	# hub or an offline box must not fail a healthy update, nor skip the health
+	# check below
+	docker exec crowdsec cscli hub update || true
 	docker exec crowdsec cscli hub upgrade || log "cscli hub upgrade reported failures (kept, check: docker exec crowdsec cscli hub list)"
 fi
 
@@ -3765,6 +3800,11 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 	# A native daemon can already own 127.0.0.1:8080. Remove it before the
 	# container attempts to bind, otherwise set -e exits before cleanup runs.
 	remove_native_crowdsec
+	# Seed the datafiles while the container is still down: the first start must
+	# find them, otherwise the entrypoint links them into the read-only /staging
+	# and every later hub refresh aborts on EROFS. The docker run inside pulls
+	# the image if it is missing; a failure here is advisory, not fatal.
+	seed_crowdsec_datafiles "$CROWDSEC_IMAGE" || true
 	docker compose -f "$COMPOSE_FILE" up -d crowdsec
 	mkdir -p "$CROWDSEC_DIR/conf/acquis.d" "$CROWDSEC_DIR/conf/bouncers"
 
