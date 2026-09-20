@@ -22,12 +22,8 @@ const fixture = async () => {
 		npmplus_token_valid_after: 0,
 	});
 	const secret = generateSecret();
-	await Auth.query().insert({
-		user_id: user.id,
-		type: "password",
-		secret: "Replay-Fixture-1",
-		meta: { totp_enabled: true, totp_secret: secret },
-	});
+	await Auth.query().insert({ user_id: user.id, type: "password", secret: "Replay-Fixture-1", meta: {} });
+	await Auth.query().insert({ user_id: user.id, type: "totp", secret, meta: {} });
 	return { user, secret };
 };
 
@@ -39,11 +35,10 @@ test("TOTP is single-use across sequential and concurrent attempts, then accepts
 	const results = await Promise.all([totp.verifyCode(user.id, code), totp.verifyCode(user.id, code)]);
 	assert.deepEqual(results.sort(), [false, true]);
 	assert.equal(await totp.verifyCode(user.id, code), false);
-	// A metadata update (e.g. recovery-code regeneration) cannot erase replay state.
-	const auth = await Auth.getPasswordAuth(user.id);
-	await Auth.query()
-		.findById(auth.id)
-		.patch({ meta: { ...auth.meta, backup_codes: [] } });
+	// Backup-code churn (e.g. regeneration) writes its own rows and cannot erase
+	// the TOTP replay state.
+	await Auth.query().where("user_id", user.id).andWhere("type", "backup_code").delete();
+	await Auth.query().insert({ user_id: user.id, type: "backup_code", secret: "hash", meta: {} });
 	assert.equal(await totp.verifyCode(user.id, code), false);
 	epoch += 30;
 	assert.equal(await totp.verifyCode(user.id, await generate({ secret })), true);
@@ -55,8 +50,14 @@ test("enrollment consumes its code and re-enrollment resets the replay counter",
 	const { user } = await fixture();
 	const access = { token: { getUserId: () => user.id }, canUser: () => true };
 	await totp.disable(access, user.id, false);
-	assert.equal((await Auth.getPasswordAuth(user.id)).npmplus_totp_last_used_step, null);
+	assert.equal(await Auth.query().where("user_id", user.id).andWhere("type", "totp").resultSize(), 0);
 	const setup = await totp.startSetup(access, user.id);
+	// the pending row is stamped from the real clock, so align it with the mocked
+	// one; otherwise the 10 minute setup expiry rejects the enrollment
+	await Auth.query()
+		.where("user_id", user.id)
+		.andWhere("type", "totp_pending")
+		.patch({ created_on: new Date(1900000000000) });
 	const code = await generate({ secret: setup.secret });
 	await totp.enable(access, user.id, code);
 	assert.equal(await totp.verifyCode(user.id, code), false);
@@ -64,11 +65,10 @@ test("enrollment consumes its code and re-enrollment resets the replay counter",
 
 test("a stale enrollment read cannot authenticate after the secret is replaced", async (t) => {
 	const { user, secret } = await fixture();
-	const stale = await Auth.getPasswordAuthSnapshot(user.id);
-	await Auth.query()
-		.findById(stale.id)
-		.patch({ meta: { ...stale.meta, totp_secret: generateSecret() } });
-	t.mock.method(Auth, "getPasswordAuthSnapshot", async () => stale);
+	const stale = await Auth.getTotpEnrollment(user.id);
+	await Auth.query().where("user_id", user.id).andWhere("type", "totp").delete();
+	await Auth.query().insert({ user_id: user.id, type: "totp", secret: generateSecret(), meta: {} });
+	t.mock.method(Auth, "getTotpEnrollment", async () => stale);
 	assert.equal(await totp.verifyCode(user.id, await generate({ secret })), false);
 });
 

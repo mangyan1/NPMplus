@@ -46,11 +46,14 @@ const internalMfa = {
 	getStatus: async (access, userId) => {
 		access.canUser(userId);
 		await internalUser.get(access, { id: userId });
-		const auth = await authModel.getPasswordAuth(userId);
 
 		return {
 			totp_enabled: await totp.isEnabled(userId),
-			backup_codes_remaining: (auth?.meta?.backup_codes || []).length,
+			backup_codes_remaining: await authModel
+				.query()
+				.where("user_id", userId)
+				.andWhere("type", "backup_code")
+				.resultSize(),
 		};
 	},
 
@@ -61,19 +64,14 @@ const internalMfa = {
 	 * @returns {Promise<{backup_codes: string[]} | null>}
 	 */
 	ensureBackupCodes: async (userId) => {
-		const auth = await authModel.getPasswordAuth(userId);
-		if (auth?.meta?.backup_codes) {
+		if (await authModel.query().where("user_id", userId).andWhere("type", "backup_code").resultSize()) {
 			return null;
 		}
 
 		const { plain, hashed } = await generateBackupCodes();
-		const meta = { ...auth.meta, backup_codes: hashed };
-		await authModel
-			.query()
-			.where("id", auth.id)
-			.andWhere("user_id", userId)
-			.andWhere("type", "password")
-			.patch({ meta });
+		for (const secret of hashed) {
+			await authModel.query().insert({ user_id: userId, type: "backup_code", secret, meta: {} });
+		}
 
 		return { backup_codes: plain };
 	},
@@ -114,15 +112,7 @@ const internalMfa = {
 		await totp.disable(access, userId);
 
 		if (!(await internalMfa.isAnyEnabled(userId))) {
-			const auth = await authModel.getPasswordAuth(userId);
-			const meta = { ...auth.meta };
-			delete meta.backup_codes;
-			await authModel
-				.query()
-				.where("id", auth.id)
-				.andWhere("user_id", userId)
-				.andWhere("type", "password")
-				.patch({ meta });
+			await authModel.query().where("user_id", userId).andWhere("type", "backup_code").delete();
 		}
 	},
 
@@ -142,38 +132,12 @@ const internalMfa = {
 		}
 
 		if (tokenTrim.length === 8) {
-			// Compare the exact database representation on update. This is an
-			// optimistic lock over all MFA metadata, including concurrent resets
-			// and regeneration, without holding a DB lock during bcrypt work.
-			const client = authModel.knex().client.config.client;
-			const cast = client === "mysql2" ? "CAST(?? AS CHAR)" : "CAST(?? AS TEXT)";
-			const auth = await authModel
-				.query()
-				.select("*")
-				.select(authModel.knex().raw(`${cast} AS meta_snapshot`, ["meta"]))
-				.where("user_id", userId)
-				.andWhere("type", "password")
-				.first();
-			const backupCodes = auth?.meta?.backup_codes || [];
-			for (let i = 0; i < backupCodes.length; i++) {
-				const stored = backupCodes[i];
-				const match = stored.startsWith("$2")
-					? await bcrypt.compare(tokenTrim.toUpperCase(), stored)
-					: await verify(tokenTrim.toUpperCase(), stored);
-				if (match) {
-					// Remove used backup code
-					const updatedCodes = [...backupCodes];
-					updatedCodes.splice(i, 1);
-					const meta = { ...auth.meta, backup_codes: updatedCodes };
-					const consumed = await authModel
-						.query()
-						.where("id", auth.id)
-						.andWhere("user_id", userId)
-						.andWhere("type", "password")
-						.whereRaw(`${cast} = ?`, ["meta", auth.meta_snapshot])
-						.patch({ meta });
-					return consumed === 1;
-				}
+			for (const code of await authModel.query().where("user_id", userId).andWhere("type", "backup_code")) {
+				const match = code.secret.startsWith("$2")
+					? await bcrypt.compare(tokenTrim.toUpperCase(), code.secret)
+					: await verify(tokenTrim.toUpperCase(), code.secret);
+				// Remove used backup code, only the request that removes it counts as used
+				if (match) return (await authModel.query().findById(code.id).delete()) === 1;
 			}
 		}
 
@@ -199,17 +163,7 @@ const internalMfa = {
 		}
 
 		await totp.disable(access, userId, false);
-
-		const auth = await authModel.getPasswordAuth(userId);
-		const meta = { ...auth.meta };
-		delete meta.backup_codes;
-
-		await authModel
-			.query()
-			.where("id", auth.id)
-			.andWhere("user_id", userId)
-			.andWhere("type", "password")
-			.patch({ meta });
+		await authModel.query().where("user_id", userId).andWhere("type", "backup_code").delete();
 
 		await internalAuditLog.add(access, {
 			action: "updated",
@@ -250,16 +204,12 @@ const internalMfa = {
 			throw new errs.ValidationError("Invalid verification code");
 		}
 
-		const auth = await authModel.getPasswordAuth(userId);
 		const { plain, hashed } = await generateBackupCodes();
 
-		const meta = { ...auth.meta, backup_codes: hashed };
-		await authModel
-			.query()
-			.where("id", auth.id)
-			.andWhere("user_id", userId)
-			.andWhere("type", "password")
-			.patch({ meta });
+		await authModel.query().where("user_id", userId).andWhere("type", "backup_code").delete();
+		for (const secret of hashed) {
+			await authModel.query().insert({ user_id: userId, type: "backup_code", secret, meta: {} });
+		}
 
 		await userModel
 			.query()

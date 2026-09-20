@@ -12,7 +12,7 @@ import Auth from "../models/auth.js";
 import ProxyHost from "../models/proxy_host.js";
 import User from "../models/user.js";
 
-test("an existing SQLite MFA account and proxy survive the replay migration", async (t) => {
+test("an existing SQLite MFA account and proxy survive the factor and replay migrations", async (t) => {
 	let epoch = 1900000000;
 	t.mock.method(Date, "now", () => epoch * 1000);
 	// Reconstruct the schema shipped immediately before replay protection.
@@ -61,9 +61,11 @@ test("an existing SQLite MFA account and proxy survive the replay migration", as
 	// Switch from the historical migration source to the actual startup path.
 	await migrateUp();
 	const upgraded = await Auth.query().findById(auth.id);
-	assert.deepEqual(upgraded.meta, auth.meta);
+	// the second factor moved to its own row and the password row's meta is cleared
+	assert.equal(upgraded.meta?.totp_secret, undefined);
 	assert.equal(upgraded.secret, auth.secret);
 	assert.equal(upgraded.npmplus_totp_last_used_step, null);
+	assert.equal((await Auth.getTotpEnrollment(user.id)).secret, secret);
 	assert.deepEqual(await ProxyHost.query().findById(proxy.id), proxy);
 	const challenge = await internalToken.getTokenFromEmail({ identity: user.email, secret: "Upgrade-Fixture-1" });
 	const code = await generate({ secret });

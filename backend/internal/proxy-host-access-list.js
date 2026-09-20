@@ -370,12 +370,12 @@ const internalProxyHostAccessList = {
 
 	/**
 	 * Ensures the provided acls are valid (if custom, at least 1 acl must be specified)
-	 * @param {*} proxyHost
-	 * @param {Object} access the caller's access object, used to scope the
+	 * @param {Access} access the caller's access object, used to scope the
 	 * allowed ACL ids to the caller's own lists for non-admins
+	 * @param {*} proxyHost
 	 * @returns
 	 */
-	validateAccessLists: async (proxyHost, access) => {
+	validateAccessLists: async (access, proxyHost) => {
 		if (!proxyHost) {
 			return;
 		}
