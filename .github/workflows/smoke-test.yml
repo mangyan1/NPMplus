@@ -118,6 +118,13 @@ jobs:
             )
           fi
           printf '%s\n' "${answers[@]}" | sudo bash setup-npmplus.sh
+          # The installer seeds the crowdsec datafiles while the container is
+          # down. Anything it misses, the image entrypoint links into the
+          # read-only /staging, and every hub refresh then dies with an EROFS
+          # that nothing else in this run can see - the update step below
+          # repairs those links, so it cannot catch a regression here.
+          links=$(sudo docker exec crowdsec sh -c 'find /var/lib/crowdsec/data -maxdepth 1 -type l')
+          test -z "$links" || { echo "crowdsec datafiles are still symlinks into /staging: $links"; exit 1; }
       - name: verify the stack
         # sudo: generated deployment configuration remains root-owned
         run: |
@@ -666,6 +673,9 @@ jobs:
           done
           test "$ready" = true
           test -f /etc/systemd/system/docker.service.d/99-operator-owned.conf
+          # a reinstall is a fresh data dir, so it has to seed again
+          links=$(sudo docker exec crowdsec sh -c 'find /var/lib/crowdsec/data -maxdepth 1 -type l')
+          test -z "$links" || { echo "crowdsec datafiles are symlinks into /staging: $links"; exit 1; }
 
   # The restore action must work on both supported distro families, whichever
   # combination of old/new server is used for a migration. The restore path is
