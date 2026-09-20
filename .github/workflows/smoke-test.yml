@@ -424,7 +424,12 @@ jobs:
           # signatures, and it is non-fatal by design - so a silent failure (the
           # EROFS abort reported 2026-09-19) is invisible to every other check.
           # The container's own attempt at startup is silenced too, hence the log.
-          ! grep -q 'cscli hub upgrade reported failures' "$update_log"
+          # a plain `! grep` cannot do this: errexit exempts inverted pipelines,
+          # so the old one-liner never failed the step no matter what the log said
+          if grep -q 'cscli hub upgrade reported failures' "$update_log"; then
+            echo '::error::crowdsec hub upgrade reported failures (kept running; signatures stale)'
+            exit 1
+          fi
           rm -f "$update_log"
           sudo test -x /opt/npmplus/setup-npmplus.sh
           sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=5' /usr/local/bin/npmplus-safe-update

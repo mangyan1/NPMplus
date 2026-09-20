@@ -2395,21 +2395,25 @@ seed_crowdsec_datafiles() { # seed_crowdsec_datafiles <image-ref>
 	# directories rather than being skipped.
 	if ! docker run --rm --network none --entrypoint sh \
 		-v "$CROWDSEC_DIR/data:/data" "$image_ref" \
-		-c 'cd /staging/var/lib/crowdsec/data || exit 1
+		-ce 'cd /staging/var/lib/crowdsec/data || exit 1
 			for f in *; do
 				if [ -d "$f" ]; then
-					[ -L "/data/$f" ] && rm -f "/data/$f"
-					mkdir -p -m 0700 "/data/$f"
+					if [ -L "/data/$f" ]; then rm -f "/data/$f" || exit 1; fi
+					mkdir -p -m 0700 "/data/$f" || exit 1
 					continue
 				fi
 				if [ -L "/data/$f" ]; then
-					cp -Lpf "$f" "/data/$f.tmp" && mv -f "/data/$f.tmp" "/data/$f"
+					# only the entrypoint bridges staging links into /data; anything
+					# else belongs to the operator and must survive a reinstall
+					case "$(readlink "/data/$f")" in
+						/staging/*) cp -Lpf "$f" "/data/$f.tmp" || exit 1; mv -f "/data/$f.tmp" "/data/$f" || exit 1 ;;
+					esac
 				elif [ ! -e "/data/$f" ]; then
-					cp -Lpf "$f" "/data/$f"
+					cp -Lpf "$f" "/data/$f" || exit 1
 				fi
 			done' >/dev/null 2>&1; then
 		echo "could not seed the crowdsec datafiles from $image_ref" >&2
-		echo "signature refreshes will keep failing until: docker exec crowdsec cscli hub upgrade" >&2
+		echo "signature refreshes will keep failing until the datafiles are real files: rerun the installer with --update, which dereferences the entrypoint symlinks from the image" >&2
 		return 1
 	fi
 }
