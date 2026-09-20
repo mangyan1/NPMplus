@@ -194,6 +194,22 @@ installer variants, and reboot resilience all passed before merging. The
 [post-merge upstream sync](https://github.com/mangyan1/NPMplus/actions/runs/34697402798)
 succeeded. This records a tested merge, not a guarantee for later upstream revisions.
 
+The September 20 integration merges upstream `a1ac84c8` through
+[PR #29](https://github.com/mangyan1/NPMplus/pull/29), landed on `develop` as the
+merge commit `bfa66942` (parents `7e6aca60` + the reviewed merge `2dfec1a6`;
+regular merge, ancestry preserved). Thirteen upstream commits, 18 conflicts.
+It adopts upstream's per-row second-factor model, which is the one change that
+could not be declined: see the resolution notes below. The fork's TOTP replay
+protection, backup-code single-use, ACL ownership scoping, DB-backed token
+challenges, and reviewed dependency versions are all preserved. Local validation:
+163 backend tests, 15 frontend tests, `validate-schema`, both biome runs, the
+production build, and `tests/security-invariants.mjs`. The three Linux-only python
+contracts cannot run on the Windows rig (MSYS path mangling) and were confirmed
+environmental by reproducing identical failures on a pristine `origin/develop`
+worktree; all three are green on CI. Every PR check passed before merging, and the
+post-merge `develop` push is green including `boot-resilience` and the caddy
+build-and-scan job.
+
 ## Upstream merge resolution notes (September 13)
 
 Upstream rewrote develop again (the previous integration `16116b76` was followed by
@@ -236,3 +252,64 @@ The installer smoke workflow points its self-check at the file under test via a
 `file://` SELF_URL; the production stale-script guard remains enabled. Channel
 selection and password-hash rollback compatibility are documented in the
 [operations guide](docs/setup-npmplus.md#september-12-develop-upgrade).
+
+## Upstream merge resolution notes (September 20)
+
+The scheduled `upstream sync` run was red because upstream force-pushed `develop`
+again after the previous integration (`82a09947`); that is the intended
+stop-for-review behavior, not a CI regression. Merging the current upstream tip
+through [PR #29](https://github.com/mangyan1/NPMplus/pull/29) restores it. The
+reviewed merge on `fix/upstream-sync-20260920` resolves 18 files; the decisions
+that matter:
+
+- **Second factors moved to their own rows.** Upstream `7efc56c0` gives each
+  factor its own `auth` row under a `type` column (`password`, `totp`,
+  `totp_pending`, `backup_code`), and its migration
+  `20260919230355_auth_factor_rows.js` clears `meta` to `{}` on every password
+  row. The fork's factors lived in `auth.meta`, so keeping our side was not a
+  different-but-working option: upstream's migration would have wiped the fields
+  those functions read, silently turning 2FA off and locking out the users who
+  rely on it. Adopted, with both fork protections re-expressed on the row model:
+  - TOTP replay stays atomic. `verifyCode` claims the matched step with an
+    id-scoped conditional patch
+    (`WHERE id = ? AND (last_used_step IS NULL OR last_used_step < ?)`), so
+    concurrent logins cannot reuse a code, and a run whose enrollment row was
+    replaced mid-verification has nothing left to claim. `enable` stamps the
+    step the enrollment code came from when it promotes `totp_pending` to
+    `totp`, and that promotion is itself conditional on the row still being
+    pending.
+  - Backup codes stay single-use through the row-existence-guarded delete
+    (`findById(code.id).delete() === 1`), equivalent to the fork's CAS under
+    concurrency.
+  - `models/auth.js` drops the now-unused `getPasswordAuthSnapshot` and the
+    `metaCast` static (the DB-cast optimistic lock is obsolete under rows) and
+    adds `getTotpEnrollment`.
+- **`validateAccessLists` takes upstream's argument order.** The body remains the
+  fork's, which is stricter than upstream's visibility check: non-admins are
+  scoped to their own ACLs via `canAdmin()` (try/catch, as in
+  `lib/nginx-privilege.js`), and a missing `access` throws so a future caller
+  cannot skip the scoping. This supersedes the
+  `validateAccessLists(proxyHost, access)` order recorded for rc.8 — same
+  semantics, upstream's order, both call sites in `proxy-host.js` updated.
+- **Token challenges stay DB-backed.** Upstream's `a59e3db1` adds an in-memory
+  `consumedChallenges` map whose own message concedes that restarts break it.
+  The fork removed that map deliberately, so `token.js` is kept and the map is
+  not reintroduced.
+- **Dependency versions stay fork-side.** `backend/package.json`,
+  `frontend/package.json` and both lockfiles are kept: upstream's bumps
+  (`6887f082`, `20b56ee8`) are younger than the 7-day `minimumReleaseAge`
+  window. Both workspaces still install under `--frozen-lockfile`, and the
+  renovate cron ages the bumps in.
+- **`access-list.js`** hashing takes upstream's async `bcrypt.hash` at the
+  fork's cost 6.
+
+Adopted from upstream without argument: the alpine `3.24.2` bump (`7dac39b6`) in
+both Dockerfiles — nginx `release-1.31.6` and aws-lc `v5.9.0` were already the
+fork's pins, so nothing was dropped — the uppercase-hex IPv6 binding acceptance
+in `envs.sh`, the stricter certificate domain pattern in
+`certificate-object.json`, `ubuntu-26.04-arm` in `docker-develop.yml`, and the
+`| default: env.AUTH_REQUEST_*_UPSTREAM` fallbacks in `proxy_host.conf`, which
+compose with the fork's `_upstream_resolved` handling. Four test files were
+adapted to the row model (`mfa`, `totp-replay`, `sqlite-upgrade`). The ACL
+ownership test was verified to still bite: with the scoping disabled, the hijack
+`PUT` returns 200 instead of 400.
