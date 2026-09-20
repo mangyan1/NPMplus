@@ -13,10 +13,8 @@ const internalTotp = {
 	 * @param {number} userId
 	 * @returns {Promise<boolean>}
 	 */
-	isEnabled: async (userId) => {
-		const auth = await authModel.getPasswordAuth(userId);
-		return auth?.meta?.totp_enabled === true;
-	},
+	isEnabled: async (userId) =>
+		(await authModel.query().where("user_id", userId).andWhere("type", "totp").resultSize()) > 0,
 
 	/**
 	 * Start TOTP setup - store pending secret
@@ -30,33 +28,21 @@ const internalTotp = {
 			throw new errs.PermissionError("TOTP can only be managed for your own account");
 		}
 		const user = await internalUser.get(access, { id: userId });
+
+		// ensure user isn't already setup for totp
+		if (await internalTotp.isEnabled(userId)) {
+			throw new errs.ValidationError("TOTP is already enabled");
+		}
+
 		const secret = generateSecret();
 		const otpauth_url = generateURI({
 			issuer: APP_NAME,
 			label: user.email,
 			secret,
 		});
-		const auth = await authModel.getPasswordAuthSnapshot(userId);
 
-		if (!auth) throw new errs.ItemNotFoundError("Auth not found");
-
-		// ensure user isn't already setup for totp
-		const enabled = auth?.meta?.totp_enabled === true;
-		if (enabled) {
-			throw new errs.ValidationError("TOTP is already enabled");
-		}
-
-		const meta = auth.meta || {};
-		meta.totp_pending_secret = secret;
-
-		const pending = await authModel
-			.query()
-			.where("id", auth.id)
-			.andWhere("user_id", userId)
-			.andWhere("type", "password")
-			.whereRaw(`${authModel.metaCast} = ?`, ["meta", auth.meta_snapshot])
-			.patch({ meta });
-		if (pending !== 1) throw new errs.ValidationError("TOTP setup has changed. Please retry.");
+		await authModel.query().where("user_id", userId).andWhere("type", "totp_pending").delete();
+		await authModel.query().insert({ user_id: userId, type: "totp_pending", secret, meta: {} });
 
 		return { secret, otpauth_url };
 	},
@@ -74,36 +60,41 @@ const internalTotp = {
 			throw new errs.PermissionError("TOTP can only be managed for your own account");
 		}
 		const user = await internalUser.get(access, { id: userId });
-		const auth = await authModel.getPasswordAuthSnapshot(userId);
-		const secret = auth?.meta?.totp_pending_secret || false;
 
-		if (!secret) {
+		if (await internalTotp.isEnabled(userId)) {
+			throw new errs.ValidationError("TOTP is already enabled");
+		}
+
+		const pending = await authModel.query().where("user_id", userId).andWhere("type", "totp_pending").first();
+
+		if (!pending) {
 			throw new errs.ValidationError("No pending TOTP setup found");
+		}
+
+		// a setup which was not confirmed within 10 minutes has to be started again
+		if (Date.now() - new Date(pending.created_on).getTime() > 600000) {
+			throw new errs.ValidationError("TOTP setup has expired");
 		}
 
 		const codeTrim = code.trim();
 
-		const result = await verify({ token: codeTrim, secret });
+		const result = await verify({ token: codeTrim, secret: pending.secret });
 		if (!result.valid) {
 			throw new errs.ValidationError("Invalid verification code");
 		}
 
-		const meta = {
-			...auth.meta,
-			totp_secret: secret,
-			totp_enabled: true,
-			totp_enabled_at: new Date().toISOString(),
-		};
-		delete meta.totp_pending_secret;
-
+		// Claim the step the enrollment code came from, so that code cannot be
+		// replayed at login. The conditional patch also rejects a concurrent
+		// enable: only the request that promotes the pending row sees 1.
 		const enabled = await authModel
 			.query()
-			.where("id", auth.id)
-			.andWhere("user_id", userId)
-			.andWhere("type", "password")
-			.whereRaw(`${authModel.metaCast} = ?`, ["meta", auth.meta_snapshot])
-			.patch({ meta, npmplus_totp_last_used_step: result.timeStep });
-		if (enabled !== 1) throw new errs.ValidationError("TOTP setup has changed. Please retry.");
+			.findById(pending.id)
+			.andWhere("type", "totp_pending")
+			.patch({ type: "totp", npmplus_totp_last_used_step: result.timeStep });
+
+		if (enabled !== 1) {
+			throw new errs.ValidationError("No pending TOTP setup found");
+		}
 
 		await userModel
 			.query()
@@ -130,20 +121,7 @@ const internalTotp = {
 	 * @returns {Promise<void>}
 	 */
 	disable: async (access, userId, audit = true) => {
-		const auth = await authModel.getPasswordAuth(userId);
-
-		const meta = { ...auth.meta };
-		delete meta.totp_secret;
-		delete meta.totp_enabled;
-		delete meta.totp_enabled_at;
-		delete meta.totp_pending_secret;
-
-		await authModel
-			.query()
-			.where("id", auth.id)
-			.andWhere("user_id", userId)
-			.andWhere("type", "password")
-			.patch({ meta, npmplus_totp_last_used_step: null });
+		await authModel.query().where("user_id", userId).whereIn("type", ["totp", "totp_pending"]).delete();
 
 		if (audit) {
 			const user = await internalUser.get(access, { id: userId });
@@ -167,16 +145,15 @@ const internalTotp = {
 	 * @returns {Promise<boolean>}
 	 */
 	verifyCode: async (userId, code) => {
-		const auth = await authModel.getPasswordAuthSnapshot(userId);
-		const secret = auth?.meta?.totp_secret || false;
+		const enrolled = await authModel.getTotpEnrollment(userId);
 
-		if (!secret || auth.meta.totp_enabled !== true) {
+		if (!enrolled) {
 			return false;
 		}
 
 		const result = await verify({
 			token: code,
-			secret,
+			secret: enrolled.secret,
 			// These guardrails lower the minimum length requirement for secrets.
 			// In v12 of otplib the default minimum length is 10 and in v13 it is 16.
 			// Since there are totp secrets in the wild generated with v12 we need to allow shorter secrets
@@ -187,18 +164,21 @@ const internalTotp = {
 		});
 
 		if (!result.valid) return false;
-		// Claim the matched step atomically. Concurrent logins and stale reads
-		// must not reuse a code or authenticate against a replaced enrollment.
+
+		// Claim the matched step atomically. Concurrent logins must not reuse a
+		// code, and a run whose enrollment row was replaced mid-verification must
+		// not authenticate against the secret it read: the patch is scoped to the
+		// row id, so a replaced enrollment leaves nothing to claim.
 		const consumed = await authModel
 			.query()
-			.where("id", auth.id)
-			.whereRaw(`${authModel.metaCast} = ?`, ["meta", auth.meta_snapshot])
+			.where("id", enrolled.id)
 			.where((query) =>
 				query
 					.whereNull("npmplus_totp_last_used_step")
 					.orWhere("npmplus_totp_last_used_step", "<", result.timeStep),
 			)
 			.patch({ npmplus_totp_last_used_step: result.timeStep });
+
 		return consumed === 1;
 	},
 };

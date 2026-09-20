@@ -76,17 +76,14 @@ class Auth extends Model {
 		return Auth.query().where("user_id", userId).andWhere("type", "password").first();
 	}
 
-	static getPasswordAuthSnapshot(userId) {
-		return Auth.query()
-			.select("*")
-			.select(Auth.knex().raw(`${Auth.metaCast} AS meta_snapshot`, ["meta"]))
-			.where("user_id", userId)
-			.andWhere("type", "password")
-			.first();
-	}
-
-	static get metaCast() {
-		return Auth.knex().client.config.client === "mysql2" ? "CAST(?? AS CHAR)" : "CAST(?? AS TEXT)";
+	/**
+	 * Get the enrolled TOTP row for a user, or undefined if none exists
+	 *
+	 * @param   {number} userId
+	 * @returns {Promise<object|undefined>}
+	 */
+	static getTotpEnrollment(userId) {
+		return Auth.query().where("user_id", userId).andWhere("type", "totp").first();
 	}
 
 	/**
