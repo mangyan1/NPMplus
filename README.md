@@ -12,13 +12,13 @@ It is based on [ZoeyVid/NPMplus](https://github.com/ZoeyVid/NPMplus) and the ori
 
 You need a Debian 12/13 or Ubuntu 22.04+ server with an AMD64-v2 or ARM64 CPU, an account that can run `sudo`, and ports `80/tcp`, `443/tcp`, `443/udp` free for your websites. The installer can install Docker if it is missing, and it asks before making important changes.
 
-The recommended installer is the pinned **v2.15.1-mangyan1.rc.8** release candidate: SHA-256-verified, and it resolves its images to immutable digests. The maintained [develop branch](https://github.com/mangyan1/NPMplus/tree/develop) carries newer fixes between releases, for rolling test deployments.
+The recommended installer is the pinned **v2.15.1-mangyan1.rc.9** release candidate: SHA-256-verified, and it resolves its images to immutable digests. The maintained [develop branch](https://github.com/mangyan1/NPMplus/tree/develop) carries newer fixes between releases, for rolling test deployments.
 
 Copy this entire command, paste it into a **test server** terminal, and press Enter:
 
 ```bash
-wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.8/setup-npmplus.sh &&
-wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.8/setup-npmplus.sh.sha256 &&
+wget -qO setup-npmplus.sh https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.9/setup-npmplus.sh &&
+wget -qO setup-npmplus.sh.sha256 https://github.com/mangyan1/NPMplus/releases/download/v2.15.1-mangyan1.rc.9/setup-npmplus.sh.sha256 &&
 sha256sum -c setup-npmplus.sh.sha256 &&
 sudo bash setup-npmplus.sh
 ```
