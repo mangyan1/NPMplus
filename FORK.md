@@ -407,3 +407,18 @@ CRLF work-tree phantoms in untouched files (`sqlite-upgrade`/`totp-replay`
 tests, the CrowdSec dashboard and the login page), all LF in the index. The
 Linux-only python contracts remain unrunnable on the Windows rig
 (environmental, as recorded for September 20).
+
+## Ancestry repair (September 22, after the September 22 merge)
+
+The September 22 reconciliation reached `develop` as PR #31 but its merge
+commit `94e1fd4f` was a regular single-parent commit: during preparation the
+conflicted merge commit was redone after a `git reset --soft HEAD^`, and a
+plain `git commit` does not restore the second parent. Upstream's tip
+(`1338f918`) was therefore content-merged but never an ancestor, and GitHub's
+banner kept reporting the fork 17 behind. The repair merge `f1fa57ff` on
+`develop` uses `-s ours`: no tree change (every upstream change was already
+reconciled, tested, and container-smoked in `94e1fd4f` and `364f0c00`), it
+only records the ancestry, so the banner clears and the next sync diffs
+against a real merge-base instead of re-offering ten rebased duplicates.
+When redoing a conflicted merge commit, redo it as a merge (`git checkout -m`
+or `git merge` again), never a plain `git commit` after `--soft`.
