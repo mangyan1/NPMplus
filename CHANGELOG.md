@@ -4,6 +4,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Reconciled upstream develop (real merge commit, never squashed). Upstream force-pushed `develop` again after the previous integration, so the stale merge-base re-offers ten commits the fork already carries and only seven are genuinely new. Adopted upstream's backup-code module (`9d3fa731` → `backend/internal/backup-codes.js`): generation, counting, verification, and single-use consumption move into it, and it adds the Crockford Base32 alphabet with O/I/L input normalization, so `mfa.js` drops its inline loop — this also fixes a broken `generateBackupCodes` reference that had no import or definition in the fork's tree. Declined: upstream's in-memory `usedSteps` map for TOTP reuse and its `consumedChallenges` map, both of which the fork's DB-level claims and session-backed challenge consumption already cover across restarts. Kept fork-side: bcrypt cost 6, non-admin ACL ownership scoping, i18n auth errors, secret-file compose envs, the stricter schema patterns, the fail-closed CrowdSec appsec default, and the reviewed dependency versions (upstream `643cb6a4` stays inside the 7-day `minimumReleaseAge` window; the renovate cron ages it in). Adopted without argument: the error-class cleanup (unused `previous` parameters dropped, `AuthError` 400 → 401, matching call-site cleanups), the `trust proxy` change in `app.js`, the login-form reset, the schema `maxLength` additions, and the openresty patch-hash bump. Six backend assertions updated to the 401 semantics.
+
 ## v2.15.1-mangyan1.rc.9 - 2026-09-20
 
 Ninth public release candidate of the security-focused fork.

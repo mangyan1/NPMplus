@@ -191,10 +191,10 @@ test("a cross-site fetch-metadata request is rejected (403)", async () => {
 	assert.equal(res.body.error.message, "Rejected Sec-Fetch-Site Value.");
 });
 
-// AuthError carries status 400 in this codebase, so rejected logins are 400
+// AuthError carries status 401 since the upstream sync, so rejected logins are 401
 test("wrong credentials are rejected", async () => {
 	const res = await api("POST", "/api/tokens", { body: { identity: ADMIN_EMAIL, secret: "wrong-password" } });
-	assert.equal(res.status, 400);
+	assert.equal(res.status, 401);
 });
 
 test("good credentials issue a signed session cookie", async () => {
@@ -883,7 +883,7 @@ test("a self password change issues a fresh cookie and kills the old session", a
 	// the old password is dead and the new one works
 	assert.equal(
 		(await api("POST", "/api/tokens", { body: { identity: PEON_EMAIL, secret: PEON_PASSWORD } })).status,
-		400,
+		401,
 		"the old password still authenticates",
 	);
 	const login2 = await api("POST", "/api/tokens", { body: { identity: PEON_EMAIL, secret: NEW_PASSWORD } });
@@ -938,7 +938,7 @@ test("an admin password change for another user does not refresh the admin sessi
 	assert.equal(
 		(await api("POST", "/api/tokens", { body: { identity: "rotated@example.com", secret: OTHER_PASSWORD } }))
 			.status,
-		400,
+		401,
 		"the other user's pre-change password still works",
 	);
 });

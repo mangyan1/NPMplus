@@ -31,7 +31,7 @@ test("first-admin setup accepts the current schema and remains token-protected a
 				auth: { type: "password", secret: "Setup-Fixture-Password-1" },
 			}),
 		});
-	assert.equal((await create()).status, 400);
+	assert.equal((await create()).status, 401);
 	const created = await create(process.env.INITIAL_SETUP_TOKEN);
 	assert.equal(created.status, 201, await created.clone().text());
 	assert.deepEqual((await created.json()).roles, ["admin"]);
