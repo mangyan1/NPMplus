@@ -324,3 +324,86 @@ compose with the fork's `_upstream_resolved` handling. Four test files were
 adapted to the row model (`mfa`, `totp-replay`, `sqlite-upgrade`). The ACL
 ownership test was verified to still bite: with the scoping disabled, the hijack
 `PUT` returns 200 instead of 400.
+
+## Upstream merge resolution notes (September 22)
+
+Upstream force-pushed `develop` again after the September 20 integration, so the
+scheduled `upstream sync` run fails closed until this merge lands — the intended
+stop-for-review behavior. Because upstream's rewrite orphans the September 20
+merge from upstream's history, the merge-base regressed to `20b56ee8` and git
+re-offers ten commits the fork already carries as `upstream/develop..develop`
+noise; patch-id comparison confirms they are identical, and only seven upstream
+commits are genuinely new. The reviewed merge on `fix/upstream-sync-20260922`
+resolves 20 files; the decisions that matter:
+
+- **Backup-code logic moves into upstream's module.** `9d3fa731` creates
+  `backend/internal/backup-codes.js` (generate, count, create, delete, verify)
+  and `97849ffb` switches generation to the Crockford Base32 alphabet with
+  O/I/L input normalization. `mfa.js` takes upstream's module calls. The
+  fork's inline loop was the same delete-on-use logic, so the module loses
+  nothing and this also fixes a latent break: the fork's tree referenced
+  `generateBackupCodes` with no import or definition anywhere. The
+  row-existence-guarded delete (only the request that removes a code counts it
+  as used) survives inside `verify`.
+- **TOTP reuse stays DB-level.** `68fce1e9` blocks enrollment-code replay with
+  an in-memory `usedSteps` map. Declined: the fork's `enable` already claims the
+  enrollment step with a conditional patch on `npmplus_totp_last_used_step`, and
+  `verifyCode` claims login steps the same way — both survive restarts, which
+  upstream's map does not (its own commit message concedes this for the MFA
+  variant).
+- **Token challenges stay session-backed.** The September 20 decision stands:
+  upstream's `consumedChallenges` map is not reintroduced.
+- **Everything else fork-side stays.** bcrypt cost 6 in `access-list.js`, the
+  `canAdmin` try/catch ownership scoping in `proxy-host-access-list.js`
+  (upstream's `visibility !== "all"` variant is the same protection in the
+  same place), the strict `address`/`forward_host`/domain patterns in
+  `common.json` and the host schemas, the secret-file compose envs, the
+  empty `APPSEC_URL` with the fail-closed comment in
+  `rootfs/etc/crowdsec.conf.example`, the fork README, and the reviewed
+  dependency versions in both manifests and both lockfiles — upstream
+  `643cb6a4` is Sep 15, inside the 7-day `minimumReleaseAge` window, so the
+  renovate cron ages it in.
+
+Adopted from upstream without argument: the error-class cleanup
+(`8a8013ac`/`1338f918`: the unused `previous` parameter is dropped everywhere,
+`AuthError` moves 400 → 401, `PermissionError` for expired/invalid tokens in
+`models/token.js` and `lib/access.js`, call sites in `nginx.js`, `setting.js`,
+`nginx/certificates.js` simplified), the `app.js` trust-proxy change
+(`app.set("trust proxy", 1)` replaces the full trust plus the
+`x-real-ip`→`x-forwarded-for` rewrite, and the now-redundant limiter
+`validate` override is dropped), the login-form `resetForm` on TOTP error
+(`97849ffb`), the schema `maxLength: 255` additions
+(`f66dc0b7`), and the openresty patch-hash bump in the Dockerfile.
+
+The 401 `AuthError` forced one further port: the fork's frontend logs out on
+any 401 (`base.js` `processResponse`), so a login attempt that 401s now
+clears the session and reloads the page instead of showing the form error.
+Upstream pairs the 401 with `PermissionError` on every user-attempted
+rejection, and `token.js` now takes that split: wrong password, invalid
+TOTP (combined login and `/tokens/totp`), OIDC identity failures, disabled
+password login, and the setup-wizard refusals are `PermissionError` (403,
+rendered as a form error), while dead challenge tokens and consumed sessions
+stay `AuthError` (401, where clearing the session is the intended recovery).
+The i18n mapping is unaffected: `PermissionError` carries `messageI18n` in
+the adopted `error.js`. The browser smoke caught this only because the
+replay check waits for the visible alert — the raw-API tests alone missed
+it.
+
+The backend assertions move to the 403 semantics (wrong-password and
+setup-token refusals in `api.test.js`, `auth-rate-limits.test.js`,
+`initial-setup.test.js`), while the invalid-session-cookie and dead-session
+replay checks stay 401; the same split applies to the docker smoke
+(`security-regressions.mjs`, `security-ui.mjs`), whose three invalid-code
+checks became 403 and whose challenge/logged-out replay checks stay 401.
+The PUT-without-current-password refusal remains a 400 `ValidationError`.
+Local validation: 163 backend tests, 15 frontend tests, `validate-schema`,
+`tests/security-invariants.mjs`, `pnpm vite build`, biome clean on the edited
+files, and the full `docker-security.mjs` integration (two disposable
+containers: API privilege/replay checks, modal interactions, the CrowdSec
+dashboard harness, fresh first-admin setup with MFA enrollment and
+backup-code acknowledgement, visible replay rejection, and proxy creation)
+against an image built from this branch. The only local biome complaints are
+CRLF work-tree phantoms in untouched files (`sqlite-upgrade`/`totp-replay`
+tests, the CrowdSec dashboard and the login page), all LF in the index. The
+Linux-only python contracts remain unrunnable on the Windows rig
+(environmental, as recorded for September 20).

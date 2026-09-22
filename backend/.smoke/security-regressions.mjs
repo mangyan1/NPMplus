@@ -193,7 +193,7 @@ const challengeCookie = pending.cookie();
 check(
 	"enrollment code cannot be reused for login",
 	(await pending.request("POST", "/tokens/totp", { code: enrollmentCode })).status,
-	400,
+	403,
 );
 console.log("Waiting for the next authenticator timestep");
 await delay(31000 - (Date.now() % 30000));
@@ -202,7 +202,7 @@ check("new TOTP completes login", (await pending.request("POST", "/tokens/totp",
 check(
 	"completed challenge cannot be replayed",
 	(await pending.request("POST", "/tokens/totp", { code }, challengeCookie)).status,
-	400,
+	401,
 );
 check("completed session is authorized", (await pending.request("GET", "/users/me")).status, 200);
 const other = client();
@@ -210,7 +210,7 @@ check(
 	"used TOTP rejected in combined password login",
 	(await other.request("POST", "/tokens", { identity: account.email, secret: "Security-Smoke-Password-1", code }))
 		.status,
-	400,
+	403,
 );
 const fullCookie = pending.cookie();
 check("MFA session logout succeeds", (await pending.request("DELETE", "/tokens")).status, 200);

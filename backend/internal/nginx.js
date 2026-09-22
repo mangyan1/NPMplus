@@ -127,7 +127,7 @@ const internalNginx = {
 		try {
 			template = await utils.getParsedTemplate(`${__dirname}/../templates/_proxy_host_custom_location.conf`);
 		} catch (err) {
-			throw new errs.ConfigurationError(err.message, err);
+			throw new errs.ConfigurationError(err.message);
 		}
 
 		const renderEngine = utils.getRenderEngine();
@@ -172,7 +172,7 @@ const internalNginx = {
 		try {
 			template = await utils.getParsedTemplate(`${__dirname}/../templates/_upstream.conf`);
 		} catch (err) {
-			throw new errs.ConfigurationError(err.message, err);
+			throw new errs.ConfigurationError(err.message);
 		}
 
 		const renderEngine = utils.getRenderEngine();
@@ -247,7 +247,7 @@ const internalNginx = {
 		try {
 			template = await utils.getParsedTemplate(`${__dirname}/../templates/${nice_host_type}.conf`);
 		} catch (err) {
-			throw new errs.ConfigurationError(err.message, err);
+			throw new errs.ConfigurationError(err.message);
 		}
 
 		host.env = process.env;
@@ -391,7 +391,7 @@ const internalNginx = {
 			return true;
 		} catch (err) {
 			debug(logger, `Could not write ${filename}:`, err.message);
-			throw new errs.ConfigurationError(err.message, err);
+			throw new errs.ConfigurationError(err.message);
 		}
 	},
 

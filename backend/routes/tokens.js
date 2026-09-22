@@ -102,7 +102,7 @@ router
 	 */
 	.post(async (req, res, _next) => {
 		if (process.env.OIDC_DISABLE_PASSWORD === "true") {
-			throw new errs.AuthError("Non OIDC login is disabled");
+			throw new errs.PermissionError("Non OIDC login is disabled");
 		}
 
 		const data = apiValidator(getValidationSchema("/tokens", "post"), req.body);

@@ -109,15 +109,15 @@ router
 			let body = req.body;
 			if (!setup) {
 				if (setupCreationInProgress) {
-					throw new errs.AuthError("Initial setup is already in progress. Please retry.");
+					throw new errs.PermissionError("Initial setup is already in progress. Please retry.");
 				}
 				setupCreationInProgress = true;
 				claimedSetup = true;
 				if (await isSetup()) {
-					throw new errs.AuthError("Initial setup has already been completed.");
+					throw new errs.PermissionError("Initial setup has already been completed.");
 				}
 				if (!(await verifySetupToken(req.get("x-npmplus-setup-token")))) {
-					throw new errs.AuthError("Invalid initial setup token.");
+					throw new errs.PermissionError("Invalid initial setup token.");
 				}
 				logger.info("Creating a new user in setup mode");
 				const access = new Access(null);
