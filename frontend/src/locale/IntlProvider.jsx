@@ -14,6 +14,13 @@ const localeOptions = ["en", ...Object.keys(localeList).filter((locale) => local
 
 const getFlagCodeForLocale = (locale = "en") => localeList[locale]?.flag ?? "EN";
 
+const isRTLLocale = (locale = "en") => localeList[locale]?.rtl ?? false;
+
+const applyDocumentLocale = (locale) => {
+	document.documentElement.lang = locale;
+	document.documentElement.dir = isRTLLocale(locale) ? "rtl" : "ltr";
+};
+
 const loadMessages = (locale = "en") => ({
 	...messagesFor("en"),
 	...messagesFor(locale),
@@ -30,13 +37,14 @@ const getLocale = () => {
 const cache = createIntlCache();
 
 const initialMessages = loadMessages(getLocale());
+applyDocumentLocale(getLocale());
 let intl = createIntl({ locale: getLocale(), messages: initialMessages }, cache);
 
 const changeLocale = (locale) => {
 	const messages = loadMessages(locale);
 	intl = createIntl({ locale, messages }, cache);
 	window.localStorage.setItem("locale", locale);
-	document.documentElement.lang = locale;
+	applyDocumentLocale(locale);
 };
 
 // This is a translation component that wraps the translation in a span with a data
@@ -62,4 +70,4 @@ const T = ({ id, data, tData }) => {
 	);
 };
 
-export { changeLocale, getFlagCodeForLocale, getLocale, intl, localeList, localeOptions, T };
+export { changeLocale, getFlagCodeForLocale, getLocale, intl, isRTLLocale, localeList, localeOptions, T };
