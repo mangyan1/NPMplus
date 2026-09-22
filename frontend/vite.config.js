@@ -15,7 +15,10 @@ export default defineConfig({
 						},
 						{
 							name: "ui-vendor",
-							test: /node_modules[\\/](@tabler|react-bootstrap|react-select)[\\/]/,
+							// tabler.rtl must stay out of this group: the group emits one
+							// css asset, and merging the RTL sheet into it would apply
+							// RTL rules to LTR pages.
+							test: /node_modules[\\/](@tabler|react-bootstrap|react-select)[\\/](?!.*tabler\.rtl\.min\.css)/,
 							priority: 20,
 						},
 					],
