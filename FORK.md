@@ -375,14 +375,35 @@ Adopted from upstream without argument: the error-class cleanup
 (`97849ffb`), the schema `maxLength: 255` additions
 (`f66dc0b7`), and the openresty patch-hash bump in the Dockerfile.
 
-Six backend assertions updated to the 401 semantics (`api.test.js` four login
-refusals, `auth-rate-limits.test.js` the five-failures loop,
-`initial-setup.test.js` the token-less setup probe); the PUT-without-current-
-password refusal remains a 400 `ValidationError` and its assertion is
-unchanged. Local validation: 163 backend tests, 15 frontend tests,
-`validate-schema`, `tests/security-invariants.mjs`, `pnpm vite build`, and
-biome clean on the edited files; the only local biome complaints are CRLF
-work-tree phantoms in untouched files (`sqlite-upgrade`/`totp-replay` tests,
-the CrowdSec dashboard and the login page), all LF in the index. The
+The 401 `AuthError` forced one further port: the fork's frontend logs out on
+any 401 (`base.js` `processResponse`), so a login attempt that 401s now
+clears the session and reloads the page instead of showing the form error.
+Upstream pairs the 401 with `PermissionError` on every user-attempted
+rejection, and `token.js` now takes that split: wrong password, invalid
+TOTP (combined login and `/tokens/totp`), OIDC identity failures, disabled
+password login, and the setup-wizard refusals are `PermissionError` (403,
+rendered as a form error), while dead challenge tokens and consumed sessions
+stay `AuthError` (401, where clearing the session is the intended recovery).
+The i18n mapping is unaffected: `PermissionError` carries `messageI18n` in
+the adopted `error.js`. The browser smoke caught this only because the
+replay check waits for the visible alert — the raw-API tests alone missed
+it.
+
+The backend assertions move to the 403 semantics (wrong-password and
+setup-token refusals in `api.test.js`, `auth-rate-limits.test.js`,
+`initial-setup.test.js`), while the invalid-session-cookie and dead-session
+replay checks stay 401; the same split applies to the docker smoke
+(`security-regressions.mjs`, `security-ui.mjs`), whose three invalid-code
+checks became 403 and whose challenge/logged-out replay checks stay 401.
+The PUT-without-current-password refusal remains a 400 `ValidationError`.
+Local validation: 163 backend tests, 15 frontend tests, `validate-schema`,
+`tests/security-invariants.mjs`, `pnpm vite build`, biome clean on the edited
+files, and the full `docker-security.mjs` integration (two disposable
+containers: API privilege/replay checks, modal interactions, the CrowdSec
+dashboard harness, fresh first-admin setup with MFA enrollment and
+backup-code acknowledgement, visible replay rejection, and proxy creation)
+against an image built from this branch. The only local biome complaints are
+CRLF work-tree phantoms in untouched files (`sqlite-upgrade`/`totp-replay`
+tests, the CrowdSec dashboard and the login page), all LF in the index. The
 Linux-only python contracts remain unrunnable on the Windows rig
 (environmental, as recorded for September 20).

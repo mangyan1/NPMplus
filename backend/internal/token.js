@@ -65,18 +65,18 @@ export default {
 			.first();
 
 		if (!user) {
-			throw new errs.AuthError(ERROR_MESSAGE_INVALID_AUTH);
+			throw new errs.PermissionError(ERROR_MESSAGE_INVALID_AUTH);
 		}
 
 		const auth = await authModel.getPasswordAuth(user.id);
 
 		if (!auth) {
-			throw new errs.AuthError(ERROR_MESSAGE_INVALID_AUTH);
+			throw new errs.PermissionError(ERROR_MESSAGE_INVALID_AUTH);
 		}
 
 		const valid = await auth.verifyPassword(data.secret);
 		if (!valid) {
-			throw new errs.AuthError(ERROR_MESSAGE_INVALID_AUTH, ERROR_MESSAGE_INVALID_AUTH_I18N);
+			throw new errs.PermissionError(ERROR_MESSAGE_INVALID_AUTH, ERROR_MESSAGE_INVALID_AUTH_I18N);
 		}
 
 		// Check if MFA is enabled
@@ -85,7 +85,7 @@ export default {
 			if (data.code) {
 				const validCode = await mfa.verifyForLogin(user.id, data.code);
 				if (!validCode) {
-					throw new errs.AuthError(ERROR_MESSAGE_INVALID_CODE, ERROR_MESSAGE_INVALID_CODE_I18N);
+					throw new errs.PermissionError(ERROR_MESSAGE_INVALID_CODE, ERROR_MESSAGE_INVALID_CODE_I18N);
 				}
 			} else {
 				// Return challenge token instead of full token
@@ -133,7 +133,7 @@ export default {
 	 */
 	getTokenFromOAuthClaim: async (data) => {
 		if (!data.issuer || !data.subject) {
-			throw new errs.AuthError("The Identity Provider didn't send a stable identity.");
+			throw new errs.PermissionError("The Identity Provider didn't send a stable identity.");
 		}
 
 		const identityHash = crypto.createHash("sha256").update(`${data.issuer}\0${data.subject}`).digest("hex");
@@ -151,7 +151,7 @@ export default {
 			// Email is used only for the first link, and only when the provider
 			// explicitly attests that it is verified. Later logins use issuer+sub.
 			if (data.emailVerified !== true) {
-				throw new errs.AuthError("A verified email is required to link this OIDC identity.");
+				throw new errs.PermissionError("A verified email is required to link this OIDC identity.");
 			}
 			user = await userModel
 				.query()
@@ -168,17 +168,17 @@ export default {
 						secret: identityHash,
 						meta: { issuer: data.issuer, subject: data.subject },
 					});
-				} catch (err) {
+				} catch {
 					binding = await authModel.getOidcAuth(identityHash);
 					if (!binding || binding.user_id !== user.id) {
-						throw new errs.AuthError(ERROR_MESSAGE_INVALID_AUTH, undefined, err);
+						throw new errs.PermissionError(ERROR_MESSAGE_INVALID_AUTH);
 					}
 				}
 			}
 		}
 
 		if (!user) {
-			throw new errs.AuthError(ERROR_MESSAGE_INVALID_AUTH);
+			throw new errs.PermissionError(ERROR_MESSAGE_INVALID_AUTH);
 		}
 
 		return issueUserToken(user, { skipMfa: process.env.OIDC_SKIP_MFA === "true" });
@@ -227,8 +227,8 @@ export default {
 		let tokenData;
 		try {
 			tokenData = await Token.load(challengeToken);
-		} catch (err) {
-			throw new errs.AuthError("Invalid or expired challenge token", undefined, err);
+		} catch {
+			throw new errs.AuthError("Invalid or expired challenge token");
 		}
 
 		await assertTokenSession(tokenData.sid);
@@ -255,7 +255,7 @@ export default {
 		// Verify TOTP code
 		const valid = await mfa.verifyForLogin(userId, code);
 		if (!valid) {
-			throw new errs.AuthError(ERROR_MESSAGE_INVALID_CODE, ERROR_MESSAGE_INVALID_CODE_I18N);
+			throw new errs.PermissionError(ERROR_MESSAGE_INVALID_CODE, ERROR_MESSAGE_INVALID_CODE_I18N);
 		}
 
 		await consumeChallengeSession(tokenData.sid);

@@ -80,7 +80,7 @@ test("five invalid passwords still throttle login while refresh and logout remai
 	for (let i = 0; i < 5; i++)
 		assert.equal(
 			(await request("POST", "/tokens", { ...credentials, secret: "Wrong-Fixture-Password" })).status,
-			401,
+			403,
 		);
 	assert.equal((await request("POST", "/tokens", credentials)).status, 429);
 	assert.equal((await request("GET", "/tokens", undefined, cookie)).status, 200);

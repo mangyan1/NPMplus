@@ -58,7 +58,7 @@ try {
 	await page.locator('input[name="code"]').fill(code);
 	const replayed = page.waitForResponse((response) => response.url().endsWith("/tokens/totp"));
 	await page.getByRole("button", { name: "Verify", exact: true }).click();
-	assert.equal((await replayed).status(), 400);
+	assert.equal((await replayed).status(), 403);
 	await page
 		.getByRole("alert")
 		.filter({ hasText: /invalid/i })
