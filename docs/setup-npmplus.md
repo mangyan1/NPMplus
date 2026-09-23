@@ -109,6 +109,22 @@ Do not downgrade only the image after hashes have migrated: an older bcrypt-only
 image cannot verify Argon2 passwords. Use the matching pre-update data snapshot
 with the rollback/recovery procedure. No release tag is moved by this upgrade.
 
+### September 22 develop upgrade
+
+Three same-day upstream reconciliations (`03688155`–`a2b765f8`) are queued for
+`develop` through [PR #33](https://github.com/mangyan1/NPMplus/pull/33), with
+the full container smoke (171 checks) green against an image built from that
+branch. The installer is untouched by them; no release tag is moved.
+
+The headline is upstream's locale simplification: switching languages now
+persists the choice and reloads the page instead of swapping translations in
+place, and the document `lang`/`dir` attributes are applied at module load —
+the same pass brings right-to-left support with Persian and Turkish
+translations. Existing sessions stay valid across this upgrade: no fresh
+sign-in is required, there are no new environment keys or Compose changes, and
+no data migration runs. The download, inspect, and `--update` flow documented
+above applies unchanged, with the safe updater's snapshot and rollback.
+
 ### Protection opt-ins
 
 The version-pinned commands below target RC9. Rolling `develop` users should use
