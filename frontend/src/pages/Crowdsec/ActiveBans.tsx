@@ -10,7 +10,6 @@ import { Fragment, useDeferredValue, useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import type { CrowdsecAlert, CrowdsecDecision } from "src/api/backend";
 import { Button } from "src/components";
-import { useLocaleState } from "src/context";
 import { useCrowdsecAlerts, useCrowdsecDecisions, useUnbanCrowdsecDecision } from "src/hooks";
 import { formatDateTime, intl, T } from "src/locale";
 import { showDeleteConfirmModal, showManualBanModal } from "src/modals";
@@ -68,7 +67,6 @@ const AlertContext = ({ decision }: { decision: CrowdsecDecision }) => {
 };
 
 const ActiveBans = () => {
-	const { locale } = useLocaleState();
 	const [page, setPage] = useState(1);
 	const [search, setSearch] = useState("");
 	const [expanded, setExpanded] = useState<number | null>(null);
@@ -254,7 +252,7 @@ const ActiveBans = () => {
 													}
 												>
 													{decision.until ? (
-														formatDateTime(decision.until, locale)
+														formatDateTime(decision.until)
 													) : decision.duration ? (
 														<T
 															id="crowdsec.expires-in"

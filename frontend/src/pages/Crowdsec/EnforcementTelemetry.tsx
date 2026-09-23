@@ -2,13 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import { getSecurityTelemetry } from "src/api/backend/getSecurityTelemetry";
-import { useLocaleState } from "src/context";
 import { formatDateTime, intl, T } from "src/locale";
 import { MetricsSkeleton } from "./LoadingSkeleton";
 import Metric from "./Metric";
 
 const EnforcementTelemetry = ({ windowHours, mode }: { windowHours: number; mode: "waf" | "enforcement" }) => {
-	const { locale } = useLocaleState();
 	const [hostId, setHostId] = useState("");
 	const query = useQuery({
 		queryKey: ["security-telemetry", windowHours],
@@ -39,8 +37,8 @@ const EnforcementTelemetry = ({ windowHours, mode }: { windowHours: number; mode
 				<T
 					id="crowdsec.telemetry.window"
 					data={{
-						start: formatDateTime(query.data.start, locale),
-						end: formatDateTime(query.data.end, locale),
+						start: formatDateTime(query.data.start),
+						end: formatDateTime(query.data.end),
 					}}
 				/>
 			</p>
@@ -136,12 +134,12 @@ const EnforcementTelemetry = ({ windowHours, mode }: { windowHours: number; mode
 			)}
 			<div className="text-secondary small">
 				<T id="crowdsec.telemetry.nginx" />: <T id={`crowdsec.telemetry.${status(nginx)}`} />
-				{nginx.observedAt && ` (${formatDateTime(nginx.observedAt, locale)})`}
+				{nginx.observedAt && ` (${formatDateTime(nginx.observedAt)})`}
 				{mode === "enforcement" && (
 					<>
 						<br />
 						<T id="crowdsec.telemetry.firewall" />: <T id={`crowdsec.telemetry.${status(firewall)}`} />
-						{firewall.observedAt && ` (${formatDateTime(firewall.observedAt, locale)})`}
+						{firewall.observedAt && ` (${formatDateTime(firewall.observedAt)})`}
 					</>
 				)}
 			</div>

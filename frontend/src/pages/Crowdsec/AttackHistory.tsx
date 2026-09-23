@@ -3,7 +3,6 @@ import { Fragment, useDeferredValue, useMemo, useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import type { CrowdsecAlert } from "src/api/backend";
 import { Button } from "src/components";
-import { useLocaleState } from "src/context";
 import { useCrowdsecAlertHistory } from "src/hooks";
 import { formatDateTime, intl, T } from "src/locale";
 import { showManualBanModal } from "src/modals";
@@ -43,7 +42,6 @@ const AttackHistory = ({
 	target,
 	setTarget,
 }: HistoryProps) => {
-	const { locale } = useLocaleState();
 	const [expanded, setExpanded] = useState<number | null>(null);
 	const deferredSearch = useDeferredValue(search);
 	const [scan, setScan] = useState<{ key: string; cursors: string[]; page: number; session: number } | null>(null);
@@ -109,7 +107,7 @@ const AttackHistory = ({
 			)}
 			{scan && history.data?.start && history.data.end && (
 				<p className="small text-secondary">
-					{formatDateTime(history.data.start, locale)} — {formatDateTime(history.data.end, locale)}
+					{formatDateTime(history.data.start)} — {formatDateTime(history.data.end)}
 				</p>
 			)}
 			{history.isError && history.data && (
@@ -209,7 +207,7 @@ const AttackHistory = ({
 											<tr>
 												<td>
 													{item.startAt || item.createdAt
-														? formatDateTime(item.startAt || item.createdAt, locale)
+														? formatDateTime(item.startAt || item.createdAt)
 														: "—"}
 												</td>
 												<td className="text-break" style={{ minWidth: "10rem" }}>

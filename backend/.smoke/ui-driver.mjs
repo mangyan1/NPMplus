@@ -1138,13 +1138,13 @@ check(
 	),
 );
 await page.setViewportSize({ width: 1280, height: 900 });
-await page.getByRole("button", { name: "Enable dark mode", exact: true }).click();
+await page.getByRole("button", { name: "Switch to Dark mode", exact: true }).click();
 await page.setViewportSize({ width: 320, height: 720 });
 await page.waitForTimeout(250);
 await page.screenshot({ path: "backend/.smoke/ui-security-bans-dark-320.png", fullPage: true, animations: "disabled" });
 await page.setViewportSize({ width: 1280, height: 900 });
 await page.screenshot({ path: "backend/.smoke/ui-security-bans-dark.png", fullPage: true, animations: "disabled" });
-await page.getByRole("button", { name: "Enable light mode", exact: true }).click();
+await page.getByRole("button", { name: "Switch to Light mode", exact: true }).click();
 
 await page.getByRole("button", { name: "Add IP ban", exact: true }).click();
 const manualDialog = page.getByRole("dialog");

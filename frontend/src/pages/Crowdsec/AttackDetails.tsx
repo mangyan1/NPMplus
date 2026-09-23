@@ -1,5 +1,4 @@
 import type { CrowdsecAlert } from "src/api/backend";
-import { useLocaleState } from "src/context";
 import { formatDateTime, T } from "src/locale";
 import { attackType, toolHints } from "./attackEvidence";
 import { scenarioLabel } from "./scenarios";
@@ -40,7 +39,6 @@ export const AlertSource = ({ source }: { source: CrowdsecAlert["source"] }) => 
 );
 
 const AttackDetails = ({ alert, compact = false }: { alert: CrowdsecAlert; compact?: boolean }) => {
-	const { locale } = useLocaleState();
 	// an alert whose own scenario is not one of the rules its events name is a
 	// rollup of separate matches (CrowdSec aggregates them), so the events are
 	// the only place the matched rules appear and the caveat is needed. On a
@@ -95,8 +93,8 @@ const AttackDetails = ({ alert, compact = false }: { alert: CrowdsecAlert; compa
 					<T id="crowdsec.evidence.window" />
 				</dt>
 				<dd>
-					{alert.startAt ? formatDateTime(alert.startAt, locale) : "—"} →{" "}
-					{alert.stopAt ? formatDateTime(alert.stopAt, locale) : "—"}
+					{alert.startAt ? formatDateTime(alert.startAt) : "—"} →{" "}
+					{alert.stopAt ? formatDateTime(alert.stopAt) : "—"}
 				</dd>
 			</dl>
 			<p>
@@ -111,7 +109,7 @@ const AttackDetails = ({ alert, compact = false }: { alert: CrowdsecAlert; compa
 				return (
 					<div key={`${alert.id}-${index}`} className="border-top pt-2 mt-2">
 						{event.timestamp && (
-							<div className="text-secondary mb-1">{formatDateTime(event.timestamp, locale)}</div>
+							<div className="text-secondary mb-1">{formatDateTime(event.timestamp)}</div>
 						)}
 						{request && (
 							<div className="text-break">

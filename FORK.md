@@ -499,3 +499,32 @@ merge-base still regressed to `20b56ee8`). Resolution by file:
 No schema, access-list, proxy-host, compose, or token/totp behavior changed:
 those conflict regions were resolved with the fork's versions, which are
 already stricter than upstream's state.
+
+## Upstream merge resolution notes (September 22, third push)
+
+Upstream's same-day "further simplify locale code" pass (through
+`a2b765f8`) was adopted nearly wholesale: `changeLocale` now persists the
+choice and reloads instead of live-swapping a cached `intl` (dropping
+`createIntlCache`, `loadMessages`, and `applyDocumentLocale`),
+`formatDateTime` reads the module-level `currentLocale` internally so
+callers stop threading a locale argument, the tabler stylesheet selection
+moved to a top-level `await` keyed on `document.dir` (set synchronously at
+`src/locale` module init, so it is readable before the awaits), and
+`context/LocaleContext.jsx` plus `hooks/useTheme.js` are gone with
+`ThemeContext` providing `useThemeState`. Two adjustments were required:
+
+- `api/backend/base.js` keeps the fork's 401 handling: the 401 branch runs
+  before `response.json()` so a proxy's HTML error page cannot crash the
+  parse, logout still calls `deleteToken()` so a stale token cannot poison
+  the next login, `error.status` survives, and the helpers tolerate a null
+  `params` and a bare `AbortSignal`. Upstream's pass removed those
+  capabilities from its own copy; no fork call site passes `headers` or
+  bare signals, but the 401 hardening is fork-documented behavior.
+- The fork-only CrowdSec pages kept their `crowdsec-decision` rendering
+  (gavel icon, `Decision #<id>`, the i18n'd unknown-type fallback) and were
+  moved onto the locale-free `formatDateTime(value)` signature; upstream
+  deleted the `useLocaleState` hook they had been using.
+
+`main.jsx` adopts the top-level `await` shape with `installDeploymentRecovery()`
+called before the stylesheet awaits, so the boot guard installs even when a
+broken deploy 404s the chunks it awaits.

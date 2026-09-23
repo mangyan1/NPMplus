@@ -4,7 +4,6 @@ import { lazy, type KeyboardEvent as ReactKeyboardEvent, Suspense, useEffect, us
 import Alert from "react-bootstrap/Alert";
 import type { CrowdsecInsightsItem } from "src/api/backend";
 import { Button } from "src/components";
-import { useLocaleState } from "src/context";
 import { useAnubisStatus, useCrowdsecInsights, useCrowdsecMetrics } from "src/hooks";
 import { formatDateTime, intl, T } from "src/locale";
 import ActiveBans from "./ActiveBans";
@@ -51,7 +50,6 @@ const QuickFilters = ({ items, onSelect }: { items: CrowdsecInsightsItem[]; onSe
 	);
 
 const CrowdsecDashboard = () => {
-	const { locale } = useLocaleState();
 	const queryClient = useQueryClient();
 	const [tab, setTab] = useState<DashboardTab>("overview");
 	const [kpi, setKpi] = useState<KpiKind | null>(null);
@@ -222,7 +220,7 @@ const CrowdsecDashboard = () => {
 											<T
 												id="crowdsec.last-updated"
 												data={{
-													date: formatDateTime(new Date(lastUpdatedAt).toISOString(), locale),
+													date: formatDateTime(new Date(lastUpdatedAt).toISOString()),
 												}}
 											/>
 										</span>
