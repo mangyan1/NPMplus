@@ -1,43 +1,26 @@
 import { QueryClient } from "@tanstack/react-query";
 import queryString from "query-string";
 import AuthStore from "src/modules/AuthStore";
-import { camelizeKeys, decamelize, decamelizeKeys } from "./caseConvert";
+import { camelizeKeys, decamelizeKeys } from "./caseConvert";
 import { deleteToken } from "./deleteToken";
-
 export const queryClient = new QueryClient();
 const contentTypeHeader = "Content-Type";
-
 // call sites pass either an AbortController or a bare AbortSignal
 const getAbortSignal = (source) => (source && "signal" in source ? source.signal : source);
-
-function decamelizeParams(params) {
-	if (!params) {
-		return;
-	}
-	const result = {};
-	for (const [key, value] of Object.entries(params)) {
-		result[decamelize(key)] = value;
-	}
-
-	return result;
-}
-
 function buildUrl({ url, params }) {
 	const endpoint = url.replace(/^\/|\/$/g, "");
 	const baseUrl = `/api/${endpoint}`;
 	const apiUrl = queryString.stringifyUrl({
 		url: baseUrl,
-		query: decamelizeParams(params),
+		query: decamelizeKeys(params),
 	});
 	return apiUrl;
 }
-
 function buildBody(data) {
 	if (data) {
 		return JSON.stringify(decamelizeKeys(data));
 	}
 }
-
 async function processResponse(response, reload = true) {
 	// Session status must be handled even when a proxy returns an HTML error page.
 	if (response.status === 401 && reload) {
@@ -64,7 +47,6 @@ async function processResponse(response, reload = true) {
 	}
 	return camelizeKeys(payload);
 }
-
 async function baseGet({ url, params }, abortSource) {
 	const apiUrl = buildUrl({ url, params });
 	const method = "GET";
@@ -72,11 +54,9 @@ async function baseGet({ url, params }, abortSource) {
 	const response = await fetch(apiUrl, { method, signal });
 	return response;
 }
-
 export async function get(args, abortSource) {
 	return processResponse(await baseGet(args, abortSource), args.reload);
 }
-
 export async function download({ url, params }, filename = "download.file") {
 	const res = await fetch(buildUrl({ url, params }));
 	if (!res.ok) await processResponse(res);
@@ -88,13 +68,10 @@ export async function download({ url, params }, filename = "download.file") {
 	a.click();
 	window.URL.revokeObjectURL(u);
 }
-
 export async function post({ url, params, data, headers: extraHeaders }, abortSource) {
 	const apiUrl = buildUrl({ url, params });
 	const method = "POST";
-
 	let headers = { ...extraHeaders };
-
 	let body;
 	// Check if the data is an instance of FormData
 	// If data is FormData, let the browser set the Content-Type header
@@ -108,12 +85,10 @@ export async function post({ url, params, data, headers: extraHeaders }, abortSo
 		};
 		body = buildBody(data);
 	}
-
 	const signal = getAbortSignal(abortSource);
 	const response = await fetch(apiUrl, { method, headers, body, signal });
 	return processResponse(response);
 }
-
 export async function put({ url, params, data }, abortSource) {
 	const apiUrl = buildUrl({ url, params });
 	const method = "PUT";
@@ -125,7 +100,6 @@ export async function put({ url, params, data }, abortSource) {
 	const response = await fetch(apiUrl, { method, headers, body, signal });
 	return processResponse(response);
 }
-
 export async function del({ url, params }, abortSource) {
 	const apiUrl = buildUrl({ url, params });
 	const method = "DELETE";

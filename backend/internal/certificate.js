@@ -326,17 +326,9 @@ const internalCertificate = {
 		const archive = new ZipArchive({ zlib: { level: 9 } });
 
 		return new Promise((resolve, reject) => {
-			stream.on("close", () => {
-				resolve();
-			});
-
-			archive.on("warning", (err) => {
-				reject(err);
-			});
-
-			archive.on("error", (err) => {
-				reject(err);
-			});
+			stream.on("close", resolve);
+			archive.on("warning", reject);
+			archive.on("error", reject);
 
 			archive.pipe(stream);
 
@@ -689,7 +681,7 @@ const internalCertificate = {
 			process.env.ACME_SERVER,
 			"--cert-name",
 			`npm-${certificate.id}`,
-			...(domains.length > 0 ? ["--domains", domains.map((domain) => domainToASCII(domain)).join(",")] : []),
+			...(domains.length > 0 ? ["--domains", domains.map(domainToASCII).join(",")] : []),
 			...ips.flatMap((ip) => ["--ip-address", ip]),
 			...(certificate.meta.reuse_key ? ["--reuse-key"] : ["--no-reuse-key"]),
 			"--authenticator",
@@ -727,7 +719,7 @@ const internalCertificate = {
 				"--cert-name",
 				`npm-${certificate.id}`,
 				"--domains",
-				certificate.domain_names.map((domain_name) => domainToASCII(domain_name)).join(","),
+				certificate.domain_names.map(domainToASCII).join(","),
 				...(certificate.meta.reuse_key ? ["--reuse-key"] : ["--no-reuse-key"]),
 				"--authenticator",
 				dnsPlugin.full_plugin_name,

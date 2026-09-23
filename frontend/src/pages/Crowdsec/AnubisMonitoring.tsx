@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import { getAnubisReport } from "src/api/backend/getAnubisReport";
-import { useLocaleState } from "src/context";
 import { formatDateTime, intl, T } from "src/locale";
 import HoneypotEvidence from "./HoneypotEvidence";
 import { MetricsSkeleton } from "./LoadingSkeleton";
@@ -31,7 +30,6 @@ const Pages = ({ page, total, change }: { page: number; total: number; change: (
 	</div>
 );
 const AnubisMonitoring = () => {
-	const { locale } = useLocaleState();
 	const [hours, setHours] = useState(24);
 	const [page, setPage] = useState(1);
 	const [hostPage, setHostPage] = useState(1);
@@ -90,7 +88,7 @@ const AnubisMonitoring = () => {
 			</p>
 			<p className="small">
 				<T id={`crowdsec.anubis-report.${metrics.status}`} />
-				{metrics.observedAt && ` · ${formatDateTime(metrics.observedAt, locale)}`}
+				{metrics.observedAt && ` · ${formatDateTime(metrics.observedAt)}`}
 			</p>
 			{metrics.partial && (
 				<p className="small text-secondary">
@@ -112,7 +110,7 @@ const AnubisMonitoring = () => {
 				))}
 			</div>
 			<p className="small text-secondary">
-				{formatDateTime(metrics.start, locale)} – {formatDateTime(metrics.end, locale)}
+				{formatDateTime(metrics.start)} – {formatDateTime(metrics.end)}
 			</p>
 			<details className="border-top py-3">
 				<summary className="fw-semibold">
@@ -166,7 +164,7 @@ const AnubisMonitoring = () => {
 				<p className="small">
 					<T id="crowdsec.anubis-report.address-collector" />:{" "}
 					<T id={`crowdsec.anubis-report.${ledger.status}`} />
-					{ledger.observedAt && ` · ${formatDateTime(ledger.observedAt, locale)}`}
+					{ledger.observedAt && ` · ${formatDateTime(ledger.observedAt)}`}
 				</p>
 				<p className="small">
 					<T id="crowdsec.anubis-report.attempt-collector" />:{" "}
@@ -199,7 +197,7 @@ const AnubisMonitoring = () => {
 							<tbody>
 								{ledger.items.map((item) => (
 									<tr key={item.id}>
-										<td>{formatDateTime(item.time, locale)}</td>
+										<td>{formatDateTime(item.time)}</td>
 										<td className="text-break" style={{ minWidth: "9rem" }}>
 											{item.ip}
 										</td>

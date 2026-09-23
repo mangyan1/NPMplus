@@ -9,7 +9,6 @@ import {
 	getAttackerTimeline,
 	getCrowdsecAttackers,
 } from "src/api/backend/getCrowdsecAttackers";
-import { useLocaleState } from "src/context";
 import { formatDateTime, intl, T } from "src/locale";
 import AttackDetails, { RuleDetails } from "./AttackDetails";
 import styles from "./Attackers.module.css";
@@ -78,7 +77,6 @@ const Events = ({ alert }: { alert: CrowdsecAlert }) => {
 };
 
 const Timeline = ({ ip, windowHours, onClose }: { ip: string; windowHours: number; onClose: () => void }) => {
-	const { locale } = useLocaleState();
 	const [expanded, setExpanded] = useState<number | null>(null);
 	const history = useInfiniteQuery({
 		queryKey: ["crowdsec-attacker-timeline", ip, windowHours],
@@ -130,7 +128,7 @@ const Timeline = ({ ip, windowHours, onClose }: { ip: string; windowHours: numbe
 							{latest.decisionsCheckedAt && (
 								<p className="small text-secondary">
 									<T id="crowdsec.attackers.checked" />:{" "}
-									{formatDateTime(latest.decisionsCheckedAt, locale)}
+									{formatDateTime(latest.decisionsCheckedAt)}
 								</p>
 							)}
 							{!latest.decisionsAvailable ? (
@@ -142,7 +140,7 @@ const Timeline = ({ ip, windowHours, onClose }: { ip: string; windowHours: numbe
 										<div className="text-secondary">
 											<T id="crowdsec.expires" />:{" "}
 											{decision.until
-												? formatDateTime(decision.until, locale)
+												? formatDateTime(decision.until)
 												: decision.duration}
 										</div>
 									</div>
@@ -160,8 +158,8 @@ const Timeline = ({ ip, windowHours, onClose }: { ip: string; windowHours: numbe
 							</p>
 						</div>
 						<p className="small text-secondary">
-							<T id="crowdsec.attackers.window" />: {formatDateTime(latest.start || "", locale)} —{" "}
-							{formatDateTime(latest.end || "", locale)}
+							<T id="crowdsec.attackers.window" />: {formatDateTime(latest.start || "")} —{" "}
+							{formatDateTime(latest.end || "")}
 						</p>
 						{(history.hasNextPage || latest.truncated) && (
 							<Alert variant="info">
@@ -177,7 +175,7 @@ const Timeline = ({ ip, windowHours, onClose }: { ip: string; windowHours: numbe
 							{alerts.map((alert) => (
 								<li key={alert.id}>
 									<time className="small text-secondary">
-										{formatDateTime(alert.startAt || alert.createdAt, locale)}
+										{formatDateTime(alert.startAt || alert.createdAt)}
 									</time>
 									<RuleDetails name={alert.scenario} />
 									<p className="small mt-2">
@@ -220,7 +218,6 @@ const Timeline = ({ ip, windowHours, onClose }: { ip: string; windowHours: numbe
 
 const initial = { session: "", advance: "", page: 1, search: "", sort: "last" };
 const Attackers = ({ windowHours }: { windowHours: number }) => {
-	const { locale } = useLocaleState();
 	const [params, setParams] = useState(initial);
 	const [refresh, setRefresh] = useState(0);
 	const [search, setSearch] = useState("");
@@ -338,8 +335,8 @@ const Attackers = ({ windowHours }: { windowHours: number }) => {
 							<T id={data.complete ? "crowdsec.attackers.complete" : "crowdsec.attackers.partial"} />
 						</div>
 						<div className="small text-secondary">
-							<T id="crowdsec.attackers.window" />: {formatDateTime(data.start, locale)} —{" "}
-							{formatDateTime(data.end, locale)}
+							<T id="crowdsec.attackers.window" />: {formatDateTime(data.start)} —{" "}
+							{formatDateTime(data.end)}
 						</div>
 					</div>
 					<div className="table-responsive">
@@ -389,7 +386,7 @@ const Attackers = ({ windowHours }: { windowHours: number }) => {
 											</div>
 											<div className="small text-secondary d-md-none mt-1">
 												<T id="crowdsec.attackers.last" />:{" "}
-												{formatDateTime(row.lastSeen, locale)}
+												{formatDateTime(row.lastSeen)}
 											</div>
 										</td>
 										<td className="d-none d-md-table-cell text-break">
@@ -403,10 +400,10 @@ const Attackers = ({ windowHours }: { windowHours: number }) => {
 											</div>
 										</td>
 										<td className="d-none d-md-table-cell">
-											{formatDateTime(row.firstSeen, locale)}
+											{formatDateTime(row.firstSeen)}
 										</td>
 										<td className="d-none d-md-table-cell">
-											{formatDateTime(row.lastSeen, locale)}
+											{formatDateTime(row.lastSeen)}
 										</td>
 									</tr>
 								))}

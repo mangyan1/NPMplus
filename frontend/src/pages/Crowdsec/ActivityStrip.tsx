@@ -1,12 +1,10 @@
 import type { CrowdsecInsights } from "src/api/backend";
-import { useLocaleState } from "src/context";
 import { formatDateTime, intl, T } from "src/locale";
 import styles from "./Dashboard.module.css";
 
 // thin per-interval bar strip: restores the "when" dimension next to the
 // scenario mix. the last bucket (highlighted) answers "is it happening now"
 const ActivityStrip = ({ activity, windowHours }: { activity: CrowdsecInsights["activity"]; windowHours: number }) => {
-	const { locale } = useLocaleState();
 	const total = activity.reduce((sum, bucket) => sum + bucket.count, 0);
 	const peak = Math.max(0, ...activity.map((bucket) => bucket.count));
 	// a single bucket (the 1h window) or an all-zero window cannot draw bars:
@@ -34,7 +32,7 @@ const ActivityStrip = ({ activity, windowHours }: { activity: CrowdsecInsights["
 						key={bucket.start}
 						className={index === activity.length - 1 ? styles.activityBarNow : styles.activityBar}
 						style={{ height: `${(bucket.count / peak) * 100}%` }}
-						title={`${formatDateTime(bucket.start, locale)}: ${intl.formatNumber(bucket.count)}`}
+						title={`${formatDateTime(bucket.start)}: ${intl.formatNumber(bucket.count)}`}
 					/>
 				))}
 			</div>

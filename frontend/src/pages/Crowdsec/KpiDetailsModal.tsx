@@ -3,7 +3,6 @@ import Alert from "react-bootstrap/Alert";
 import Modal from "react-bootstrap/Modal";
 import type { AnubisStatus, CrowdsecInsights, CrowdsecInsightsItem, CrowdsecMetrics } from "src/api/backend";
 import { Button } from "src/components";
-import { useLocaleState } from "src/context";
 import { formatDateTime, intl, T } from "src/locale";
 import AnubisMonitoring from "./AnubisMonitoring";
 import styles from "./Dashboard.module.css";
@@ -72,7 +71,6 @@ const KpiDetailsModal = ({
 	};
 	const serviceStatus = anubisServiceStatus(anubis);
 	const trapStatus = honeypotStatus(anubis);
-	const { locale } = useLocaleState();
 	const navigate = (tab: DashboardTab) => {
 		onClose();
 		onNavigate(tab);
@@ -171,14 +169,14 @@ const KpiDetailsModal = ({
 								<T id="crowdsec.anubis.observed" />
 							</dt>
 							<dd className="col-sm-7">
-								{anubis?.checkedAt ? formatDateTime(anubis.checkedAt, locale) : "—"}
+								{anubis?.checkedAt ? formatDateTime(anubis.checkedAt) : "—"}
 								{anubis?.container.httpStatus && ` (HTTP ${anubis.container.httpStatus})`}
 							</dd>
 							<dt className="col-sm-5">
 								<T id="crowdsec.anubis.log-modified" />
 							</dt>
 							<dd className="col-sm-7">
-								{anubis?.log ? formatDateTime(anubis.log.modifiedAt, locale) : "—"}
+								{anubis?.log ? formatDateTime(anubis.log.modifiedAt) : "—"}
 							</dd>
 							<dt className="col-sm-5">
 								<T id="crowdsec.anubis.retained" />
@@ -198,7 +196,7 @@ const KpiDetailsModal = ({
 							</dt>
 							<dd className="col-sm-7">
 								<T id={`crowdsec.anubis.bridge-${anubis?.bridge?.status ?? "unavailable"}`} />
-								{anubis?.bridge?.checkedAt && ` (${formatDateTime(anubis.bridge.checkedAt, locale)})`}
+								{anubis?.bridge?.checkedAt && ` (${formatDateTime(anubis.bridge.checkedAt)})`}
 							</dd>
 						</dl>
 						{anubis?.log?.truncated && (
@@ -270,7 +268,7 @@ const KpiDetailsModal = ({
 												<td className="text-break">{item.value}</td>
 												<td title={item.scenario}>{scenarioLabel(item.scenario)}</td>
 												<td className="text-nowrap">
-													{item.until ? formatDateTime(item.until, locale) : item.duration}
+													{item.until ? formatDateTime(item.until) : item.duration}
 												</td>
 											</tr>
 										))}
