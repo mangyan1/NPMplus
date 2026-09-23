@@ -26,7 +26,6 @@ const limiter = rateLimit({
 	skipSuccessfulRequests: true,
 	// Only credential submissions consume the failed-login budget.
 	skip: (req) => req.method !== "POST",
-	validate: { trustProxy: false },
 });
 
 // Session discovery/refresh is automatic, including when no cookie exists.
@@ -39,7 +38,6 @@ const refreshLimiter = rateLimit({
 	legacyHeaders: false,
 	ipv6Subnet: 48,
 	skip: (req) => req.method !== "GET" && req.method !== "HEAD",
-	validate: { trustProxy: false },
 });
 router.use(limiter, refreshLimiter);
 

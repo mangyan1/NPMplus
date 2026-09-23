@@ -6,7 +6,6 @@ minimumReleaseAgeExclude:
   - '@scure/base@2.4.0'
   - express-rate-limit@8.7.0
   - ip-address@10.7.0
-  - multer@2.3.0
   - qs@6.16.0
 minimumReleaseAgeExcludePrune: true
 allowBuilds:

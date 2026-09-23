@@ -3,7 +3,7 @@ import { RawIntlProvider } from "react-intl";
 import { ToastContainer } from "react-toastify";
 import { queryClient } from "src/api/backend/base";
 import { AuthProvider, LocaleProvider, ThemeProvider } from "src/context";
-import { intl } from "src/locale";
+import { getLocale, intl, isRTLLocale } from "src/locale";
 import EasyModal from "src/modules/easyModal";
 import Router from "src/Router.jsx";
 
@@ -23,7 +23,7 @@ function App() {
 								hideProgressBar={true}
 								newestOnTop={true}
 								closeOnClick={true}
-								rtl={false}
+								rtl={isRTLLocale(getLocale())}
 								closeButton={false}
 							/>
 						</AuthProvider>

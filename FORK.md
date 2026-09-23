@@ -422,3 +422,80 @@ only records the ancestry, so the banner clears and the next sync diffs
 against a real merge-base instead of re-offering ten rebased duplicates.
 When redoing a conflicted merge commit, redo it as a merge (`git checkout -m`
 or `git merge` again), never a plain `git commit` after `--soft`.
+
+## Upstream merge resolution notes (September 22, second sync)
+
+Upstream force-pushed again and added eight genuinely new commits on top of
+rebased duplicates of everything already carried (patch-id comparison again;
+merge-base still regressed to `20b56ee8`). Resolution by file:
+
+- `backend/internal/token.js`, `backend/internal/totp.js`: ours. Upstream's
+  new "claim the challenge before checking the code, release it on failure"
+  reorder builds on their in-memory `consumedChallenges`/`usedSteps` Maps and
+  is needed only because those are non-atomic and restart-volatile. The fork's
+  DB-level claims (`assertTokenSession`/`consumeChallengeSession` and the
+  conditional `npmplus_totp_last_used_step` patch) already make the same race
+  impossible atomically, and verify-then-claim keeps the friendlier behavior
+  (a mistyped code does not burn the challenge; a replayed one still fails).
+- `backend/routes/{tokens,oidc,users}.js` and certificates download limiter:
+  adopted upstream's removal of `validate: { trustProxy: false }`. The
+  suppression exists only to silence `ERR_ERL_PERMISSIVE_TRUST_PROXY`, which
+  fires only when `trust proxy === true`; since the sync adopted
+  `app.set("trust proxy", 1)` the check can never fire, and removing the
+  suppression restores fail-loud behavior if someone ever sets it back to
+  `true`.
+- `backend/routes/nginx/certificates.js`: ours. The fork's multer limits
+  (`files: 2, fields: 0, parts: 2, fieldNameSize: 64`) already exceed
+  upstream's new `fields: 0`.
+- `Dockerfile`: ours + upstream's deltas. The fork pins pip/certbot/luarocks
+  versions and instruments the crowdsec bouncer
+  (`instrument-crowdsec-telemetry.py`) in this file; upstream renamed
+  `RCP_VER` to `ORP_VER`, swapped nginx patch 2 for PR 1756, and added
+  openresty patches 8 (resolver_hosts), 9 (upstream_pipelining), and 10
+  (reuseport_close_unused_fds, applied with `-C1`).
+- `rootfs/usr/local/nginx/conf/nginx.conf`: auto-merged to upstream's new
+  `resolver local=on hosts=on ipv6=on` (backed by the new resolver_hosts
+  patch) and the reworked quoted `alog` format.
+- `rootfs/etc/dinit.d/goaccess`: upstream's new log-format fields (which must
+  track the nginx `alog` change) plus the fork's `--external-assets`, which
+  upstream never had and which keeps the goaccess page loadable under the
+  fork's strict CSP.
+- `rootfs/etc/crowdsec.conf.example`: ours (fail-closed empty `APPSEC_URL`).
+- Dependencies: upstream's bump set split by maturity. Taken: `multer 2.4.0`,
+  `react-router 8.4.0`. Held back as younger than the 7-day
+  `minimumReleaseAge` window (renovate will age them in): `@biomejs/biome
+  2.5.14`, `undici 8.11.0` (published the day of the merge),
+  `@apidevtools/json-schema-ref-parser 16.0.3`,
+  `@apidevtools/swagger-parser 13.1.0`, `@tabler/icons-react 3.48.0`,
+  `@tanstack/react-query 5.103.2`, `markdown-to-jsx 9.10.3`, and
+  `react-intl 12.1.2` (a two-major jump, kept at 10.1.26; the bundled
+  `intl-messageformat 12.1.2` is also inside the window). Lockfiles were
+  regenerated with `pnpm install --lockfile-only`, which enforces the policy;
+  `minimumReleaseAgeExcludePrune` then dropped the now-mature
+  `multer@2.3.0`/`react-router@8.3.1` excludes by itself.
+- Frontend locale loading: combined, with a fork-specific adjustment.
+  Upstream's RTL support (`isRTLLocale`, dynamic `tabler.rtl.min.css`,
+  `dir=rtl` document handling, Persian (`fa`) and Turkish (`tr`)
+  translations) was adopted on top of the fork's
+  `installDeploymentRecovery()` in `main.jsx`. The RTL code only uses
+  `createIntl`/`RawIntlProvider`, so it stays compatible with the held-back
+  react-intl 10. Upstream makes the tabler stylesheet itself conditional
+  (dynamic import of either `tabler.min.css` or `tabler.rtl.min.css`);
+  the fork cannot copy that shape because the fork's `vite.config.js`
+  `ui-vendor` code-splitting group matches every `@tabler` module, so both
+  dynamically imported stylesheets collapse into the single always-loaded
+  `ui-vendor` css asset and the RTL-flipped rules apply to LTR pages (this
+  broke the responsive smoke checks: dialogs measured 12px wider than their
+  viewport). Instead, `main.jsx` keeps the LTR `tabler.min.css` as a static
+  import before `App.css` (identical cascade and chunk to before the merge),
+  and only RTL locales dynamically import `tabler.rtl.min.css` before the
+  first render; `vite.config.js` excludes `tabler.rtl.min.css` from the
+  `ui-vendor` group so it is emitted as its own asset and can never be
+  concatenated into the always-loaded sheet.
+- `.github/workflows/dependency-updates.yml`: upstream's
+  `resolver_conf_parsing-update` job became `openresty-patches-update`
+  updating all four ORP patch hashes; kept with the file.
+
+No schema, access-list, proxy-host, compose, or token/totp behavior changed:
+those conflict regions were resolved with the fork's versions, which are
+already stricter than upstream's state.
