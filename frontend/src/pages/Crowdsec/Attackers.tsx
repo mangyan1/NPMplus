@@ -127,8 +127,7 @@ const Timeline = ({ ip, windowHours, onClose }: { ip: string; windowHours: numbe
 							</h3>
 							{latest.decisionsCheckedAt && (
 								<p className="small text-secondary">
-									<T id="crowdsec.attackers.checked" />:{" "}
-									{formatDateTime(latest.decisionsCheckedAt)}
+									<T id="crowdsec.attackers.checked" />: {formatDateTime(latest.decisionsCheckedAt)}
 								</p>
 							)}
 							{!latest.decisionsAvailable ? (
@@ -139,9 +138,7 @@ const Timeline = ({ ip, windowHours, onClose }: { ip: string; windowHours: numbe
 										<strong>{decision.type}</strong> · {decision.scenario}
 										<div className="text-secondary">
 											<T id="crowdsec.expires" />:{" "}
-											{decision.until
-												? formatDateTime(decision.until)
-												: decision.duration}
+											{decision.until ? formatDateTime(decision.until) : decision.duration}
 										</div>
 									</div>
 								))
@@ -385,8 +382,7 @@ const Attackers = ({ windowHours }: { windowHours: number }) => {
 												{row.scenarios.slice(0, 2).map(scenarioLabel).join(", ")}
 											</div>
 											<div className="small text-secondary d-md-none mt-1">
-												<T id="crowdsec.attackers.last" />:{" "}
-												{formatDateTime(row.lastSeen)}
+												<T id="crowdsec.attackers.last" />: {formatDateTime(row.lastSeen)}
 											</div>
 										</td>
 										<td className="d-none d-md-table-cell text-break">
@@ -399,12 +395,8 @@ const Attackers = ({ windowHours }: { windowHours: number }) => {
 												<T id="crowdsec.attackers.alert-events" data={{ count: row.events }} />
 											</div>
 										</td>
-										<td className="d-none d-md-table-cell">
-											{formatDateTime(row.firstSeen)}
-										</td>
-										<td className="d-none d-md-table-cell">
-											{formatDateTime(row.lastSeen)}
-										</td>
+										<td className="d-none d-md-table-cell">{formatDateTime(row.firstSeen)}</td>
+										<td className="d-none d-md-table-cell">{formatDateTime(row.lastSeen)}</td>
 									</tr>
 								))}
 								{!data.items.length && (

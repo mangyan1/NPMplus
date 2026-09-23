@@ -175,9 +175,7 @@ const KpiDetailsModal = ({
 							<dt className="col-sm-5">
 								<T id="crowdsec.anubis.log-modified" />
 							</dt>
-							<dd className="col-sm-7">
-								{anubis?.log ? formatDateTime(anubis.log.modifiedAt) : "—"}
-							</dd>
+							<dd className="col-sm-7">{anubis?.log ? formatDateTime(anubis.log.modifiedAt) : "—"}</dd>
 							<dt className="col-sm-5">
 								<T id="crowdsec.anubis.retained" />
 							</dt>
