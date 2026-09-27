@@ -72,7 +72,7 @@ export default function Table({
 				header: intl.formatMessage({ id: "column.description" }),
 				cell: (info) => {
 					const value = info.row.original.npmplusDescription;
-					return value || <span className="text-muted">—</span>;
+					return value || <span className="text-secondary">—</span>;
 				},
 			}),
 			columnHelper.accessor(
@@ -87,8 +87,9 @@ export default function Table({
 				(row) => {
 					const protocols = [];
 					if (row.tcpForwarding) protocols.push("TCP");
-					if (row.npmplusProxyProtocolForwarding)
+					if (row.npmplusProxyProtocolForwarding) {
 						protocols.push(row.npmplusProxyProtocolForwarding === 1 ? "PPv1" : "PPv2");
+					}
 					if (row.npmplusProxyTls) protocols.push("TLS");
 					if (row.udpForwarding) protocols.push("UDP");
 					return protocols.join(" ");
@@ -101,12 +102,12 @@ export default function Table({
 						return (
 							<>
 								{value.tcpForwarding ? (
-									<span className="badge badge-lg domain-name">
+									<span className="badge badge-lg font-monospace">
 										<T id="streams.tcp" />
 									</span>
 								) : null}
 								{value.npmplusProxyProtocolForwarding ? (
-									<span className="badge badge-lg domain-name">
+									<span className="badge badge-lg font-monospace">
 										<T
 											id={
 												value.npmplusProxyProtocolForwarding === 1
@@ -117,12 +118,12 @@ export default function Table({
 									</span>
 								) : null}
 								{value.npmplusProxyTls ? (
-									<span className="badge badge-lg domain-name">
+									<span className="badge badge-lg font-monospace">
 										<T id="streams.tls" />
 									</span>
 								) : null}
 								{value.udpForwarding ? (
-									<span className="badge badge-lg domain-name">
+									<span className="badge badge-lg font-monospace">
 										<T id="streams.udp" />
 									</span>
 								) : null}
@@ -139,7 +140,7 @@ export default function Table({
 			columnHelper.accessor(
 				(row) => {
 					if (!row.enabled) return "3disabled";
-					if (row.meta.nginxOnline) return "2online";
+					if (row.npmplusNginxOnline) return "2online";
 					return "1offline";
 				},
 				{
@@ -150,8 +151,8 @@ export default function Table({
 						return (
 							<StatusFormatter
 								enabled={value.enabled}
-								nginxOnline={value.meta.nginxOnline}
-								nginxErr={value.meta.nginxErr}
+								nginxOnline={value.npmplusNginxOnline}
+								nginxErr={value.npmplusNginxErr}
 							/>
 						);
 					},
@@ -174,6 +175,7 @@ export default function Table({
 							className="btn dropdown-toggle btn-action btn-sm px-1"
 							data-bs-boundary="viewport"
 							data-bs-toggle="dropdown"
+							data-bs-popper-config='{"strategy":"fixed"}'
 						>
 							<IconDotsVertical />
 						</button>

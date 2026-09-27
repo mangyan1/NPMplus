@@ -53,7 +53,8 @@
 							"additionalProperties": false,
 							"properties": {
 								"redirect": {
-									"type": "string"
+									"type": "string",
+									"pattern": "^\\S*$"
 								},
 								"html": {
 									"type": "string"

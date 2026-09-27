@@ -1,8 +1,12 @@
 import crypto from "node:crypto";
 import cookieParser from "cookie-parser";
 import express from "express";
+import multer from "multer";
+import { jsonReplacer } from "./lib/helpers.js";
 import { debug, express as logger } from "./logger.js";
 import mainRoutes from "./routes/main.js";
+
+Object.assign(multer.MulterError.prototype, { public: true, status: 400 });
 
 /**
  * App
@@ -12,6 +16,7 @@ const app = express();
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
 app.set("json spaces", 2);
+app.set("json replacer", jsonReplacer);
 
 app.use(cookieParser(process.env.COOKIE_SECRET || crypto.randomBytes(16).toString("hex")));
 app.use(express.json({ limit: "1mb" }));
@@ -50,11 +55,13 @@ app.use("/", mainRoutes);
 // production error handler
 // no stacktraces leaked to user
 app.use((err, req, res, _) => {
+	const status = err.status || 500;
+	const exposed = err.public || err.expose;
 	const requestId = crypto.randomUUID();
 	const payload = {
 		error: {
-			code: err.status || 500,
-			message: err.public ? err.message : "Internal Error",
+			code: status,
+			message: exposed ? err.message : "Internal Error",
 			request_id: requestId,
 		},
 	};
@@ -71,7 +78,7 @@ app.use((err, req, res, _) => {
 	// Not every error is worth logging - but this is good for now until it gets annoying.
 	if (typeof err.stack !== "undefined" && err.stack) {
 		debug(logger, `[${requestId}] ${err.stack}`);
-		if (typeof err.public === "undefined" || !err.public) {
+		if (!exposed) {
 			logger.warn(`[${requestId}] ${req.method.toUpperCase()} ${req.originalUrl}: ${err}`);
 		}
 	}

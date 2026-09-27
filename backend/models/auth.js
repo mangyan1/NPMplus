@@ -5,13 +5,10 @@ import bcrypt from "bcryptjs";
 import { Model } from "objection";
 import db from "../db.js";
 import { hash, verify } from "../lib/argon2.js";
-import { convertBoolFieldsToInt, convertIntFieldsToBool } from "../lib/helpers.js";
 import now from "./now_helper.js";
 import User from "./user.js";
 
 Model.knex(db());
-
-const boolFields = ["is_deleted"];
 
 async function encryptPassword() {
 	if (this.type === "password" && this.secret) {
@@ -28,9 +25,7 @@ class Auth extends Model {
 		this.modified_on = now();
 
 		// Default for meta
-		if (typeof this.meta === "undefined") {
-			this.meta = {};
-		}
+		this.meta ??= {};
 
 		return encryptPassword.apply(this, queryContext);
 	}
@@ -41,13 +36,8 @@ class Auth extends Model {
 	}
 
 	$parseDatabaseJson(json) {
-		const thisJson = super.$parseDatabaseJson(json);
-		return convertIntFieldsToBool(thisJson, boolFields);
-	}
-
-	$formatDatabaseJson(json) {
-		const thisJson = convertBoolFieldsToInt(json, boolFields);
-		return super.$formatDatabaseJson(thisJson);
+		const { is_deleted, meta, ...thisJson } = super.$parseDatabaseJson(json);
+		return thisJson;
 	}
 
 	/**

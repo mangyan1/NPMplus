@@ -70,6 +70,7 @@ app.use(
 			Object.defineProperty(res.locals, "access", {
 				get: () => ({
 					can: async () => true,
+					canAdmin: () => true,
 					token: { getUserId: () => 1 },
 				}),
 				set: () => {},
@@ -207,21 +208,22 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 	// 7. alerts context for an ip: attacker geo + sanitized event meta
 	const alerts = await fetch(`${base}/alerts?scope=Ip&value=198.51.100.7`, { headers: admin });
 	const alertsBody = await alerts.json();
+	const alertsItems = alertsBody.items ?? [];
 	check(
 		"GET alerts -> 200 with the alert",
-		alerts.status === 200 && alertsBody.length === 1 && alertsBody[0].scenario === "crowdsecurity/http-probing",
+		alerts.status === 200 && alertsItems.length === 1 && alertsItems[0].scenario === "crowdsecurity/http-probing",
 		`got ${alerts.status} ${JSON.stringify(alertsBody).slice(0, 80)}`,
 	);
 	check(
 		"alert carries attacker geo details",
-		alertsBody[0]?.source?.country === "DE" && alertsBody[0]?.source?.as_name === "Example ASN",
-		JSON.stringify(alertsBody[0]?.source),
+		alertsItems[0]?.source?.country === "DE" && alertsItems[0]?.source?.as_name === "Example ASN",
+		JSON.stringify(alertsItems[0]?.source),
 	);
 	check(
 		"alert events keep attack meta but strip unknown keys",
-		alertsBody[0]?.events?.[0]?.meta?.some((m) => m.key === "target_uri" && m.value === "/.env") &&
-			!alertsBody[0]?.events?.[0]?.meta?.some((m) => m.key === "raw_request"),
-		JSON.stringify(alertsBody[0]?.events?.[0]?.meta),
+		alertsItems[0]?.events?.[0]?.meta?.some((m) => m.key === "target_uri" && m.value === "/.env") &&
+			!alertsItems[0]?.events?.[0]?.meta?.some((m) => m.key === "raw_request"),
+		JSON.stringify(alertsItems[0]?.events?.[0]?.meta),
 	);
 
 	// 8. no machine key file -> 503 not-wired-machine

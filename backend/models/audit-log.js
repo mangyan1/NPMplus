@@ -3,6 +3,7 @@
 
 import { Model } from "objection";
 import db from "../db.js";
+import { jsonReplacer } from "../lib/helpers.js";
 import now from "./now_helper.js";
 import User from "./user.js";
 
@@ -14,9 +15,8 @@ class AuditLog extends Model {
 		this.modified_on = now();
 
 		// Default for meta
-		if (typeof this.meta === "undefined") {
-			this.meta = {};
-		}
+		this.meta ??= {};
+		this.meta = JSON.parse(JSON.stringify(this.meta, jsonReplacer));
 	}
 
 	$beforeUpdate() {

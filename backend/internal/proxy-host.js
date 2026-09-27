@@ -1,17 +1,13 @@
 import net from "node:net";
-import _ from "lodash";
 import errs from "../lib/error.js";
 import { castJsonIfNeed } from "../lib/helpers.js";
 import { assertPrivilegedNginxFields } from "../lib/nginx-privilege.js";
-import utils from "../lib/utils.js";
 import proxyHostModel from "../models/proxy_host.js";
 import internalAuditLog from "./audit-log.js";
 import internalCertificate from "./certificate.js";
 import internalHost from "./host.js";
 import internalNginx from "./nginx.js";
 import internalProxyHostAccessList from "./proxy-host-access-list.js";
-
-const omissions = () => ["is_deleted", "owner.is_deleted", "certificate.is_deleted"];
 
 // tcp probe of the forward destination; nginx -t never checks it, but a
 // destination nothing listens on means the host serves errors, so the
@@ -40,14 +36,15 @@ const probeForwardDestination = (scheme, host, port) => {
 // configure nginx, then probe and persist reachability into the host meta so
 // the create/update/enable responses and the list all carry the same state
 const configureWithReachability = async (row) => {
-	const meta = await internalNginx.configure(proxyHostModel, "proxy_host", row);
+	const status = await internalNginx.configure(proxyHostModel, "proxy_host", row);
 	const reach = await probeForwardDestination(row.forward_scheme, row.forward_host, row.forward_port);
 	if (reach) {
-		meta.reach_ok = reach.ok;
-		meta.reach_err = reach.err;
-		await proxyHostModel.query().where("id", row.id).patch({ meta });
+		await proxyHostModel
+			.query()
+			.where("id", row.id)
+			.patch({ meta: { reach_ok: reach.ok, reach_err: reach.err } });
 	}
-	return meta;
+	return status;
 };
 
 const internalProxyHost = {
@@ -65,6 +62,9 @@ const internalProxyHost = {
 		} else if (Number(thisData.certificate_id) > 0) {
 			// a delegated manager may only attach a certificate they can see
 			await internalCertificate.get(access, { id: thisData.certificate_id });
+		}
+		if (Number(thisData.npmplus_mtls_certificate_id) > 0) {
+			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id });
 		}
 
 		access.can("proxy_hosts:manage");
@@ -85,51 +85,51 @@ const internalProxyHost = {
 		thisData = internalProxyHostAccessList.cleanAccessListTypes(thisData);
 		await internalProxyHostAccessList.validateAccessLists(access, thisData);
 
-		const createdRow = utils.omitRow(omissions())(
-			await proxyHostModel.transaction(async (trx) => {
-				const insertedRow = await proxyHostModel.query(trx).insertAndFetch(thisData);
+		const createdRow = await proxyHostModel.transaction(async (trx) => {
+			const insertedRow = await proxyHostModel.query(trx).insertAndFetch(thisData);
 
-				const relationRows = internalProxyHostAccessList.getAccessListRelationRows(insertedRow.id, thisData);
-				if (relationRows.length > 0) {
-					await trx("npmplus_proxy_host_access_list").insert(relationRows);
-				}
+			const relationRows = internalProxyHostAccessList.getAccessListRelationRows(insertedRow.id, thisData);
+			if (relationRows.length > 0) {
+				await trx("npmplus_proxy_host_access_list").insert(relationRows);
+			}
 
-				return insertedRow;
-			}),
-		);
+			return insertedRow;
+		});
 
-		if (createCertificate) {
-			const cert = await internalCertificate.createQuickCertificate(access, thisData);
+		let savedRow;
+		try {
+			if (createCertificate) {
+				// update host with cert id
+				await proxyHostModel
+					.query()
+					.where("id", createdRow.id)
+					.patch({ certificate_id: (await internalCertificate.createQuickCertificate(access, thisData)).id });
+			}
 
-			// update host with cert id
-			await internalProxyHost.update(access, {
+			const fetchedRow = await internalProxyHost.get(access, {
 				id: createdRow.id,
-				certificate_id: cert.id,
+				expand: ["certificate", "access_lists.[clients,items]"],
+			});
+
+			const row = await internalProxyHostAccessList.populateLocationAccessLists(
+				internalProxyHostAccessList.cleanAccessListTypes(fetchedRow),
+			);
+
+			// Configure nginx
+			await configureWithReachability(row);
+		} finally {
+			savedRow = await internalProxyHost.get(access, { id: createdRow.id });
+
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "created",
+				object_type: "proxy-host",
+				object_id: savedRow.id,
+				meta: savedRow,
 			});
 		}
 
-		const fetchedRow = await internalProxyHost.get(access, {
-			id: createdRow.id,
-			expand: ["certificate", "owner", "access_lists.[clients,items]"],
-		});
-
-		const row = await internalProxyHostAccessList.populateLocationAccessLists(
-			internalProxyHostAccessList.cleanAccessListTypes(fetchedRow),
-		);
-
-		// Configure nginx
-		row.meta = await configureWithReachability(row);
-
-		// Add to audit log
-		thisData.meta = { ...thisData.meta, ...row.meta };
-		await internalAuditLog.add(access, {
-			action: "created",
-			object_type: "proxy-host",
-			object_id: row.id,
-			meta: thisData,
-		});
-
-		return internalProxyHostAccessList.maskAccessListItems(row);
+		return savedRow;
 	},
 
 	/**
@@ -147,6 +147,9 @@ const internalProxyHost = {
 		} else if (Number(thisData.certificate_id) > 0) {
 			// a delegated manager may only attach a certificate they can see
 			await internalCertificate.get(access, { id: thisData.certificate_id });
+		}
+		if (Number(thisData.npmplus_mtls_certificate_id) > 0) {
+			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id });
 		}
 
 		access.can("proxy_hosts:manage");
@@ -176,16 +179,14 @@ const internalProxyHost = {
 
 		if (createCertificate) {
 			const cert = await internalCertificate.createQuickCertificate(access, {
+				...thisData,
 				domain_names: thisData.domain_names || existingRow.domain_names,
-				meta: { ...existingRow.meta, ...thisData.meta },
 			});
 
 			// update host with cert id
 			thisData.certificate_id = cert.id;
 		}
 
-		// Add domain_names to the data in case it isn't there, so that the audit log renders correctly. The order is important here.
-		thisData = { domain_names: existingRow.domain_names, ...thisData };
 		thisData = internalHost.cleanSslHstsData(createCertificate, thisData, existingRow);
 		thisData = internalProxyHostAccessList.cleanAccessListTypes(thisData);
 		await internalProxyHostAccessList.validateAccessLists(access, thisData);
@@ -198,36 +199,35 @@ const internalProxyHost = {
 			return patchResult;
 		});
 
-		// Add to audit log
-		await internalAuditLog.add(access, {
-			action: "updated",
-			object_type: "proxy-host",
-			object_id: existingRow.id,
-			meta: thisData,
-		});
+		let savedRow;
+		try {
+			const fetchedRow = await internalProxyHost.get(access, {
+				id: thisData.id,
+				expand: ["certificate", "access_lists.[clients,items]"],
+			});
 
-		const fetchedRow = await internalProxyHost.get(access, {
-			id: thisData.id,
-			expand: ["certificate", "owner", "access_lists.[clients,items]"],
-		});
-
-		const row = await internalProxyHostAccessList.populateLocationAccessLists(
-			internalProxyHostAccessList.cleanAccessListTypes(fetchedRow),
-		);
-
-		if (!row.enabled) {
-			// No need to add nginx config if host is disabled
-			return internalProxyHostAccessList.maskAccessListItems(
-				_.omit(internalHost.cleanRowCertificateMeta(row), omissions()),
+			const row = await internalProxyHostAccessList.populateLocationAccessLists(
+				internalProxyHostAccessList.cleanAccessListTypes(fetchedRow),
 			);
+
+			// No need to add nginx config if host is disabled
+			if (row.enabled) {
+				// Configure nginx
+				await configureWithReachability(row);
+			}
+		} finally {
+			savedRow = await internalProxyHost.get(access, { id: thisData.id });
+
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "updated",
+				object_type: "proxy-host",
+				object_id: savedRow.id,
+				meta: savedRow,
+			});
 		}
 
-		// Configure nginx
-		row.meta = await configureWithReachability(row);
-
-		return internalProxyHostAccessList.maskAccessListItems(
-			_.omit(internalHost.cleanRowCertificateMeta(row), omissions()),
-		);
+		return savedRow;
 	},
 
 	/**
@@ -235,7 +235,6 @@ const internalProxyHost = {
 	 * @param  {Object}   data
 	 * @param  {Number}   data.id
 	 * @param  {Array}    [data.expand]
-	 * @param  {Array}    [data.omit]
 	 * @return {Promise}
 	 */
 	get: async (access, data) => {
@@ -247,7 +246,7 @@ const internalProxyHost = {
 			.query()
 			.where("is_deleted", 0)
 			.andWhere("id", thisData.id)
-			.allowGraph(proxyHostModel.defaultAllowGraph)
+			.allowGraph("[access_lists.[clients,items],certificate]")
 			.first();
 
 		if (access.visibility !== "all") {
@@ -258,19 +257,12 @@ const internalProxyHost = {
 			query.withGraphFetched(`[${thisData.expand.join(", ")}]`);
 		}
 
-		const row = utils.omitRow(omissions())(await query);
+		const row = await query;
 		if (!row?.id) {
 			throw new errs.ItemNotFoundError(thisData.id);
 		}
 
-		const thisRow = internalHost.cleanRowCertificateMeta(internalProxyHostAccessList.cleanAccessListTypes(row));
-
-		// Custom omissions
-		if (typeof thisData.omit !== "undefined" && thisData.omit !== null) {
-			return _.omit(thisRow, thisData.omit);
-		}
-
-		return thisRow;
+		return internalProxyHostAccessList.cleanAccessListTypes(row);
 	},
 
 	/**
@@ -294,21 +286,23 @@ const internalProxyHost = {
 			}),
 		);
 
-		// Delete Nginx Config
-		await internalNginx.deleteConfig("proxy_host", row);
+		try {
+			// Delete Nginx Config
+			await internalNginx.deleteConfig("proxy_host", row);
 
-		await internalProxyHostAccessList.delete(row);
-		await internalNginx.reload();
+			await internalProxyHostAccessList.delete(row);
+			await internalNginx.reload();
+		} finally {
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "deleted",
+				object_type: "proxy-host",
+				object_id: row.id,
+				meta: row,
+			});
+		}
 
-		// Add to audit log
-		await internalAuditLog.add(access, {
-			action: "deleted",
-			object_type: "proxy-host",
-			object_id: row.id,
-			meta: _.omit(row, omissions()),
-		});
-
-		return true;
+		return row;
 	},
 
 	/**
@@ -323,7 +317,7 @@ const internalProxyHost = {
 
 		const row = await internalProxyHost.get(access, {
 			id: data.id,
-			expand: ["certificate", "owner", "access_lists.[clients,items]"],
+			expand: ["certificate", "access_lists.[clients,items]"],
 		});
 		if (!row?.id) {
 			throw new errs.ItemNotFoundError(data.id);
@@ -346,22 +340,27 @@ const internalProxyHost = {
 			enabled: 1,
 		});
 
-		// Configure nginx
-		row.meta = await configureWithReachability(
-			await internalProxyHostAccessList.populateLocationAccessLists(
-				internalProxyHostAccessList.cleanAccessListTypes(row),
-			),
-		);
+		let savedRow;
+		try {
+			// Configure nginx
+			await configureWithReachability(
+				await internalProxyHostAccessList.populateLocationAccessLists(
+					internalProxyHostAccessList.cleanAccessListTypes(row),
+				),
+			);
+		} finally {
+			savedRow = await internalProxyHost.get(access, { id: row.id });
 
-		// Add to audit log
-		await internalAuditLog.add(access, {
-			action: "enabled",
-			object_type: "proxy-host",
-			object_id: row.id,
-			meta: _.omit(internalProxyHostAccessList.maskAccessListItems(row), omissions()),
-		});
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "enabled",
+				object_type: "proxy-host",
+				object_id: row.id,
+				meta: savedRow,
+			});
+		}
 
-		return true;
+		return savedRow;
 	},
 
 	/**
@@ -388,19 +387,24 @@ const internalProxyHost = {
 			enabled: 0,
 		});
 
-		// Delete Nginx Config
-		await internalNginx.deleteConfig("proxy_host", row);
-		await internalNginx.reload();
+		let savedRow;
+		try {
+			// Delete Nginx Config
+			await internalNginx.deleteConfig("proxy_host", row);
+			await internalNginx.reload();
+		} finally {
+			savedRow = await internalProxyHost.get(access, { id: row.id });
 
-		// Add to audit log
-		await internalAuditLog.add(access, {
-			action: "disabled",
-			object_type: "proxy-host",
-			object_id: row.id,
-			meta: _.omit(row, omissions()),
-		});
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "disabled",
+				object_type: "proxy-host",
+				object_id: row.id,
+				meta: savedRow,
+			});
+		}
 
-		return true;
+		return savedRow;
 	},
 
 	/**
@@ -418,7 +422,7 @@ const internalProxyHost = {
 			.query()
 			.where("is_deleted", 0)
 			.groupBy("id")
-			.allowGraph(proxyHostModel.defaultAllowGraph)
+			.allowGraph("[owner,access_lists,certificate]")
 			.orderBy(castJsonIfNeed("domain_names"), "ASC");
 
 		if (access.visibility !== "all") {
@@ -436,14 +440,7 @@ const internalProxyHost = {
 			query.withGraphFetched(`[${expand.join(", ")}]`);
 		}
 
-		const rows = utils
-			.omitRows(omissions())(await query)
-			.map((row) => internalProxyHostAccessList.cleanAccessListTypes(row));
-		if (typeof expand !== "undefined" && expand !== null && expand.indexOf("certificate") !== -1) {
-			return internalHost.cleanAllRowsCertificateMeta(rows);
-		}
-
-		return rows;
+		return (await query).map((row) => internalProxyHostAccessList.cleanAccessListTypes(row));
 	},
 
 	/**

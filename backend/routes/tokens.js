@@ -98,7 +98,7 @@ router
 	 *
 	 * Create a new Token
 	 */
-	.post(async (req, res, _next) => {
+	.post(async (req, res) => {
 		if (process.env.OIDC_DISABLE_PASSWORD === "true") {
 			throw new errs.PermissionError("Non OIDC login is disabled");
 		}
@@ -163,30 +163,25 @@ router
 	 *
 	 * Verify TOTP code and get full token
 	 */
-	.post(async (req, res, next) => {
-		try {
-			const { code } = apiValidator(getValidationSchema("/tokens/totp", "post"), req.body);
-			const result = await internalToken.verifyTotp(req.signedCookies?.["__Host-Http-challenge_token"], code);
-			const { token, ...responseBody } = result;
+	.post(async (req, res) => {
+		const { code } = apiValidator(getValidationSchema("/tokens/totp", "post"), req.body);
+		const result = await internalToken.verifyTotp(req.signedCookies?.["__Host-Http-challenge_token"], code);
+		const { token, ...responseBody } = result;
 
-			res.cookie("__Host-Http-token", token, {
-				signed: true,
-				httpOnly: true,
-				secure: true,
-				sameSite: "Strict",
-				expires: new Date(result.expires),
-			});
-			res.clearCookie("__Host-Http-challenge_token", {
-				httpOnly: true,
-				secure: true,
-				sameSite: "Strict",
-			});
+		res.cookie("__Host-Http-token", token, {
+			signed: true,
+			httpOnly: true,
+			secure: true,
+			sameSite: "Strict",
+			expires: new Date(result.expires),
+		});
+		res.clearCookie("__Host-Http-challenge_token", {
+			httpOnly: true,
+			secure: true,
+			sameSite: "Strict",
+		});
 
-			res.status(200).send(responseBody);
-		} catch (err) {
-			debug(logger, `${req.method.toUpperCase()} ${req.path}: ${err}`);
-			next(err);
-		}
+		res.status(200).send(responseBody);
 	});
 
 export default router;

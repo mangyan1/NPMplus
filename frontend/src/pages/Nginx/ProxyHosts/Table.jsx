@@ -129,7 +129,7 @@ export default function Table({
 			columnHelper.accessor(
 				(row) => {
 					if (!row.enabled) return "4disabled";
-					if (!row.meta.nginxOnline) return "1offline";
+					if (!row.npmplusNginxOnline) return "1offline";
 					if (row.meta.reachOk === false) return "2unreachable";
 					return "3online";
 				},
@@ -141,8 +141,8 @@ export default function Table({
 						return (
 							<StatusFormatter
 								enabled={value.enabled}
-								nginxOnline={value.meta.nginxOnline}
-								nginxErr={value.meta.nginxErr}
+								nginxOnline={value.npmplusNginxOnline}
+								nginxErr={value.npmplusNginxErr}
 								reachable={value.meta.reachOk}
 								reachErr={value.meta.reachErr}
 							/>
@@ -167,6 +167,7 @@ export default function Table({
 							className="btn dropdown-toggle btn-action btn-sm px-1"
 							data-bs-boundary="viewport"
 							data-bs-toggle="dropdown"
+							data-bs-popper-config='{"strategy":"fixed"}'
 						>
 							<IconDotsVertical />
 						</button>

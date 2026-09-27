@@ -15,7 +15,7 @@ router
 	/**
 	 * GET /reports/hosts
 	 */
-	.get(async (_req, res, _next) => {
+	.get(async (_, res) => {
 		const data = await internalReport.getHostsReport(res.locals.access);
 		res.status(200).send(data);
 	});

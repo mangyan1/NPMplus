@@ -15,14 +15,14 @@ import utils from "../lib/utils.js";
 
 const CREDENTIALS_DIR = "/tmp/certbot-credentials";
 
-const fakeCertificate = ({ id = 101, domain_names, meta: metaOverrides = {} } = {}) => ({
+const fakeCertificate = ({ id = 101, domain_names, ...overrides } = {}) => ({
 	id,
 	domain_names: domain_names ?? ["example.com", "bücher.example"],
-	meta: {
-		dns_provider: "cloudflare",
-		dns_provider_credentials: "dns_cloudflare_api_token=SECRET-TOKEN",
-		...metaOverrides,
-	},
+	// the dns challenge fields live in npmplus_* columns since meta_to_columns
+	npmplus_dns_provider: "cloudflare",
+	npmplus_dns_provider_credentials: "dns_cloudflare_api_token=SECRET-TOKEN",
+	npmplus_propagation_seconds: 0,
+	...overrides,
 });
 
 // certbot reads its config from the environment at request time
@@ -116,12 +116,12 @@ test("dns challenge request passes propagation seconds when configured", async (
 		return { stdout: "ok" };
 	});
 
-	await internalCertificate.requestCertbotWithDnsChallenge(fakeCertificate({ meta: { propagation_seconds: "42" } }));
+	await internalCertificate.requestCertbotWithDnsChallenge(fakeCertificate({ npmplus_propagation_seconds: 42 }));
 
 	const certbotArgs = calls.find(([cmd]) => cmd === "certbot")[1];
 	const flagIndex = certbotArgs.indexOf("--dns-cloudflare-propagation-seconds");
 	assert.ok(flagIndex > -1, "propagation flag missing");
-	assert.equal(certbotArgs[flagIndex + 1], "42");
+	assert.equal(certbotArgs[flagIndex + 1], 42);
 });
 
 test("dns challenge request cleans up the credentials file when certbot fails", async (t) => {
@@ -166,14 +166,12 @@ test("an unknown dns provider fails fast without touching pip or certbot", async
 
 	await assert.rejects(
 		internalCertificate.requestCertbotWithDnsChallenge(
-			fakeCertificate({ meta: { dns_provider: "no-such-provider" } }),
+			fakeCertificate({ npmplus_dns_provider: "no-such-provider" }),
 		),
 		/Unknown DNS provider/,
 	);
 	await assert.rejects(
-		internalCertificate.renewCertbotWithDnsChallenge(
-			fakeCertificate({ meta: { dns_provider: "no-such-provider" } }),
-		),
+		internalCertificate.renewCertbotWithDnsChallenge(fakeCertificate({ npmplus_dns_provider: "no-such-provider" })),
 		/Unknown DNS provider/,
 	);
 	assert.deepEqual(calls, [], "no external command may run for an unknown provider");

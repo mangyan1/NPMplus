@@ -26,22 +26,9 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 		setIsSubmitting(true);
 		setErrorMsg(null);
 
-		const meta = { ...(values.meta || {}) };
-		if (typeof meta.directory === "string") {
-			const trimmed = meta.directory.trim();
-			if (trimmed) {
-				meta.directory = trimmed;
-			} else {
-				delete meta.directory;
-			}
-		} else {
-			delete meta.directory;
-		}
-
 		const { ...payload } = {
 			id: id === "new" ? undefined : id,
 			...values,
-			meta,
 			forwardingPort: values.forwardingPort || null,
 		};
 
@@ -90,7 +77,9 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 						npmplusProxyTls: data?.npmplusProxyTls,
 						certificateId: data?.certificateId,
 						npmplusAdvancedConfig: data?.npmplusAdvancedConfig || "",
-						meta: data?.meta || {},
+						npmplusDirectory: data?.npmplusDirectory || "",
+						npmplusMtlsCertificateId: data?.npmplusMtlsCertificateId || 0,
+						npmplusMtlsVerifyClientOptional: data?.npmplusMtlsVerifyClientOptional || false,
 						npmplusDescription: data?.npmplusDescription || "",
 					}}
 					onSubmit={onSubmit}
@@ -286,7 +275,10 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 													</h3>
 													<div className="divide-y">
 														<div>
-															<label className="row" htmlFor="tcpForwarding">
+															<label
+																className="row cursor-pointer"
+																htmlFor="tcpForwarding"
+															>
 																<span className="col">
 																	<T id="streams.tcp" />
 																</span>
@@ -337,7 +329,10 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 															</label>
 														</div>
 														<div>
-															<label className="row" htmlFor="udpForwarding">
+															<label
+																className="row cursor-pointer"
+																htmlFor="udpForwarding"
+															>
 																<span className="col">
 																	<T id="streams.udp" />
 																</span>
@@ -376,11 +371,11 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 																								0,
 																							);
 																							setFieldValue(
-																								"meta.npmplusMtlsCertificateId",
+																								"npmplusMtlsCertificateId",
 																								0,
 																							);
 																							setFieldValue(
-																								"meta.npmplusMtlsVerifyClientOptional",
+																								"npmplusMtlsVerifyClientOptional",
 																								false,
 																							);
 																						}
@@ -400,7 +395,10 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 															</label>
 														</div>
 														<div>
-															<label className="row" htmlFor="npmplusProxyTls">
+															<label
+																className="row cursor-pointer"
+																htmlFor="npmplusProxyTls"
+															>
 																<span className="col">
 																	<T id="streams.tls" />
 																</span>
@@ -430,7 +428,7 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 														</div>
 														<div>
 															<label
-																className="row"
+																className="row cursor-pointer"
 																htmlFor="npmplusProxyProtocolForwarding"
 															>
 																<span className="col">
@@ -488,15 +486,14 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 
 												<div className="row">
 													<div className="col-12">
-														<Field name="meta.npmplusMtlsVerifyClientOptional">
+														<Field name="npmplusMtlsVerifyClientOptional">
 															{({ field }) => (
 																<label className="form-check form-switch mt-1">
 																	<input
 																		className="form-check-input"
 																		type="checkbox"
 																		checked={
-																			values?.meta
-																				?.npmplusMtlsVerifyClientOptional ===
+																			values?.npmplusMtlsVerifyClientOptional ===
 																			true
 																		}
 																		onChange={(e) => {
@@ -505,8 +502,7 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 																		disabled={
 																			!(
 																				values?.certificateId > 0 &&
-																				values?.meta?.npmplusMtlsCertificateId >
-																					0
+																				values?.npmplusMtlsCertificateId > 0
 																			) || values?.udpForwarding
 																		}
 																	/>

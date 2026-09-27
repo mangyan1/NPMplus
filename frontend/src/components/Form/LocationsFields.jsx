@@ -15,7 +15,6 @@ import { flushSync } from "react-dom";
 import { AccessFields } from "src/components";
 import { intl, T } from "src/locale";
 import { upstreamUrlPattern } from "src/modules/Validations";
-import styles from "./LocationsFields.module.css";
 
 export function LocationsFields({ initialValues, name = "locations" }) {
 	const nextUiKey = useRef(0);
@@ -40,9 +39,6 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 		forwardHost: "",
 		forwardPort: "",
 		npmplusAccessListIds: [],
-		cachingEnabled: false,
-		blockExploits: false,
-		allowWebsocketUpgrade: true,
 		npmplusNoindex: false,
 		npmplusCrowdsecAppsec: false,
 		npmplusProxyResponseBuffering: false,
@@ -194,7 +190,8 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 							node.scrollIntoView({ block: "nearest" });
 						}
 					}}
-					className={cn("card", "card-active", "mb-2", !matchesFilter(item) && "d-none", styles.locationCard)}
+					className={cn("card", "card-active", "mb-2", !matchesFilter(item) && "d-none")}
+					style={{ "--tblr-card-border-color": "var(--tblr-border-color)" }}
 				>
 					<div className={cn("card-header", "p-2", !isOpen(item) && "border-bottom-0")}>
 						<button
@@ -205,7 +202,7 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 							onClick={() => toggle(item.uiKey, expanded, setExpanded)}
 						>
 							{isOpen(item) ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
-							<span className="ms-2 fw-medium text-nowrap">{locationLabel(item)}</span>
+							<span className="ms-2 fw-medium text-truncate">{locationLabel(item)}</span>
 							<span className="ms-2 text-secondary text-truncate">{forwardSummary(item)}</span>
 							{item.advancedConfig?.trim() && (
 								<span
@@ -239,7 +236,7 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 						}
 					>
 						<div className="row mb-3">
-							<label className="row" htmlFor={`npmplusEnabled-${item.uiKey}`}>
+							<label className="row cursor-pointer" htmlFor={`npmplusEnabled-${item.uiKey}`}>
 								<span className="col">
 									<T id="enabled" />
 								</span>
@@ -364,7 +361,7 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 								</h4>
 								<div className="divide-y">
 									<div>
-										<label className="row" htmlFor={`npmplusNoindex-${item.uiKey}`}>
+										<label className="row cursor-pointer" htmlFor={`npmplusNoindex-${item.uiKey}`}>
 											<span className="col">
 												<T id="host.flags.send-noindex" />
 											</span>
@@ -386,7 +383,10 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 										</label>
 									</div>
 									<div>
-										<label className="row" htmlFor={`npmplusCrowdsecAppsec-${item.uiKey}`}>
+										<label
+											className="row cursor-pointer"
+											htmlFor={`npmplusCrowdsecAppsec-${item.uiKey}`}
+										>
 											<span className="col">
 												<T id="host.flags.crowdsec-appsec" />
 												<span className="form-hint">
@@ -415,7 +415,10 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 										</label>
 									</div>
 									<div>
-										<label className="row" htmlFor={`npmplusProxyRequestBuffering-${item.uiKey}`}>
+										<label
+											className="row cursor-pointer"
+											htmlFor={`npmplusProxyRequestBuffering-${item.uiKey}`}
+										>
 											<span className="col">
 												<T id="host.flags.disable-request-buffering" />
 											</span>
@@ -442,7 +445,10 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 										</label>
 									</div>
 									<div>
-										<label className="row" htmlFor={`npmplusProxyResponseBuffering-${item.uiKey}`}>
+										<label
+											className="row cursor-pointer"
+											htmlFor={`npmplusProxyResponseBuffering-${item.uiKey}`}
+										>
 											<span className="col">
 												<T id="host.flags.disable-response-buffering" />
 											</span>
@@ -469,7 +475,10 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 										</label>
 									</div>
 									<div>
-										<label className="row" htmlFor={`npmplusUpstreamCompression-${item.uiKey}`}>
+										<label
+											className="row cursor-pointer"
+											htmlFor={`npmplusUpstreamCompression-${item.uiKey}`}
+										>
 											<span className="col">
 												<T id="host.flags.upstream-compression" />
 											</span>
@@ -496,7 +505,10 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 										</label>
 									</div>
 									<div>
-										<label className="row" htmlFor={`npmplusFancyindex-${item.uiKey}`}>
+										<label
+											className="row cursor-pointer"
+											htmlFor={`npmplusFancyindex-${item.uiKey}`}
+										>
 											<span className="col">
 												<T id="host.flags.fancyindex" />
 											</span>
@@ -519,7 +531,10 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 										</label>
 									</div>
 									<div>
-										<label className="row" htmlFor={`npmplusXFrameOptions-${item.uiKey}`}>
+										<label
+											className="row cursor-pointer"
+											htmlFor={`npmplusXFrameOptions-${item.uiKey}`}
+										>
 											<span className="col">X-Frame-Options</span>
 											<span className="col-auto">
 												<select
@@ -539,7 +554,10 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 										</label>
 									</div>
 									<div>
-										<label className="row gy-2" htmlFor={`npmplusAuthRequest-${item.uiKey}`}>
+										<label
+											className="row gy-2 cursor-pointer"
+											htmlFor={`npmplusAuthRequest-${item.uiKey}`}
+										>
 											<span className="col-12 col-sm">
 												<T id="host.auth-request" />
 												<span className="d-block text-secondary small mt-1">
@@ -572,7 +590,7 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 									{item?.npmplusAuthRequest?.length > 0 && item.npmplusAuthRequest !== "none" && (
 										<div>
 											<label
-												className="row gy-2"
+												className="row gy-2 cursor-pointer"
 												htmlFor={`npmplusAuthRequestUpstream-${item.uiKey}`}
 											>
 												<span className="col-12 col-sm">
@@ -624,19 +642,14 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 						{advVisible.includes(item.uiKey) && (
 							<div className="">
 								<textarea
-									className="form-control"
+									className="form-control font-monospace"
 									spellCheck={false}
 									placeholder={intl.formatMessage({
 										id: "nginx-config.placeholder",
 									})}
 									value={item.advancedConfig}
 									onChange={(e) => handleChange(idx, "advancedConfig", e.target.value)}
-									style={{
-										fontFamily:
-											"ui-monospace,SFMono-Regular,SF Mono,Consolas,Liberation Mono,Menlo,monospace",
-										borderRadius: "0.3rem",
-										minHeight: "170px",
-									}}
+									rows={8}
 								/>
 							</div>
 						)}

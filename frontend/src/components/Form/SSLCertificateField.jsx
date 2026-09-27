@@ -3,6 +3,7 @@ import { Field, useFormikContext } from "formik";
 import Select, { components } from "react-select";
 import { useCertificates } from "src/hooks";
 import { formatDateTime, intl, T } from "src/locale";
+import { selectClassNames } from "src/modules/Select";
 
 const Option = (props) => (
 	<components.Option {...props}>
@@ -22,7 +23,7 @@ export function SSLCertificateField({
 	required,
 	allowNew,
 	forHttp = true,
-	mtlsName = "meta.npmplusMtlsCertificateId",
+	mtlsName = "npmplusMtlsCertificateId",
 	mtlsLabel = "mtls-certificate",
 }) {
 	const { isLoading, isError, error, data } = useCertificates();
@@ -34,7 +35,7 @@ export function SSLCertificateField({
 
 		if (!(newValue?.value > 0)) {
 			void setFieldValue(mtlsName, 0);
-			void setFieldValue("meta.npmplusMtlsVerifyClientOptional", false);
+			void setFieldValue("npmplusMtlsVerifyClientOptional", false);
 		}
 
 		const {
@@ -42,11 +43,11 @@ export function SSLCertificateField({
 			npmplusHttp3Support,
 			hstsEnabled,
 			hstsSubdomains,
-			reuseKey,
-			dnsChallenge,
-			dnsProvider,
-			dnsProviderCredentials,
-			propagationSeconds,
+			npmplusReuseKey,
+			npmplusDnsChallenge,
+			npmplusDnsProvider,
+			npmplusDnsProviderCredentials,
+			npmplusPropagationSeconds,
 		} = v;
 		if (forHttp && !newValue?.value) {
 			if (sslForced) void setFieldValue("sslForced", false);
@@ -55,11 +56,11 @@ export function SSLCertificateField({
 			if (hstsSubdomains) void setFieldValue("hstsSubdomains", false);
 		}
 		if (newValue?.value !== "new") {
-			if (reuseKey) void setFieldValue("reuseKey", undefined);
-			if (dnsChallenge) void setFieldValue("dnsChallenge", undefined);
-			if (dnsProvider) void setFieldValue("dnsProvider", undefined);
-			if (dnsProviderCredentials) void setFieldValue("dnsProviderCredentials", undefined);
-			if (propagationSeconds) void setFieldValue("propagationSeconds", undefined);
+			if (npmplusReuseKey) void setFieldValue("npmplusReuseKey", undefined);
+			if (npmplusDnsChallenge) void setFieldValue("npmplusDnsChallenge", undefined);
+			if (npmplusDnsProvider) void setFieldValue("npmplusDnsProvider", undefined);
+			if (npmplusDnsProviderCredentials) void setFieldValue("npmplusDnsProviderCredentials", undefined);
+			if (npmplusPropagationSeconds) void setFieldValue("npmplusPropagationSeconds", undefined);
 		}
 	};
 
@@ -125,8 +126,8 @@ export function SSLCertificateField({
 						{!isLoading && !isError ? (
 							<Select
 								inputId={id}
-								className="react-select-container"
-								classNamePrefix="react-select"
+								unstyled
+								classNames={selectClassNames}
 								value={options.find((o) => o.value === field.value) || options[0]}
 								options={options}
 								components={{ Option }}
@@ -159,8 +160,8 @@ export function SSLCertificateField({
 						{!isLoading && !isError ? (
 							<Select
 								inputId="mtlsCertificate"
-								className="react-select-container"
-								classNamePrefix="react-select"
+								unstyled
+								classNames={selectClassNames}
 								value={mtlsOptions.find((o) => o.value === field.value) || mtlsOptions[0]}
 								options={mtlsOptions}
 								components={{ Option }}
@@ -173,7 +174,7 @@ export function SSLCertificateField({
 								onChange={(newValue) => {
 									void setFieldValue(mtlsName, newValue?.value);
 									if (!(newValue?.value > 0)) {
-										void setFieldValue("meta.npmplusMtlsVerifyClientOptional", false);
+										void setFieldValue("npmplusMtlsVerifyClientOptional", false);
 									}
 								}}
 								isDisabled={v?.udpForwarding || !(v?.certificateId > 0)}

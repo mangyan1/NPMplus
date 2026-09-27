@@ -8,6 +8,7 @@ const listSchema = {
 	properties: {
 		expand: {
 			$ref: "common#/properties/expand",
+			items: { enum: ["user"] },
 		},
 		query: {
 			$ref: "common#/properties/query",
@@ -24,6 +25,7 @@ const eventSchema = {
 		},
 		expand: {
 			$ref: "common#/properties/expand",
+			items: { enum: ["user"] },
 		},
 	},
 };
@@ -46,7 +48,7 @@ router
 	 *
 	 * Retrieve all logs
 	 */
-	.get(async (req, res, _next) => {
+	.get(async (req, res) => {
 		const data = await validator(listSchema, {
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
 			query: typeof req.query.query === "string" ? req.query.query : null,
@@ -69,7 +71,7 @@ router
 	 *
 	 * Retrieve a specific entry
 	 */
-	.get(async (req, res, _next) => {
+	.get(async (req, res) => {
 		const data = await validator(eventSchema, {
 			event_id: req.params.event_id,
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,

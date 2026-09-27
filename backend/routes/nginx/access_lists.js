@@ -10,6 +10,7 @@ const listSchema = {
 	properties: {
 		expand: {
 			$ref: "common#/properties/expand",
+			items: { enum: ["owner", "items", "clients"] },
 		},
 		query: {
 			$ref: "common#/properties/query",
@@ -26,6 +27,7 @@ const accessListSchema = {
 		},
 		expand: {
 			$ref: "common#/properties/expand",
+			items: { enum: ["items", "clients"] },
 		},
 	},
 };
@@ -48,7 +50,7 @@ router
 	 *
 	 * Retrieve all access-lists
 	 */
-	.get(async (req, res, _next) => {
+	.get(async (req, res) => {
 		const data = await validator(listSchema, {
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
 			query: typeof req.query.query === "string" ? req.query.query : null,
@@ -62,7 +64,7 @@ router
 	 *
 	 * Create a new access-list
 	 */
-	.post(async (req, res, _next) => {
+	.post(async (req, res) => {
 		const payload = apiValidator(getValidationSchema("/nginx/access-lists", "post"), req.body);
 		const result = await internalAccessList.create(res.locals.access, payload);
 		res.status(201).send(result);
@@ -82,7 +84,7 @@ router
 	 *
 	 * Retrieve a specific access-list
 	 */
-	.get(async (req, res, _next) => {
+	.get(async (req, res) => {
 		const data = await validator(accessListSchema, {
 			list_id: req.params.list_id,
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
@@ -99,7 +101,7 @@ router
 	 *
 	 * Update and existing access-list
 	 */
-	.put(async (req, res, _next) => {
+	.put(async (req, res) => {
 		const payload = apiValidator(getValidationSchema("/nginx/access-lists/{listID}", "put"), req.body);
 		payload.id = Number.parseInt(req.params.list_id, 10);
 		const result = await internalAccessList.update(res.locals.access, payload);
@@ -111,7 +113,7 @@ router
 	 *
 	 * Delete and existing access-list
 	 */
-	.delete(async (req, res, _next) => {
+	.delete(async (req, res) => {
 		const result = await internalAccessList.delete(res.locals.access, {
 			id: Number.parseInt(req.params.list_id, 10),
 		});

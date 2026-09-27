@@ -20,7 +20,7 @@ const gravatar = createLogger("Gravatar      ");
 const oidc = createLogger("OIDC          ");
 
 const debug = (logger, ...args) => {
-	if (logger !== express) logger.debug(...args);
+	logger.debug(...args);
 };
 
 // Everything below runs on a timer: the telemetry collectors every 60s, the

@@ -190,7 +190,7 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 													</h3>
 													<div className="divide-y">
 														<div>
-															<label className="row" htmlFor="satisfyAny">
+															<label className="row cursor-pointer" htmlFor="satisfyAny">
 																<span className="col">
 																	<T id="access-list.satisfy-any" />
 																</span>
@@ -222,7 +222,7 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 															</label>
 														</div>
 														<div>
-															<label className="row" htmlFor="passAuth">
+															<label className="row cursor-pointer" htmlFor="passAuth">
 																<span className="col">
 																	<T id="access-list.pass-auth" />
 																</span>

@@ -10,6 +10,7 @@ const listSchema = {
 	properties: {
 		expand: {
 			$ref: "common#/properties/expand",
+			items: { enum: ["owner", "certificate"] },
 		},
 		query: {
 			$ref: "common#/properties/query",
@@ -23,9 +24,6 @@ const streamSchema = {
 	properties: {
 		stream_id: {
 			$ref: "common#/properties/id",
-		},
-		expand: {
-			$ref: "common#/properties/expand",
 		},
 	},
 };
@@ -48,7 +46,7 @@ router
 	 *
 	 * Retrieve all streams
 	 */
-	.get(async (req, res, _next) => {
+	.get(async (req, res) => {
 		const data = await validator(listSchema, {
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
 			query: typeof req.query.query === "string" ? req.query.query : null,
@@ -62,7 +60,7 @@ router
 	 *
 	 * Create a new stream
 	 */
-	.post(async (req, res, _next) => {
+	.post(async (req, res) => {
 		const payload = apiValidator(getValidationSchema("/nginx/streams", "post"), req.body);
 		const result = await internalStream.create(res.locals.access, payload);
 		res.status(201).send(result);
@@ -82,14 +80,12 @@ router
 	 *
 	 * Retrieve a specific stream
 	 */
-	.get(async (req, res, _next) => {
+	.get(async (req, res) => {
 		const data = await validator(streamSchema, {
 			stream_id: req.params.stream_id,
-			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
 		});
 		const row = await internalStream.get(res.locals.access, {
 			id: Number.parseInt(data.stream_id, 10),
-			expand: data.expand,
 		});
 		res.status(200).send(row);
 	})
@@ -99,7 +95,7 @@ router
 	 *
 	 * Update an existing stream
 	 */
-	.put(async (req, res, _next) => {
+	.put(async (req, res) => {
 		const payload = apiValidator(getValidationSchema("/nginx/streams/{streamID}", "put"), req.body);
 		payload.id = Number.parseInt(req.params.stream_id, 10);
 		const result = await internalStream.update(res.locals.access, payload);
@@ -111,7 +107,7 @@ router
 	 *
 	 * Delete a stream
 	 */
-	.delete(async (req, res, _next) => {
+	.delete(async (req, res) => {
 		const result = await internalStream.delete(res.locals.access, {
 			id: Number.parseInt(req.params.stream_id, 10),
 		});
@@ -130,7 +126,7 @@ router
 	/**
 	 * POST /api/nginx/streams/123/enable
 	 */
-	.post(async (req, res, _next) => {
+	.post(async (req, res) => {
 		const result = await internalStream.enable(res.locals.access, {
 			id: Number.parseInt(req.params.stream_id, 10),
 		});
@@ -149,7 +145,7 @@ router
 	/**
 	 * POST /api/nginx/streams/123/disable
 	 */
-	.post(async (req, res, _next) => {
+	.post(async (req, res) => {
 		const result = await internalStream.disable(res.locals.access, {
 			id: Number.parseInt(req.params.stream_id, 10),
 		});

@@ -11,7 +11,7 @@ import jwtdecode from "../lib/express/jwt-decode.js";
 import userIdFromMe from "../lib/express/user-id-from-me.js";
 import apiValidator from "../lib/validator/api.js";
 import validator from "../lib/validator/index.js";
-import { debug, express as logger } from "../logger.js";
+import { express as logger } from "../logger.js";
 import { getValidationSchema } from "../schema/index.js";
 import { isSetup, removeSetupToken, verifySetupToken } from "../setup.js";
 
@@ -20,9 +20,6 @@ let setupCreationInProgress = false;
 const listSchema = {
 	additionalProperties: false,
 	properties: {
-		expand: {
-			$ref: "common#/properties/expand",
-		},
 		query: {
 			$ref: "common#/properties/query",
 		},
@@ -38,6 +35,7 @@ const userSchema = {
 		},
 		expand: {
 			$ref: "common#/properties/expand",
+			items: { enum: ["permissions"] },
 		},
 	},
 };
@@ -83,12 +81,11 @@ router
 	 *
 	 * Retrieve all users
 	 */
-	.get(async (req, res, _next) => {
+	.get(async (req, res) => {
 		const data = await validator(listSchema, {
-			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
 			query: typeof req.query.query === "string" ? req.query.query : null,
 		});
-		const users = await internalUser.getAll(res.locals.access, data.expand, data.query);
+		const users = await internalUser.getAll(res.locals.access, data.query);
 		res.status(200).send(users);
 	})
 
@@ -97,7 +94,7 @@ router
 	 *
 	 * Create a new User
 	 */
-	.post(async (req, res, next) => {
+	.post(async (req, res) => {
 		let claimedSetup = false;
 
 		try {
@@ -132,9 +129,6 @@ router
 			const user = await internalUser.create(res.locals.access, payload);
 			if (claimedSetup) await removeSetupToken();
 			res.status(201).send(user);
-		} catch (err) {
-			debug(logger, `${req.method.toUpperCase()} ${req.originalUrl}: ${err}`);
-			next(err);
 		} finally {
 			if (claimedSetup) setupCreationInProgress = false;
 		}
@@ -155,7 +149,7 @@ router
 	 *
 	 * Retrieve a specific user
 	 */
-	.get(async (req, res, _next) => {
+	.get(async (req, res) => {
 		const data = await validator(userSchema, {
 			user_id: req.params.user_id,
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
@@ -173,7 +167,7 @@ router
 	 *
 	 * Update and existing user
 	 */
-	.put(async (req, res, _next) => {
+	.put(async (req, res) => {
 		const payload = apiValidator(getValidationSchema("/users/{userID}", "put"), req.body);
 		payload.id = req.params.user_id;
 		const result = await internalUser.update(res.locals.access, payload);
@@ -185,7 +179,7 @@ router
 	 *
 	 * Update and existing user
 	 */
-	.delete(async (req, res, _next) => {
+	.delete(async (req, res) => {
 		const result = await internalUser.delete(res.locals.access, {
 			id: req.params.user_id,
 		});
@@ -207,7 +201,7 @@ router
 	 *
 	 * Update password for a user
 	 */
-	.put(async (req, res, _next) => {
+	.put(async (req, res) => {
 		const payload = apiValidator(getValidationSchema("/users/{userID}/auth", "put"), req.body);
 		payload.id = req.params.user_id;
 		const result = await internalUser.setPassword(res.locals.access, payload);
@@ -241,7 +235,7 @@ router
 	 *
 	 * Set some or all permissions for a user
 	 */
-	.put(async (req, res, _next) => {
+	.put(async (req, res) => {
 		const payload = apiValidator(getValidationSchema("/users/{userID}/permissions", "put"), req.body);
 		payload.id = req.params.user_id;
 		const result = await internalUser.setPermissions(res.locals.access, payload);
@@ -263,14 +257,9 @@ router
 	 *
 	 * Get MFA status for a user (all factors and backup codes)
 	 */
-	.get(async (req, res, next) => {
-		try {
-			const status = await internalMfa.getStatus(res.locals.access, req.params.user_id);
-			res.status(200).send(status);
-		} catch (err) {
-			debug(logger, `${req.method.toUpperCase()} ${req.path}: ${err}`);
-			next(err);
-		}
+	.get(async (req, res) => {
+		const status = await internalMfa.getStatus(res.locals.access, req.params.user_id);
+		res.status(200).send(status);
 	})
 
 	/**
@@ -278,14 +267,9 @@ router
 	 *
 	 * Admin reset: disable all second factors and backup codes for a user
 	 */
-	.delete(async (req, res, next) => {
-		try {
-			await internalMfa.adminDisable(res.locals.access, req.params.user_id);
-			res.status(200).send(true);
-		} catch (err) {
-			debug(logger, `${req.method.toUpperCase()} ${req.path}: ${err}`);
-			next(err);
-		}
+	.delete(async (req, res) => {
+		await internalMfa.adminDisable(res.locals.access, req.params.user_id);
+		res.status(200).send(true);
 	});
 
 /**
@@ -303,31 +287,9 @@ router
 	 *
 	 * Start TOTP setup, returns QR code URL
 	 */
-	.post(async (req, res, next) => {
-		try {
-			const result = await internalTotp.startSetup(res.locals.access, req.params.user_id);
-			res.status(200).send(result);
-		} catch (err) {
-			debug(logger, `${req.method.toUpperCase()} ${req.path}: ${err}`);
-			next(err);
-		}
-	})
-
-	/**
-	 * DELETE /api/users/123/mfa/totp?code=XXXXXX
-	 *
-	 * Disable TOTP for a user
-	 */
-	.delete(async (req, res, next) => {
-		try {
-			const code = typeof req.query.code === "string" ? req.query.code : null;
-			if (!code) throw new errs.ValidationError("Missing required parameter: code");
-			await internalMfa.disableTotp(res.locals.access, req.params.user_id, code);
-			res.status(200).send(true);
-		} catch (err) {
-			debug(logger, `${req.method.toUpperCase()} ${req.path}: ${err}`);
-			next(err);
-		}
+	.post(async (req, res) => {
+		const result = await internalTotp.startSetup(res.locals.access, req.params.user_id);
+		res.status(200).send(result);
 	});
 
 /**
@@ -345,23 +307,34 @@ router
 	 *
 	 * Verify code and enable TOTP
 	 */
-	.post(async (req, res, next) => {
-		try {
-			const { code } = apiValidator(getValidationSchema("/users/{userID}/mfa/totp/enable", "post"), req.body);
-			const result = await internalMfa.enableTotp(res.locals.access, req.params.user_id, code);
-			const data = await internalToken.getFreshToken(res.locals.access, true);
-			res.cookie("__Host-Http-token", data.token, {
-				signed: true,
-				httpOnly: true,
-				secure: true,
-				sameSite: "Strict",
-				expires: new Date(data.expires),
-			});
-			res.status(200).send(result);
-		} catch (err) {
-			debug(logger, `${req.method.toUpperCase()} ${req.path}: ${err}`);
-			next(err);
-		}
+	.post(async (req, res) => {
+		const { code } = apiValidator(getValidationSchema("/users/{userID}/mfa/totp/enable", "post"), req.body);
+		const result = await internalMfa.enableTotp(res.locals.access, req.params.user_id, code);
+		const data = await internalToken.getFreshToken(res.locals.access, true);
+		res.cookie("__Host-Http-token", data.token, {
+			signed: true,
+			httpOnly: true,
+			secure: true,
+			sameSite: "Strict",
+			expires: new Date(data.expires),
+		});
+		res.status(200).send(result);
+	});
+
+router
+	.route("/:user_id/mfa/totp/disable")
+	.all(jwtdecode())
+	.all(userIdFromMe)
+
+	/**
+	 * POST /api/users/123/mfa/totp/disable
+	 *
+	 * Disable TOTP for a user
+	 */
+	.post(async (req, res) => {
+		const { code } = apiValidator(getValidationSchema("/users/{userID}/mfa/totp/disable", "post"), req.body);
+		await internalMfa.disableTotp(res.locals.access, req.params.user_id, code);
+		res.status(200).send(true);
 	});
 
 /**
@@ -379,23 +352,18 @@ router
 	 *
 	 * Regenerate backup codes
 	 */
-	.post(async (req, res, next) => {
-		try {
-			const { code } = apiValidator(getValidationSchema("/users/{userID}/mfa/backup-codes", "post"), req.body);
-			const result = await internalMfa.regenerateBackupCodes(res.locals.access, req.params.user_id, code);
-			const data = await internalToken.getFreshToken(res.locals.access, true);
-			res.cookie("__Host-Http-token", data.token, {
-				signed: true,
-				httpOnly: true,
-				secure: true,
-				sameSite: "Strict",
-				expires: new Date(data.expires),
-			});
-			res.status(200).send(result);
-		} catch (err) {
-			debug(logger, `${req.method.toUpperCase()} ${req.path}: ${err}`);
-			next(err);
-		}
+	.post(async (req, res) => {
+		const { code } = apiValidator(getValidationSchema("/users/{userID}/mfa/backup-codes", "post"), req.body);
+		const result = await internalMfa.regenerateBackupCodes(res.locals.access, req.params.user_id, code);
+		const data = await internalToken.getFreshToken(res.locals.access, true);
+		res.cookie("__Host-Http-token", data.token, {
+			signed: true,
+			httpOnly: true,
+			secure: true,
+			sameSite: "Strict",
+			expires: new Date(data.expires),
+		});
+		res.status(200).send(result);
 	});
 
 router
@@ -408,7 +376,7 @@ router
 	 *
 	 * Revoke all of a user's sessions (self or admin)
 	 */
-	.delete(async (req, res, _next) => {
+	.delete(async (req, res) => {
 		await internalUser.revokeSessions(res.locals.access, req.params.user_id);
 		if (Number(req.params.user_id) === res.locals.access.token.getUserId(0)) {
 			res.clearCookie("__Host-Http-token", {
@@ -447,7 +415,7 @@ router
 			storage: multer.memoryStorage(),
 			limits: { fileSize: 1024 * 1024, files: 1, fields: 0, parts: 1, fieldNameSize: 32 },
 		}).single("avatar"),
-		async (req, res, _next) => {
+		async (req, res) => {
 			const result = await internalUser.setAvatar(res.locals.access, req.params.user_id, req.file);
 			res.status(200).send(result);
 		},
@@ -458,7 +426,7 @@ router
 	 *
 	 * Remove the custom avatar, falling back to gravatar
 	 */
-	.delete(async (req, res, _next) => {
+	.delete(async (req, res) => {
 		const result = await internalUser.deleteAvatar(res.locals.access, req.params.user_id);
 		res.status(200).send(result);
 	});

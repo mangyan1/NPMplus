@@ -16,11 +16,13 @@ router
 	/**
 	 * GET /schema
 	 */
-	.get(async (_req, res, _next) => {
+	.get(async (req, res) => {
 		const swaggerJSON = await getCompiledSchema();
 		swaggerJSON.info.version = PACKAGE.version;
 		swaggerJSON.servers[0].url = "/api";
-		res.status(200).send(swaggerJSON);
+		res.status(200)
+			.type("json")
+			.send(JSON.stringify(swaggerJSON, null, req.app.get("json spaces")));
 	});
 
 export default router;

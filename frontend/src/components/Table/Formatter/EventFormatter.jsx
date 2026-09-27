@@ -5,6 +5,7 @@ import {
 	IconDisc,
 	IconGavel,
 	IconLock,
+	IconSettings,
 	IconShield,
 	IconUser,
 } from "@tabler/icons-react";
@@ -26,6 +27,8 @@ const getEventValue = (event) => {
 			return event.meta?.domainNames?.join(", ") || event.meta?.niceName || "N/A";
 		case "crowdsec-decision":
 			return `Decision #${event.objectId}`;
+		case "setting":
+			return event.meta?.id;
 		default:
 			return intl.formatMessage({ id: "auditlog.unknown-type" }, { type: event.objectType });
 	}
@@ -69,6 +72,9 @@ const getIcon = (row) => {
 			break;
 		case "crowdsec-decision":
 			ico = <IconGavel size={16} className={c} />;
+			break;
+		case "setting":
+			ico = <IconSettings size={16} className={c} />;
 			break;
 		default:
 			break;

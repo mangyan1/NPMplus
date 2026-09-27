@@ -34,7 +34,7 @@ router
 	 *
 	 * Retrieve all settings
 	 */
-	.get(async (_req, res, _next) => {
+	.get(async (_, res) => {
 		const rows = await internalSetting.getAll(res.locals.access);
 		res.status(200).send(rows);
 	});
@@ -53,7 +53,7 @@ router
 	 *
 	 * Retrieve a specific setting
 	 */
-	.get(async (req, res, _next) => {
+	.get(async (req, res) => {
 		const data = await validator(settingSchema, {
 			setting_id: req.params.setting_id,
 		});
@@ -68,7 +68,7 @@ router
 	 *
 	 * Update and existing setting
 	 */
-	.put(async (req, res, _next) => {
+	.put(async (req, res) => {
 		const payload = apiValidator(getValidationSchema("/settings/{settingID}", "put"), req.body);
 		payload.id = req.params.setting_id;
 		const result = await internalSetting.update(res.locals.access, payload);

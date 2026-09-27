@@ -15,12 +15,14 @@
 		"ssl_forced",
 		"hsts_enabled",
 		"hsts_subdomains",
-		"http2_support",
 		"npmplus_http3_support",
-		"block_exploits",
 		"advanced_config",
 		"enabled",
-		"meta"
+		"npmplus_nginx_online",
+		"npmplus_nginx_err",
+		"npmplus_directory",
+		"npmplus_mtls_certificate_id",
+		"npmplus_mtls_verify_client_optional"
 	],
 	"additionalProperties": false,
 	"properties": {
@@ -81,14 +83,8 @@
 		"hsts_subdomains": {
 			"$ref": "../common.json#/properties/hsts_subdomains"
 		},
-		"http2_support": {
-			"$ref": "../common.json#/properties/http2_support"
-		},
 		"npmplus_http3_support": {
 			"$ref": "../common.json#/properties/npmplus_http3_support"
-		},
-		"block_exploits": {
-			"$ref": "../common.json#/properties/block_exploits"
 		},
 		"advanced_config": {
 			"type": "string",
@@ -97,12 +93,20 @@
 		"enabled": {
 			"$ref": "../common.json#/properties/enabled"
 		},
-		"meta": {
-			"type": "object",
-			"example": {
-				"nginx_online": true,
-				"nginx_err": null
-			}
+		"npmplus_nginx_online": {
+			"$ref": "../common.json#/properties/npmplus_nginx_online"
+		},
+		"npmplus_nginx_err": {
+			"$ref": "../common.json#/properties/npmplus_nginx_err"
+		},
+		"npmplus_directory": {
+			"$ref": "../common.json#/properties/npmplus_directory"
+		},
+		"npmplus_mtls_certificate_id": {
+			"$ref": "../common.json#/properties/npmplus_mtls_certificate_id"
+		},
+		"npmplus_mtls_verify_client_optional": {
+			"$ref": "../common.json#/properties/npmplus_mtls_verify_client_optional"
 		},
 		"certificate": {
 			"oneOf": [

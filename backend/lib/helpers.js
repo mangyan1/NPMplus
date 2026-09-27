@@ -49,6 +49,30 @@ const convertBoolFieldsToInt = (obj, fields) => {
 	return obj;
 };
 
+const certificateFields = [
+	"npmplus_reuse_key",
+	"npmplus_dns_challenge",
+	"npmplus_dns_provider",
+	"npmplus_dns_provider_credentials",
+	"npmplus_propagation_seconds",
+];
+
+const pickCertificateFields = (obj) =>
+	Object.fromEntries(Object.entries(obj).filter(([key]) => certificateFields.includes(key)));
+
+const removeCertificateFields = (obj) =>
+	Object.fromEntries(Object.entries(obj).filter(([key]) => !certificateFields.includes(key)));
+
+const jsonReplacer = (key, value) => {
+	if (typeof value !== "string") return value;
+	if (key === "password") return "";
+	return ["certificate", "certificate_key", "dns_provider_credentials", "npmplus_dns_provider_credentials"].includes(
+		key,
+	)
+		? undefined
+		: value;
+};
+
 /**
  * Casts a column to json if using postgres
  *
@@ -57,4 +81,12 @@ const convertBoolFieldsToInt = (obj, fields) => {
  */
 const castJsonIfNeed = (colName) => (isPostgres() ? ref(colName).castText() : colName);
 
-export { castJsonIfNeed, convertBoolFieldsToInt, convertIntFieldsToBool, parseDatePeriod };
+export {
+	castJsonIfNeed,
+	convertBoolFieldsToInt,
+	convertIntFieldsToBool,
+	jsonReplacer,
+	parseDatePeriod,
+	pickCertificateFields,
+	removeCertificateFields,
+};

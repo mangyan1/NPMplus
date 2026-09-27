@@ -59,8 +59,14 @@
 						"npmplus_advanced_config": {
 							"$ref": "../../../../components/stream-object.json#/properties/npmplus_advanced_config"
 						},
-						"meta": {
-							"$ref": "../../../../components/stream-object.json#/properties/meta"
+						"npmplus_directory": {
+							"$ref": "../../../../components/stream-object.json#/properties/npmplus_directory"
+						},
+						"npmplus_mtls_certificate_id": {
+							"$ref": "../../../../components/stream-object.json#/properties/npmplus_mtls_certificate_id"
+						},
+						"npmplus_mtls_verify_client_optional": {
+							"$ref": "../../../../components/stream-object.json#/properties/npmplus_mtls_verify_client_optional"
 						},
 						"npmplus_description": {
 							"$ref": "../../../../components/stream-object.json#/properties/npmplus_description"
@@ -90,23 +96,12 @@
 								"npmplus_proxy_protocol_forwarding": 0,
 								"npmplus_proxy_tls": false,
 								"npmplus_advanced_config": "",
-								"meta": {
-									"nginx_online": true,
-									"nginx_err": null
-								},
+								"npmplus_nginx_online": true,
+								"npmplus_nginx_err": "",
+								"npmplus_directory": "",
+								"npmplus_mtls_certificate_id": 0,
+								"npmplus_mtls_verify_client_optional": false,
 								"enabled": true,
-								"owner": {
-									"id": 1,
-									"created_on": "2024-10-09T02:33:16.000Z",
-									"modified_on": "2024-10-09T02:33:16.000Z",
-									"is_disabled": false,
-									"email": "admin@example.com",
-									"name": "Administrator",
-									"avatar": "",
-									"roles": [
-										"admin"
-									]
-								},
 								"certificate_id": 0
 							}
 						}

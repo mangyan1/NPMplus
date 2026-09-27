@@ -6,11 +6,11 @@ import path from "node:path";
 import { domainToASCII } from "node:url";
 import { ZipArchive } from "archiver";
 import dayjs from "dayjs";
-import _ from "lodash";
 import dnsPlugins from "../certbot/dns-plugins.json" with { type: "json" };
 import { fetchWithTimeout, readBoundedJson } from "../lib/bounded-fetch.js";
 import { installPlugin } from "../lib/certbot.js";
 import error from "../lib/error.js";
+import { pickCertificateFields } from "../lib/helpers.js";
 import utils from "../lib/utils.js";
 import { debug, ssl as logger } from "../logger.js";
 import certificateModel from "../models/certificate.js";
@@ -23,8 +23,6 @@ import internalAuditLog from "./audit-log.js";
 import internalNginx from "./nginx.js";
 
 const cnPattern = /\bCN=([^\n]+)/i;
-
-const omissions = () => ["is_deleted", "owner.is_deleted", "meta.dns_provider_credentials"];
 
 const internalCertificate = {
 	allowedSslFiles: ["certificate", "certificate_key"],
@@ -129,7 +127,7 @@ const internalCertificate = {
 		try {
 			if (certificate.provider === "letsencrypt") {
 				// Request a new Cert with Certbot. Let the fun begin.
-				if (certificate.meta?.dns_challenge) {
+				if (certificate.npmplus_dns_challenge) {
 					await internalCertificate.requestCertbotWithDnsChallenge(certificate);
 				} else {
 					await internalCertificate.requestCertbot(certificate);
@@ -141,14 +139,9 @@ const internalCertificate = {
 					const certInfo = await internalCertificate.getCertificateInfoFromFile(
 						`${internalCertificate.getLiveCertPath(certificate.id)}/fullchain.pem`,
 					);
-					const savedRow = utils.omitRow(omissions())(
-						await certificateModel.query().patchAndFetchById(certificate.id, {
-							expires_on: dayjs.unix(certInfo.dates.to).format("YYYY-MM-DD HH:mm:ss"),
-						}),
-					);
-
-					// Add cert data for audit log
-					savedRow.meta = { ...savedRow.meta, letsencrypt_certificate: certInfo };
+					const savedRow = await certificateModel.query().patchAndFetchById(certificate.id, {
+						expires_on: dayjs.unix(certInfo.dates.to).format("YYYY-MM-DD HH:mm:ss"),
+					});
 
 					await internalCertificate.addCreatedAuditLog(access, certificate.id, savedRow);
 
@@ -165,12 +158,12 @@ const internalCertificate = {
 			throw err;
 		}
 
-		data.meta = { ...data.meta, ...certificate.meta };
+		const savedRow = await internalCertificate.get(access, { id: certificate.id });
 
 		// Add to audit log
-		await internalCertificate.addCreatedAuditLog(access, certificate.id, utils.omitRow(omissions())(data));
+		await internalCertificate.addCreatedAuditLog(access, certificate.id, savedRow);
 
-		return utils.omitRow(omissions())(certificate);
+		return savedRow;
 	},
 
 	addCreatedAuditLog: async (access, certificate_id, meta) => {
@@ -201,22 +194,14 @@ const internalCertificate = {
 			);
 		}
 
-		const savedRow = utils.omitRow(omissions())(await certificateModel.query().patchAndFetchById(row.id, data));
-
-		savedRow.meta = internalCertificate.cleanMeta(savedRow.meta);
-		data.meta = internalCertificate.cleanMeta(data.meta);
-
-		// Add row.nice_name for custom certs
-		if (savedRow.provider === "other") {
-			data.nice_name = savedRow.nice_name;
-		}
+		const savedRow = await certificateModel.query().patchAndFetchById(row.id, data);
 
 		// Add to audit log
 		await internalAuditLog.add(access, {
 			action: "updated",
 			object_type: "certificate",
 			object_id: row.id,
-			meta: _.omit(data, ["expires_on"]), // this prevents json circular reference because expires_on might be raw
+			meta: savedRow,
 		});
 
 		return savedRow;
@@ -226,52 +211,21 @@ const internalCertificate = {
 	 * @param  {Access}   access
 	 * @param  {Object}   data
 	 * @param  {Number}   data.id
-	 * @param  {Array}    [data.expand]
-	 * @param  {Array}    [data.omit]
 	 * @return {Promise}
 	 */
 	get: async (access, data) => {
 		access.can("certificates:view");
-		const query = certificateModel
-			.query()
-			.where("is_deleted", 0)
-			.andWhere("id", data.id)
-			.allowGraph("[owner,proxy_hosts,redirection_hosts,dead_hosts,streams]")
-			.first();
+		const query = certificateModel.query().where("is_deleted", 0).andWhere("id", data.id).first();
 
 		if (access.visibility !== "all") {
 			query.andWhere("owner_user_id", access.token.getUserId(1));
 		}
 
-		if (typeof data.expand !== "undefined" && data.expand !== null) {
-			query.withGraphFetched(`[${data.expand.join(", ")}]`);
-		}
-
-		const row = utils.omitRow(omissions())(await query);
+		const row = await query;
 		if (!row?.id) {
 			throw new error.ItemNotFoundError(data.id);
 		}
-		// Custom omissions
-		if (typeof data.omit !== "undefined" && data.omit !== null) {
-			return _.omit(row, [...data.omit]);
-		}
 
-		return internalCertificate.cleanExpansions(row);
-	},
-
-	cleanExpansions: (row) => {
-		if (typeof row.proxy_hosts !== "undefined") {
-			row.proxy_hosts = utils.omitRows(["is_deleted"])(row.proxy_hosts);
-		}
-		if (typeof row.redirection_hosts !== "undefined") {
-			row.redirection_hosts = utils.omitRows(["is_deleted"])(row.redirection_hosts);
-		}
-		if (typeof row.dead_hosts !== "undefined") {
-			row.dead_hosts = utils.omitRows(["is_deleted"])(row.dead_hosts);
-		}
-		if (typeof row.streams !== "undefined") {
-			row.streams = utils.omitRows(["is_deleted"])(row.streams);
-		}
 		return row;
 	},
 
@@ -282,7 +236,7 @@ const internalCertificate = {
 	 * @returns {Promise}
 	 */
 	download: async (access, data) => {
-		access.can("certificates:view");
+		access.can("certificates:manage");
 		const certificate = await internalCertificate.get(access, data);
 		if (certificate.provider === "letsencrypt") {
 			const zipDirectory = internalCertificate.getLiveCertPath(data.id);
@@ -356,13 +310,12 @@ const internalCertificate = {
 		}
 
 		for (const hostModel of [proxyHostModel, redirectionHostModel, deadHostModel, streamModel]) {
-			const hosts = await hostModel.query().where("is_deleted", 0).select("id", "certificate_id", "meta");
 			if (
-				hosts.some(
-					(host) =>
-						Number(host.certificate_id) === row.id ||
-						Number(host.meta?.npmplus_mtls_certificate_id) === row.id,
-				)
+				(await hostModel
+					.query()
+					.where("is_deleted", 0)
+					.andWhere((qb) => qb.where("certificate_id", row.id).orWhere("npmplus_mtls_certificate_id", row.id))
+					.resultSize()) > 0
 			) {
 				throw new error.ValidationError("Certificate is still in use");
 			}
@@ -373,13 +326,11 @@ const internalCertificate = {
 		});
 
 		// Add to audit log
-		row.meta = internalCertificate.cleanMeta(row.meta);
-
 		await internalAuditLog.add(access, {
 			action: "deleted",
 			object_type: "certificate",
 			object_id: row.id,
-			meta: _.omit(row, omissions()),
+			meta: row,
 		});
 
 		if (row.provider === "letsencrypt") {
@@ -391,7 +342,7 @@ const internalCertificate = {
 			await rm(`/data/tls/custom/npm-${row.id}`, { force: true, recursive: true });
 			await rm(`/data/tls/custom/npm-${row.id}.der`, { force: true });
 		}
-		return true;
+		return row;
 	},
 
 	/**
@@ -409,7 +360,9 @@ const internalCertificate = {
 			.query()
 			.where("is_deleted", 0)
 			.groupBy("id")
-			.allowGraph("[owner,proxy_hosts,redirection_hosts,dead_hosts,streams]")
+			.allowGraph(
+				"[owner,proxy_hosts,redirection_hosts,dead_hosts,streams,mtls_proxy_hosts,mtls_redirection_hosts,mtls_dead_hosts,mtls_streams]",
+			)
 			.orderBy("nice_name", "ASC");
 
 		if (access.visibility !== "all") {
@@ -427,9 +380,7 @@ const internalCertificate = {
 			query.withGraphFetched(`[${expand.join(", ")}]`);
 		}
 
-		return utils
-			.omitRows(omissions())(await query)
-			.map((row) => internalCertificate.cleanExpansions(row));
+		return await query;
 	},
 
 	/**
@@ -462,15 +413,15 @@ const internalCertificate = {
 		logger.info("Writing Custom Certificate:", certificate.id);
 
 		if (certificate.provider === "mtls") {
-			await writeFile(`/data/tls/mtls/npm-${certificate.id}.pem`, certificate.meta.certificate);
+			await writeFile(`/data/tls/mtls/npm-${certificate.id}.pem`, certificate.certificate);
 			return;
 		}
 
 		const dir = `/data/tls/custom/npm-${certificate.id}`;
 
 		await mkdir(dir, { recursive: true });
-		await writeFile(`${dir}/fullchain.pem`, certificate.meta.certificate);
-		await writeFile(`${dir}/privkey.pem`, certificate.meta.certificate_key);
+		await writeFile(`${dir}/fullchain.pem`, certificate.certificate);
+		await writeFile(`${dir}/privkey.pem`, certificate.certificate_key);
 	},
 
 	/**
@@ -483,7 +434,7 @@ const internalCertificate = {
 		internalCertificate.create(access, {
 			provider: "letsencrypt",
 			domain_names: data.domain_names,
-			meta: data.meta,
+			...pickCertificateFields(data),
 		}),
 
 	/**
@@ -547,13 +498,11 @@ const internalCertificate = {
 			id: data.id,
 			expires_on: dayjs.unix(validations.certificate.dates.to).format("YYYY-MM-DD HH:mm:ss"),
 			domain_names: validations.certificate.cn,
-			meta: { ...row.meta }, // Prevent the update method from changing this value that we'll use later
 		});
 
-		certificate.meta = { ...row.meta, ...certs };
-		await internalCertificate.writeCustomCert(certificate);
+		await internalCertificate.writeCustomCert({ ...certificate, ...certs });
 		await internalNginx.reload();
-		return _.omit(certificate.meta, internalCertificate.allowedSslFiles);
+		return certificate;
 	},
 
 	/**
@@ -638,27 +587,6 @@ const internalCertificate = {
 	},
 
 	/**
-	 * Cleans the tls keys from the meta object and sets them
-	 * @param   {String}  email         the email address to use for registration to "true"
-	 *
-	 * @param   {Object}  meta
-	 * @param   {Boolean} [remove]
-	 * @returns {Object}
-	 */
-	cleanMeta: (meta, remove) => {
-		for (const key of internalCertificate.allowedSslFiles) {
-			if (meta[key]) {
-				if (remove) {
-					delete meta[key];
-				} else {
-					meta[key] = true;
-				}
-			}
-		}
-		return meta;
-	},
-
-	/**
 	 * Request a certificate using the http challenge
 	 * @param   {Object}  certificate   the certificate row
 	 * @returns {Promise}
@@ -683,7 +611,7 @@ const internalCertificate = {
 			`npm-${certificate.id}`,
 			...(domains.length > 0 ? ["--domains", domains.map(domainToASCII).join(",")] : []),
 			...ips.flatMap((ip) => ["--ip-address", ip]),
-			...(certificate.meta.reuse_key ? ["--reuse-key"] : ["--no-reuse-key"]),
+			...(certificate.npmplus_reuse_key ? ["--reuse-key"] : ["--no-reuse-key"]),
 			"--authenticator",
 			"webroot",
 		]);
@@ -696,18 +624,18 @@ const internalCertificate = {
 	 * @returns {Promise}
 	 */
 	requestCertbotWithDnsChallenge: async (certificate) => {
-		const dnsPlugin = dnsPlugins[certificate.meta.dns_provider];
+		const dnsPlugin = dnsPlugins[certificate.npmplus_dns_provider];
 		if (!dnsPlugin) {
-			throw new Error(`Unknown DNS provider '${certificate.meta.dns_provider}'`);
+			throw new Error(`Unknown DNS provider '${certificate.npmplus_dns_provider}'`);
 		}
-		await installPlugin(certificate.meta.dns_provider);
+		await installPlugin(certificate.npmplus_dns_provider);
 
 		logger.info(
 			`Requesting Certbot certificates via ${dnsPlugin.name} for Cert #${certificate.id}: ${certificate.domain_names.join(", ")}`,
 		);
 
 		const credentialsLocation = `/tmp/certbot-credentials/credentials-${certificate.id}`;
-		await writeFile(credentialsLocation, certificate.meta.dns_provider_credentials, { mode: 0o600 });
+		await writeFile(credentialsLocation, certificate.npmplus_dns_provider_credentials, { mode: 0o600 });
 
 		try {
 			const result = await utils.execFile("certbot", [
@@ -720,15 +648,15 @@ const internalCertificate = {
 				`npm-${certificate.id}`,
 				"--domains",
 				certificate.domain_names.map(domainToASCII).join(","),
-				...(certificate.meta.reuse_key ? ["--reuse-key"] : ["--no-reuse-key"]),
+				...(certificate.npmplus_reuse_key ? ["--reuse-key"] : ["--no-reuse-key"]),
 				"--authenticator",
 				dnsPlugin.full_plugin_name,
 				`--${dnsPlugin.full_plugin_name}-credentials`,
 				credentialsLocation,
-				...(certificate.meta.propagation_seconds !== undefined
+				...(certificate.npmplus_propagation_seconds > 0
 					? [`--${dnsPlugin.full_plugin_name}-propagation-seconds`]
 					: []),
-				...(certificate.meta.propagation_seconds !== undefined ? [certificate.meta.propagation_seconds] : []),
+				...(certificate.npmplus_propagation_seconds > 0 ? [certificate.npmplus_propagation_seconds] : []),
 			]);
 			logger.info(result);
 			return result;
@@ -749,12 +677,11 @@ const internalCertificate = {
 		const certificate = await internalCertificate.get(access, data);
 
 		if (certificate.provider === "letsencrypt") {
-			const renewMethod = certificate.meta.dns_challenge
+			const renewMethod = certificate.npmplus_dns_challenge
 				? internalCertificate.renewCertbotWithDnsChallenge
 				: internalCertificate.renewCertbot;
 
 			await renewMethod(certificate);
-			await internalNginx.reload();
 			const certInfo = await internalCertificate.getCertificateInfoFromFile(
 				`${internalCertificate.getLiveCertPath(certificate.id)}/fullchain.pem`,
 			);
@@ -763,13 +690,17 @@ const internalCertificate = {
 				expires_on: dayjs.unix(certInfo.dates.to).format("YYYY-MM-DD HH:mm:ss"),
 			});
 
-			// Add to audit log
-			await internalAuditLog.add(access, {
-				action: "renewed",
-				object_type: "certificate",
-				object_id: updatedCertificate.id,
-				meta: updatedCertificate,
-			});
+			try {
+				await internalNginx.reload();
+			} finally {
+				// Add to audit log
+				await internalAuditLog.add(access, {
+					action: "updated",
+					object_type: "certificate",
+					object_id: updatedCertificate.id,
+					meta: updatedCertificate,
+				});
+			}
 
 			return updatedCertificate;
 		}
@@ -823,9 +754,9 @@ const internalCertificate = {
 	 * @returns {Promise}
 	 */
 	renewCertbotWithDnsChallenge: async (certificate) => {
-		const dnsPlugin = dnsPlugins[certificate.meta.dns_provider];
+		const dnsPlugin = dnsPlugins[certificate.npmplus_dns_provider];
 		if (!dnsPlugin) {
-			throw new Error(`Unknown DNS provider '${certificate.meta.dns_provider}'`);
+			throw new Error(`Unknown DNS provider '${certificate.npmplus_dns_provider}'`);
 		}
 
 		logger.info(

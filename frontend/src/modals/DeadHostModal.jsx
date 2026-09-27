@@ -34,22 +34,9 @@ const DeadHostModal = EasyModal.create(({ id, visible, remove }) => {
 		setIsSubmitting(true);
 		setErrorMsg(null);
 
-		const meta = { ...(values.meta || {}) };
-		if (typeof meta.directory === "string") {
-			const trimmed = meta.directory.trim();
-			if (trimmed) {
-				meta.directory = trimmed;
-			} else {
-				delete meta.directory;
-			}
-		} else {
-			delete meta.directory;
-		}
-
 		const { ...payload } = {
 			id: id === "new" ? undefined : id,
 			...values,
-			meta,
 		};
 
 		setDeadHost(payload, {
@@ -92,11 +79,12 @@ const DeadHostModal = EasyModal.create(({ id, visible, remove }) => {
 						certificateId: data?.certificateId,
 						sslForced: data?.sslForced,
 						advancedConfig: data?.advancedConfig,
-						http2Support: data?.http2Support,
 						npmplusHttp3Support: data?.npmplusHttp3Support,
 						hstsEnabled: data?.hstsEnabled,
 						hstsSubdomains: data?.hstsSubdomains,
-						meta: data?.meta || {},
+						npmplusDirectory: data?.npmplusDirectory || "",
+						npmplusMtlsCertificateId: data?.npmplusMtlsCertificateId || 0,
+						npmplusMtlsVerifyClientOptional: data?.npmplusMtlsVerifyClientOptional || false,
 					}}
 					onSubmit={onSubmit}
 				>

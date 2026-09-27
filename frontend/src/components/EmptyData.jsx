@@ -30,7 +30,7 @@ function EmptyData({
 							{/* tables without a create action (e.g. the audit log) only get the headline */}
 							{onNew || customAddBtn ? (
 								<HasPermission section={permissionSection} permission={permission || MANAGE} hideError>
-									<p className="text-muted">
+									<p className="text-secondary">
 										<T id="empty-subtitle" />
 									</p>
 									{customAddBtn ? (

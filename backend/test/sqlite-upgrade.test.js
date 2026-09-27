@@ -51,22 +51,38 @@ test("an existing SQLite MFA account and proxy survive the factor and replay mig
 		secret: "Upgrade-Fixture-1",
 		meta: { totp_enabled: true, totp_secret: secret },
 	});
-	const proxy = await ProxyHost.query().insertAndFetch({
-		owner_user_id: user.id,
-		domain_names: ["upgrade.example.test"],
-		forward_scheme: "http",
-		forward_host: "127.0.0.1",
-		forward_port: 8080,
-	});
+	// Seed the legacy row with exactly the columns the pre-replay model wrote;
+	// the current model defaults npmplus_* columns that this schema predates.
+	const nowRaw = db().raw("datetime('now','localtime')");
+	const proxyId = (
+		await db()("proxy_host").insert({
+			owner_user_id: user.id,
+			domain_names: JSON.stringify(["upgrade.example.test"]),
+			forward_scheme: "http",
+			forward_host: "127.0.0.1",
+			forward_port: 8080,
+			meta: JSON.stringify({}),
+			npmplus_access_list_type: "public",
+			npmplus_access_list_ids: JSON.stringify([]),
+			created_on: nowRaw,
+			modified_on: nowRaw,
+		})
+	)[0];
 	// Switch from the historical migration source to the actual startup path.
 	await migrateUp();
+	const assertProxySurvived = async () => {
+		const survived = await ProxyHost.query().findById(proxyId);
+		assert.deepEqual(survived.domain_names, ["upgrade.example.test"]);
+		assert.equal(survived.forward_host, "127.0.0.1");
+		assert.equal(survived.forward_port, 8080);
+	};
 	const upgraded = await Auth.query().findById(auth.id);
 	// the second factor moved to its own row and the password row's meta is cleared
 	assert.equal(upgraded.meta?.totp_secret, undefined);
 	assert.equal(upgraded.secret, auth.secret);
 	assert.equal(upgraded.npmplus_totp_last_used_step, null);
 	assert.equal((await Auth.getTotpEnrollment(user.id)).secret, secret);
-	assert.deepEqual(await ProxyHost.query().findById(proxy.id), proxy);
+	await assertProxySurvived();
 	const challenge = await internalToken.getTokenFromEmail({ identity: user.email, secret: "Upgrade-Fixture-1" });
 	const code = await generate({ secret });
 	assert.ok((await internalToken.verifyTotp(challenge.token, code)).token);
@@ -75,5 +91,5 @@ test("an existing SQLite MFA account and proxy survive the factor and replay mig
 	assert.equal(await totp.verifyCode(user.id, code), false);
 	epoch += 30;
 	assert.equal(await totp.verifyCode(user.id, await generate({ secret })), true);
-	assert.deepEqual(await ProxyHost.query().findById(proxy.id), proxy);
+	await assertProxySurvived();
 });
