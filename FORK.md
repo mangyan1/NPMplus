@@ -528,3 +528,68 @@ moved to a top-level `await` keyed on `document.dir` (set synchronously at
 `main.jsx` adopts the top-level `await` shape with `installDeploymentRecovery()`
 called before the stylesheet awaits, so the boot guard installs even when a
 broken deploy 404s the chunks it awaits.
+
+## Upstream merge resolution notes (September 26)
+
+The September 26 reconciliation on `fix/upstream-sync-20260926` merges
+upstream `a4a29e09` (merge-base `03688155`, the 71-commit gap) into the
+fork's develop state after PRs #35–#39 landed. The dominant upstream change
+is the move from row `meta` to dedicated `npmplus_*` columns
+(`meta_to_columns`: nginx online/err, directory, mTLS verify, and the
+certificate dns-provider fields), together with a global `jsonReplacer` in
+`helpers.js` — wired with `app.set("json replacer", …)` — that blanks
+`password` and drops `certificate`, `certificate_key`, and the dns-provider
+credentials from every response. That replacer supersedes the fork's old
+per-site meta masking for those fields, so the merge adopts upstream's
+shapes. Two fork behaviors ride on the new model:
+
+- The forward-destination reachability probe (`configureWithReachability`)
+  survives as the only remaining meta writer: it runs `internalNginx.configure`
+  — which now persists `npmplus_nginx_online`/`npmplus_nginx_err` itself —
+  then patches only `reach_ok`/`reach_err` into meta. `proxy_host`'s
+  `$parseDatabaseJson` no longer destructures `meta` out (upstream's version
+  stripped it), so the probe state reaches the API; the frontend sorts
+  enabled → offline → unreachable → online and passes
+  `npmplus_nginx_online`/`meta.reach_ok` separately.
+- The access-list row masking (`maskItems`/`maskAccessListItems`, lodash
+  `_.omit` plus blanked item passwords) is kept, and `lodash` returns to the
+  backend manifest for it. Upstream's recursive replacer may now blank the
+  nested item passwords too; per this file's replacement rule, any redundancy
+  sweep happens later in a normal reviewable commit — never inside the merge.
+
+The permission model is a true MERGE-BOTH: upstream's sync `canAdmin()` and
+`canUser(id)` (both throwing, ids must be positive) and async `can()` are
+adopted, while the fork-only crowdsec routes gate through a local
+`requireAdmin(res)` helper because their handlers are not per-user scoped.
+Host CRUD takes upstream's `savedRow`/`try`/`finally` shape with the fork's
+`assertPrivilegedNginxFields`, `validateIncomingPort`, mTLS, and SSL/HSTS
+cleanup intact; `user.js` takes upstream's email/avatar handling and keeps
+the fork's bounded gravatar fetch. `token.js` keeps the fork's session-token
+architecture. Dependency aging held: `@tabler/core` 1.6.0 and `vite` 8.3.1
+failed the `minimumReleaseAge` window and stay at 1.5.1/8.3.0 (both
+lockfiles regenerated under the policy). Upstream's ECH key rotation is
+adopted (rootfs hooks, `ECH_ROTATION_INTERVAL`, the cloudflare example);
+the README section keeps the 1300-word release-discipline budget and the
+full guide lives in `docs/ech.md`. The caddy build keeps the fork's source
+build and CVE pin matrix, `npmplus.conf` keeps the goaccess CSP/no-cache
+headers, and upstream's goaccess dinit flag reorder landed.
+
+Test fixtures and smokes track the new contract per this file's rules:
+`certificate-dns.test.js` moved its fixture to the `npmplus_*` columns,
+`sqlite-upgrade.test.js` seeds the legacy proxy row through raw knex with
+the columns the pre-replay schema actually had and asserts survival at the
+field level, and the live smokes (`security-regressions.mjs`,
+`rc5-features.mjs`) read `npmplus_nginx_online` plus `meta.reach_ok`. The
+security-regressions assertions were updated because the response shape
+changed upstream, not to loosen a check: the container smoke caught the
+first miss against the real image.
+
+Local validation: 163 backend and 15 frontend tests, `validate-schema`,
+biome on both LF-normalized trees, the vite build,
+`tests/security-invariants.mjs`, frozen lockfiles, the 45-check
+in-process backend smoke, and the full disposable-container smoke
+(security-regressions, modal-ui, ui-driver, and browser-driven
+security-ui against the image built from this branch). The Linux-only
+python contracts (installer-recovery, heal-migration, upstream-sync) and
+`sort-locale.sh` (needs jq) reproduce identically on a pristine fork-HEAD
+worktree on this rig and stay green on CI.
