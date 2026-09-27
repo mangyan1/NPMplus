@@ -608,15 +608,19 @@ drop or misread them:
   this tree, both already user-facing, so the widening is benign. It stays
   because upstream relies on it; if a future dependency classifies an
   internal error with `expose: true`, tighten the handler then, with a test.
-- **H-6, deferred to a follow-up issue.** `meta_to_columns`
+- **H-6, documented rather than fixed.** `meta_to_columns`
   (`20260926160524`) interleaves `alterTable` with per-row updates whose
   `JSON.parse` can throw on corrupt meta. On the MySQL family, DDL commits
   implicitly, so a mid-loop failure leaves the columns added but the
   migration unrecorded — and the 1s startup retry re-runs the alter and
   dies on duplicate columns (MySQL has no `ADD COLUMN IF NOT EXISTS`).
-  Restructuring (validate-before-alter, or split DDL/DML migrations) is
-  follow-up work, not a merge hotfix. SQLite, the tested default, is
-  unaffected.
+  SQLite, the tested default, is unaffected, and Postgres DDL is
+  transactional. Upstream itself declares MariaDB/MySQL unsupported — the
+  boot-time `logger.warn` in `config.js` calls it not recommended with no
+  advantage over SQLite — so this is a known edge on an unsupported path,
+  not a supported-config bug. Restructuring (validate-before-alter, or
+  split DDL/DML migrations) would only serve that unsupported path; do it
+  if the support stance ever changes, never inside a sync.
 - **The certificate renew site is the one exception to the hands-off
   restriction above.** Converting its audit write to the shared
   `finalize()` shape was explicitly in the approved error-preservation
