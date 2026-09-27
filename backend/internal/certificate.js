@@ -690,9 +690,7 @@ const internalCertificate = {
 				expires_on: dayjs.unix(certInfo.dates.to).format("YYYY-MM-DD HH:mm:ss"),
 			});
 
-			try {
-				await internalNginx.reload();
-			} finally {
+			const finalize = async () => {
 				// Add to audit log
 				await internalAuditLog.add(access, {
 					action: "updated",
@@ -700,7 +698,19 @@ const internalCertificate = {
 					object_id: updatedCertificate.id,
 					meta: updatedCertificate,
 				});
+			};
+			try {
+				await internalNginx.reload();
+			} catch (operationError) {
+				// the audit write must never replace the operation's own error
+				try {
+					await finalize();
+				} catch (cleanupError) {
+					logger.error(`Error auditing certificate renew ${updatedCertificate.id}: ${cleanupError.message}`);
+				}
+				throw operationError;
 			}
+			await finalize();
 
 			return updatedCertificate;
 		}

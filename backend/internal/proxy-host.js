@@ -2,6 +2,7 @@ import net from "node:net";
 import errs from "../lib/error.js";
 import { castJsonIfNeed } from "../lib/helpers.js";
 import { assertPrivilegedNginxFields } from "../lib/nginx-privilege.js";
+import { global as logger } from "../logger.js";
 import proxyHostModel from "../models/proxy_host.js";
 import internalAuditLog from "./audit-log.js";
 import internalCertificate from "./certificate.js";
@@ -34,15 +35,28 @@ const probeForwardDestination = (scheme, host, port) => {
 };
 
 // configure nginx, then probe and persist reachability into the host meta so
-// the create/update/enable responses and the list all carry the same state
+// the create/update/enable responses and the list all carry the same state.
+// The probe is advisory: it must never fail the save of a configured, live
+// host, and a non-tcp destination clears stale reach state from whatever the
+// previous destination probed.
 const configureWithReachability = async (row) => {
 	const status = await internalNginx.configure(proxyHostModel, "proxy_host", row);
-	const reach = await probeForwardDestination(row.forward_scheme, row.forward_host, row.forward_port);
-	if (reach) {
+	try {
+		const reach = await probeForwardDestination(row.forward_scheme, row.forward_host, row.forward_port);
 		await proxyHostModel
 			.query()
 			.where("id", row.id)
-			.patch({ meta: { reach_ok: reach.ok, reach_err: reach.err } });
+			.patch({ meta: { reach_ok: reach ? reach.ok : null, reach_err: reach ? reach.err : null } });
+	} catch (err) {
+		logger.error(`Reachability probe failed for proxy host ${row.id}: ${err.message}`);
+		try {
+			await proxyHostModel
+				.query()
+				.where("id", row.id)
+				.patch({ meta: { reach_ok: null, reach_err: "probe failed" } });
+		} catch (patchErr) {
+			logger.error(`Could not clear reachability meta for proxy host ${row.id}: ${patchErr.message}`);
+		}
 	}
 	return status;
 };
@@ -97,6 +111,17 @@ const internalProxyHost = {
 		});
 
 		let savedRow;
+		const finalize = async () => {
+			savedRow = await internalProxyHost.get(access, { id: createdRow.id });
+
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "created",
+				object_type: "proxy-host",
+				object_id: savedRow.id,
+				meta: savedRow,
+			});
+		};
 		try {
 			if (createCertificate) {
 				// update host with cert id
@@ -117,17 +142,16 @@ const internalProxyHost = {
 
 			// Configure nginx
 			await configureWithReachability(row);
-		} finally {
-			savedRow = await internalProxyHost.get(access, { id: createdRow.id });
-
-			// Add to audit log
-			await internalAuditLog.add(access, {
-				action: "created",
-				object_type: "proxy-host",
-				object_id: savedRow.id,
-				meta: savedRow,
-			});
+		} catch (operationError) {
+			// the audit write must never replace the operation's own error
+			try {
+				await finalize();
+			} catch (cleanupError) {
+				logger.error(`Error auditing proxy host create ${createdRow.id}: ${cleanupError.message}`);
+			}
+			throw operationError;
 		}
+		await finalize();
 
 		return savedRow;
 	},
@@ -200,6 +224,17 @@ const internalProxyHost = {
 		});
 
 		let savedRow;
+		const finalize = async () => {
+			savedRow = await internalProxyHost.get(access, { id: thisData.id });
+
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "updated",
+				object_type: "proxy-host",
+				object_id: savedRow.id,
+				meta: savedRow,
+			});
+		};
 		try {
 			const fetchedRow = await internalProxyHost.get(access, {
 				id: thisData.id,
@@ -215,17 +250,16 @@ const internalProxyHost = {
 				// Configure nginx
 				await configureWithReachability(row);
 			}
-		} finally {
-			savedRow = await internalProxyHost.get(access, { id: thisData.id });
-
-			// Add to audit log
-			await internalAuditLog.add(access, {
-				action: "updated",
-				object_type: "proxy-host",
-				object_id: savedRow.id,
-				meta: savedRow,
-			});
+		} catch (operationError) {
+			// the audit write must never replace the operation's own error
+			try {
+				await finalize();
+			} catch (cleanupError) {
+				logger.error(`Error auditing proxy host update ${thisData.id}: ${cleanupError.message}`);
+			}
+			throw operationError;
 		}
+		await finalize();
 
 		return savedRow;
 	},
@@ -286,13 +320,7 @@ const internalProxyHost = {
 			}),
 		);
 
-		try {
-			// Delete Nginx Config
-			await internalNginx.deleteConfig("proxy_host", row);
-
-			await internalProxyHostAccessList.delete(row);
-			await internalNginx.reload();
-		} finally {
+		const finalize = async () => {
 			// Add to audit log
 			await internalAuditLog.add(access, {
 				action: "deleted",
@@ -300,7 +328,23 @@ const internalProxyHost = {
 				object_id: row.id,
 				meta: row,
 			});
+		};
+		try {
+			// Delete Nginx Config
+			await internalNginx.deleteConfig("proxy_host", row);
+
+			await internalProxyHostAccessList.delete(row);
+			await internalNginx.reload();
+		} catch (operationError) {
+			// the audit write must never replace the operation's own error
+			try {
+				await finalize();
+			} catch (cleanupError) {
+				logger.error(`Error auditing proxy host delete ${row.id}: ${cleanupError.message}`);
+			}
+			throw operationError;
 		}
+		await finalize();
 
 		return row;
 	},
@@ -338,17 +382,14 @@ const internalProxyHost = {
 
 		await proxyHostModel.query().where("id", row.id).patch({
 			enabled: 1,
+			// pessimistic until configure reports otherwise: a failed enable
+			// must not leave the previous online state on an enabled row
+			npmplus_nginx_online: false,
+			npmplus_nginx_err: "",
 		});
 
 		let savedRow;
-		try {
-			// Configure nginx
-			await configureWithReachability(
-				await internalProxyHostAccessList.populateLocationAccessLists(
-					internalProxyHostAccessList.cleanAccessListTypes(row),
-				),
-			);
-		} finally {
+		const finalize = async () => {
 			savedRow = await internalProxyHost.get(access, { id: row.id });
 
 			// Add to audit log
@@ -358,7 +399,24 @@ const internalProxyHost = {
 				object_id: row.id,
 				meta: savedRow,
 			});
+		};
+		try {
+			// Configure nginx
+			await configureWithReachability(
+				await internalProxyHostAccessList.populateLocationAccessLists(
+					internalProxyHostAccessList.cleanAccessListTypes(row),
+				),
+			);
+		} catch (operationError) {
+			// the audit write must never replace the operation's own error
+			try {
+				await finalize();
+			} catch (cleanupError) {
+				logger.error(`Error auditing proxy host enable ${row.id}: ${cleanupError.message}`);
+			}
+			throw operationError;
 		}
+		await finalize();
 
 		return savedRow;
 	},
@@ -388,11 +446,7 @@ const internalProxyHost = {
 		});
 
 		let savedRow;
-		try {
-			// Delete Nginx Config
-			await internalNginx.deleteConfig("proxy_host", row);
-			await internalNginx.reload();
-		} finally {
+		const finalize = async () => {
 			savedRow = await internalProxyHost.get(access, { id: row.id });
 
 			// Add to audit log
@@ -402,7 +456,21 @@ const internalProxyHost = {
 				object_id: row.id,
 				meta: savedRow,
 			});
+		};
+		try {
+			// Delete Nginx Config
+			await internalNginx.deleteConfig("proxy_host", row);
+			await internalNginx.reload();
+		} catch (operationError) {
+			// the audit write must never replace the operation's own error
+			try {
+				await finalize();
+			} catch (cleanupError) {
+				logger.error(`Error auditing proxy host disable ${row.id}: ${cleanupError.message}`);
+			}
+			throw operationError;
 		}
+		await finalize();
 
 		return savedRow;
 	},

@@ -1,6 +1,7 @@
 import errs from "../lib/error.js";
 import { castJsonIfNeed } from "../lib/helpers.js";
 import { assertPrivilegedNginxFields } from "../lib/nginx-privilege.js";
+import { global as logger } from "../logger.js";
 import deadHostModel from "../models/dead_host.js";
 import internalAuditLog from "./audit-log.js";
 import internalCertificate from "./certificate.js";
@@ -45,6 +46,17 @@ const internalDeadHost = {
 		const createdRow = await deadHostModel.query().insertAndFetch(thisData);
 
 		let savedRow;
+		const finalize = async () => {
+			savedRow = await internalDeadHost.get(access, { id: createdRow.id });
+
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "created",
+				object_type: "dead-host",
+				object_id: savedRow.id,
+				meta: savedRow,
+			});
+		};
 		try {
 			if (createCertificate) {
 				// update host with cert id
@@ -61,17 +73,16 @@ const internalDeadHost = {
 
 			// Configure nginx
 			await internalNginx.configure(deadHostModel, "dead_host", row);
-		} finally {
-			savedRow = await internalDeadHost.get(access, { id: createdRow.id });
-
-			// Add to audit log
-			await internalAuditLog.add(access, {
-				action: "created",
-				object_type: "dead-host",
-				object_id: savedRow.id,
-				meta: savedRow,
-			});
+		} catch (operationError) {
+			// the audit write must never replace the operation's own error
+			try {
+				await finalize();
+			} catch (cleanupError) {
+				logger.error(`Error auditing dead host create ${createdRow.id}: ${cleanupError.message}`);
+			}
+			throw operationError;
 		}
+		await finalize();
 
 		return savedRow;
 	},
@@ -135,6 +146,17 @@ const internalDeadHost = {
 		await deadHostModel.query().where({ id: thisData.id }).patch(thisData);
 
 		let savedRow;
+		const finalize = async () => {
+			savedRow = await internalDeadHost.get(access, { id: thisData.id });
+
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "updated",
+				object_type: "dead-host",
+				object_id: savedRow.id,
+				meta: savedRow,
+			});
+		};
 		try {
 			const row = await internalDeadHost.get(access, {
 				id: thisData.id,
@@ -146,17 +168,16 @@ const internalDeadHost = {
 				// Configure nginx
 				await internalNginx.configure(deadHostModel, "dead_host", row);
 			}
-		} finally {
-			savedRow = await internalDeadHost.get(access, { id: thisData.id });
-
-			// Add to audit log
-			await internalAuditLog.add(access, {
-				action: "updated",
-				object_type: "dead-host",
-				object_id: savedRow.id,
-				meta: savedRow,
-			});
+		} catch (operationError) {
+			// the audit write must never replace the operation's own error
+			try {
+				await finalize();
+			} catch (cleanupError) {
+				logger.error(`Error auditing dead host update ${thisData.id}: ${cleanupError.message}`);
+			}
+			throw operationError;
 		}
+		await finalize();
 
 		return savedRow;
 	},
@@ -215,11 +236,7 @@ const internalDeadHost = {
 			is_deleted: 1,
 		});
 
-		try {
-			// Delete Nginx Config
-			await internalNginx.deleteConfig("dead_host", row);
-			await internalNginx.reload();
-		} finally {
+		const finalize = async () => {
 			// Add to audit log
 			await internalAuditLog.add(access, {
 				action: "deleted",
@@ -227,7 +244,21 @@ const internalDeadHost = {
 				object_id: row.id,
 				meta: row,
 			});
+		};
+		try {
+			// Delete Nginx Config
+			await internalNginx.deleteConfig("dead_host", row);
+			await internalNginx.reload();
+		} catch (operationError) {
+			// the audit write must never replace the operation's own error
+			try {
+				await finalize();
+			} catch (cleanupError) {
+				logger.error(`Error auditing dead host delete ${row.id}: ${cleanupError.message}`);
+			}
+			throw operationError;
 		}
+		await finalize();
 
 		return row;
 	},
@@ -265,13 +296,14 @@ const internalDeadHost = {
 
 		await deadHostModel.query().where("id", row.id).patch({
 			enabled: 1,
+			// pessimistic until configure reports otherwise: a failed enable
+			// must not leave the previous online state on an enabled row
+			npmplus_nginx_online: false,
+			npmplus_nginx_err: "",
 		});
 
 		let savedRow;
-		try {
-			// Configure nginx
-			await internalNginx.configure(deadHostModel, "dead_host", row);
-		} finally {
+		const finalize = async () => {
 			savedRow = await internalDeadHost.get(access, { id: row.id });
 
 			// Add to audit log
@@ -281,7 +313,20 @@ const internalDeadHost = {
 				object_id: row.id,
 				meta: savedRow,
 			});
+		};
+		try {
+			// Configure nginx
+			await internalNginx.configure(deadHostModel, "dead_host", row);
+		} catch (operationError) {
+			// the audit write must never replace the operation's own error
+			try {
+				await finalize();
+			} catch (cleanupError) {
+				logger.error(`Error auditing dead host enable ${row.id}: ${cleanupError.message}`);
+			}
+			throw operationError;
 		}
+		await finalize();
 
 		return savedRow;
 	},
@@ -311,11 +356,7 @@ const internalDeadHost = {
 		});
 
 		let savedRow;
-		try {
-			// Delete Nginx Config
-			await internalNginx.deleteConfig("dead_host", row);
-			await internalNginx.reload();
-		} finally {
+		const finalize = async () => {
 			savedRow = await internalDeadHost.get(access, { id: row.id });
 
 			// Add to audit log
@@ -325,7 +366,21 @@ const internalDeadHost = {
 				object_id: row.id,
 				meta: savedRow,
 			});
+		};
+		try {
+			// Delete Nginx Config
+			await internalNginx.deleteConfig("dead_host", row);
+			await internalNginx.reload();
+		} catch (operationError) {
+			// the audit write must never replace the operation's own error
+			try {
+				await finalize();
+			} catch (cleanupError) {
+				logger.error(`Error auditing dead host disable ${row.id}: ${cleanupError.message}`);
+			}
+			throw operationError;
 		}
+		await finalize();
 
 		return savedRow;
 	},

@@ -593,3 +593,33 @@ security-ui against the image built from this branch). The Linux-only
 python contracts (installer-recovery, heal-migration, upstream-sync) and
 `sort-locale.sh` (needs jq) reproduce identically on a pristine fork-HEAD
 worktree on this rig and stay green on CI.
+
+## Post-merge review (September 26)
+
+A three-reviewer pass over the merged tree landed two fix commits on develop
+(recorded in the changelog): the response-layer user masking restored as
+model `$formatJson` hooks, and error-preservation hardening across the host
+CRUD paths. Three items are recorded here so a future sync cannot silently
+drop or misread them:
+
+- **SEC-002, accepted as upstream shape.** The production error handler in
+  `app.js` honors `err.expose` (http-errors convention) in addition to the
+  fork's `err.public`-only rule. Only body-parser and multer set `expose` in
+  this tree, both already user-facing, so the widening is benign. It stays
+  because upstream relies on it; if a future dependency classifies an
+  internal error with `expose: true`, tighten the handler then, with a test.
+- **H-6, deferred to a follow-up issue.** `meta_to_columns`
+  (`20260926160524`) interleaves `alterTable` with per-row updates whose
+  `JSON.parse` can throw on corrupt meta. On the MySQL family, DDL commits
+  implicitly, so a mid-loop failure leaves the columns added but the
+  migration unrecorded — and the 1s startup retry re-runs the alter and
+  dies on duplicate columns (MySQL has no `ADD COLUMN IF NOT EXISTS`).
+  Restructuring (validate-before-alter, or split DDL/DML migrations) is
+  follow-up work, not a merge hotfix. SQLite, the tested default, is
+  unaffected.
+- **The certificate renew site is the one exception to the hands-off
+  restriction above.** Converting its audit write to the shared
+  `finalize()` shape was explicitly in the approved error-preservation
+  scope; the DNS-01 pipeline and its `certificate-dns.test.js` pins are
+  untouched and green. This is a deliberate, owner-approved exception, not
+  a precedent for restructuring the file.

@@ -686,7 +686,7 @@ test("proxy host create reports an unreachable forward destination", async (t) =
 	assert.ok(created.body.meta.reach_err, "no reach error message stored");
 });
 
-test("proxy host without a tcp destination skips the reachability probe", async (t) => {
+test("proxy host without a tcp destination clears the reachability probe state", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 
 	const created = await api("POST", "/api/nginx/proxy-hosts", {
@@ -699,7 +699,10 @@ test("proxy host without a tcp destination skips the reachability probe", async 
 		},
 	});
 	assert.equal(created.status, 201, created.text);
-	assert.equal("reach_ok" in created.body.meta, false, created.text);
+	// a non-tcp destination has nothing to probe; the save must clear any
+	// reach state a previous destination probed instead of leaving it stale
+	assert.equal(created.body.meta.reach_ok, null, created.text);
+	assert.equal(created.body.meta.reach_err, null, created.text);
 });
 
 // CrowdSec routes: no LAPI is wired in the test environment, so these pin the

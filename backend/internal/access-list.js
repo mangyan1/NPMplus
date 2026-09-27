@@ -61,9 +61,7 @@ const internalAccessList = {
 			expand: ["items", "clients"],
 		});
 
-		try {
-			await internalAccessList.build(freshRow);
-		} finally {
+		const finalize = async () => {
 			// Add to audit log
 			await internalAuditLog.add(access, {
 				action: "created",
@@ -71,7 +69,19 @@ const internalAccessList = {
 				object_id: freshRow.id,
 				meta: freshRow,
 			});
+		};
+		try {
+			await internalAccessList.build(freshRow);
+		} catch (operationError) {
+			// the audit write must never replace the operation's own error
+			try {
+				await finalize();
+			} catch (cleanupError) {
+				logger.error(`Error auditing access list create ${freshRow.id}: ${cleanupError.message}`);
+			}
+			throw operationError;
 		}
+		await finalize();
 
 		return freshRow;
 	},
@@ -154,6 +164,15 @@ const internalAccessList = {
 
 		const savedRow = { ...freshRow, proxy_hosts: undefined };
 
+		const finalize = async () => {
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "updated",
+				object_type: "access-list",
+				object_id: data.id,
+				meta: savedRow,
+			});
+		};
 		try {
 			await internalAccessList.build(freshRow);
 			if (Number.parseInt(freshRow.proxy_host_count, 10)) {
@@ -167,15 +186,16 @@ const internalAccessList = {
 				await internalNginx.bulkGenerateConfigs(proxyHostModel, "proxy_host", freshRow.proxy_hosts);
 			}
 			await internalNginx.reload();
-		} finally {
-			// Add to audit log
-			await internalAuditLog.add(access, {
-				action: "updated",
-				object_type: "access-list",
-				object_id: data.id,
-				meta: savedRow,
-			});
+		} catch (operationError) {
+			// the audit write must never replace the operation's own error
+			try {
+				await finalize();
+			} catch (cleanupError) {
+				logger.error(`Error auditing access list update ${data.id}: ${cleanupError.message}`);
+			}
+			throw operationError;
 		}
+		await finalize();
 
 		return savedRow;
 	},
@@ -297,6 +317,15 @@ const internalAccessList = {
 		});
 		const deletedRow = { ...row, proxy_hosts: undefined };
 
+		const finalize = async () => {
+			// 4. audit log
+			await internalAuditLog.add(access, {
+				action: "deleted",
+				object_type: "access-list",
+				object_id: row.id,
+				meta: deletedRow,
+			});
+		};
 		try {
 			// 3. Write the changes to the database and the config
 			if (affectedHosts.length > 0) {
@@ -329,15 +358,16 @@ const internalAccessList = {
 
 			// delete the htpasswd file
 			await rm(internalAccessList.getFilename(row), { force: true });
-		} finally {
-			// 4. audit log
-			await internalAuditLog.add(access, {
-				action: "deleted",
-				object_type: "access-list",
-				object_id: row.id,
-				meta: deletedRow,
-			});
+		} catch (operationError) {
+			// the audit write must never replace the operation's own error
+			try {
+				await finalize();
+			} catch (cleanupError) {
+				logger.error(`Error auditing access list delete ${row.id}: ${cleanupError.message}`);
+			}
+			throw operationError;
 		}
+		await finalize();
 		return deletedRow;
 	},
 

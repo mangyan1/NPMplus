@@ -118,7 +118,13 @@ const internalNginx = {
 	 * @returns {Promise}
 	 */
 	renderLocations: async (host) => {
-		const template = await utils.getParsedTemplate(`${__dirname}/../templates/_proxy_host_custom_location.conf`);
+		let template;
+		try {
+			template = await utils.getParsedTemplate(`${__dirname}/../templates/_proxy_host_custom_location.conf`);
+		} catch (err) {
+			// a broken template load is a config problem the user must see, not a 500
+			throw new errs.ConfigurationError(err.message);
+		}
 
 		const renderEngine = utils.getRenderEngine();
 		let renderedLocations = "";
@@ -157,7 +163,13 @@ const internalNginx = {
 	 * @returns {Promise}
 	 */
 	renderUpstreams: async (host) => {
-		const template = await utils.getParsedTemplate(`${__dirname}/../templates/_upstream.conf`);
+		let template;
+		try {
+			template = await utils.getParsedTemplate(`${__dirname}/../templates/_upstream.conf`);
+		} catch (err) {
+			// a broken template load is a config problem the user must see, not a 500
+			throw new errs.ConfigurationError(err.message);
+		}
 
 		const renderEngine = utils.getRenderEngine();
 		let renderedUpstreams = "";
@@ -227,7 +239,13 @@ const internalNginx = {
 
 		const filename = internalNginx.getConfigName(nice_host_type, host.id);
 
-		const template = await utils.getParsedTemplate(`${__dirname}/../templates/${nice_host_type}.conf`);
+		let template;
+		try {
+			template = await utils.getParsedTemplate(`${__dirname}/../templates/${nice_host_type}.conf`);
+		} catch (err) {
+			// a broken template load is a config problem the user must see, not a 500
+			throw new errs.ConfigurationError(err.message);
+		}
 
 		host.env = process.env;
 
@@ -357,16 +375,21 @@ const internalNginx = {
 			}
 		}
 
-		const config_text = await renderEngine.render(template, host);
+		try {
+			const config_text = await renderEngine.render(template, host);
 
-		await writeFile(filename, config_text, { encoding: "utf8" });
-		debug(logger, "Wrote config:", filename);
+			await writeFile(filename, config_text, { encoding: "utf8" });
+			debug(logger, "Wrote config:", filename);
 
-		if (process.env.DISABLE_NGINX_BEAUTIFIER === "false") {
-			await utils.execFile("nginxbeautifier", ["-s", "2", filename]).catch(() => {});
+			if (process.env.DISABLE_NGINX_BEAUTIFIER === "false") {
+				await utils.execFile("nginxbeautifier", ["-s", "2", filename]).catch(() => {});
+			}
+
+			return true;
+		} catch (err) {
+			debug(logger, `Could not write ${filename}:`, err.message);
+			throw new errs.ConfigurationError(err.message);
 		}
-
-		return true;
 	},
 
 	/**
