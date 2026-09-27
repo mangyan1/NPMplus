@@ -171,9 +171,7 @@ test("an unknown dns provider fails fast without touching pip or certbot", async
 		/Unknown DNS provider/,
 	);
 	await assert.rejects(
-		internalCertificate.renewCertbotWithDnsChallenge(
-			fakeCertificate({ npmplus_dns_provider: "no-such-provider" }),
-		),
+		internalCertificate.renewCertbotWithDnsChallenge(fakeCertificate({ npmplus_dns_provider: "no-such-provider" })),
 		/Unknown DNS provider/,
 	);
 	assert.deepEqual(calls, [], "no external command may run for an unknown provider");
