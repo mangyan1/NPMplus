@@ -152,14 +152,14 @@ const setupCertbotPlugins = async () => {
 		const plugins = [];
 
 		for (const certificate of certificates) {
-			if (certificate.meta && certificate.meta.dns_challenge === true) {
-				if (plugins.indexOf(certificate.meta.dns_provider) === -1) {
-					plugins.push(certificate.meta.dns_provider);
+			if (certificate.npmplus_dns_challenge) {
+				if (plugins.indexOf(certificate.npmplus_dns_provider) === -1) {
+					plugins.push(certificate.npmplus_dns_provider);
 				}
 
 				await writeFile(
 					`/tmp/certbot-credentials/credentials-${certificate.id}`,
-					certificate.meta.dns_provider_credentials,
+					certificate.npmplus_dns_provider_credentials,
 					{ mode: 0o600 },
 				);
 			}
@@ -190,7 +190,7 @@ const regenerateAllHosts = async () => {
 			.query()
 			.where("is_deleted", 0)
 			.andWhere("enabled", 1)
-			.withGraphFetched(proxyModel.defaultAllowGraph);
+			.withGraphFetched("[access_lists.[clients,items],certificate]");
 
 		if (proxyHosts?.length > 0) {
 			// locations dont contain access list objects, so prepopulate them before generating the nginx files
@@ -208,7 +208,7 @@ const regenerateAllHosts = async () => {
 			.query()
 			.where("is_deleted", 0)
 			.andWhere("enabled", 1)
-			.withGraphFetched(redirectionModel.defaultAllowGraph);
+			.withGraphFetched("certificate");
 
 		if (redirectionHosts?.length > 0) {
 			await internalNginx.bulkGenerateConfigs(redirectionModel, "redirection_host", redirectionHosts, {
@@ -220,7 +220,7 @@ const regenerateAllHosts = async () => {
 			.query()
 			.where("is_deleted", 0)
 			.andWhere("enabled", 1)
-			.withGraphFetched(deadModel.defaultAllowGraph);
+			.withGraphFetched("certificate");
 
 		if (deadHosts?.length > 0) {
 			await internalNginx.bulkGenerateConfigs(deadModel, "dead_host", deadHosts, { skipReload: true });
@@ -230,7 +230,7 @@ const regenerateAllHosts = async () => {
 			.query()
 			.where("is_deleted", 0)
 			.andWhere("enabled", 1)
-			.withGraphFetched(streamModel.defaultAllowGraph);
+			.withGraphFetched("certificate");
 
 		if (streamHosts?.length > 0) {
 			await internalNginx.bulkGenerateConfigs(streamModel, "stream", streamHosts, { skipReload: true });
@@ -260,6 +260,9 @@ const setupAio = async () => {
 			forward_scheme: "http",
 			forward_host: "127.0.0.1",
 			forward_port: 11000,
+			npmplus_crowdsec_appsec: false,
+			npmplus_proxy_request_buffering: true,
+			npmplus_proxy_response_buffering: true,
 			certificate_id: "new",
 			ssl_forced: true,
 			hsts_enabled: true,

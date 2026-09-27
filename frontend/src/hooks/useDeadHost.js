@@ -12,15 +12,16 @@ const fetchDeadHost = (id) => {
 			certificateId: 0,
 			sslForced: false,
 			advancedConfig: "",
-			meta: {},
-			http2Support: true,
+			npmplusDirectory: "",
+			npmplusMtlsCertificateId: 0,
+			npmplusMtlsVerifyClientOptional: false,
 			npmplusHttp3Support: false,
 			enabled: true,
 			hstsEnabled: false,
 			hstsSubdomains: false,
 		});
 	}
-	return getDeadHost(id, ["owner"]);
+	return getDeadHost(id);
 };
 
 const useDeadHost = (id, options = {}) => {

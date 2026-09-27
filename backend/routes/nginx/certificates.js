@@ -5,8 +5,8 @@ import { rateLimit } from "express-rate-limit";
 import multer from "multer";
 import dnsPlugins from "../../certbot/dns-plugins.json" with { type: "json" };
 import internalCertificate from "../../internal/certificate.js";
-import errs from "../../lib/error.js";
 import jwtdecode from "../../lib/express/jwt-decode.js";
+import requireLogin from "../../lib/express/require-login.js";
 import apiValidator from "../../lib/validator/api.js";
 import validator from "../../lib/validator/index.js";
 import { debug, express as logger } from "../../logger.js";
@@ -17,6 +17,19 @@ const listSchema = {
 	properties: {
 		expand: {
 			$ref: "common#/properties/expand",
+			items: {
+				enum: [
+					"owner",
+					"proxy_hosts",
+					"redirection_hosts",
+					"dead_hosts",
+					"streams",
+					"mtls_proxy_hosts",
+					"mtls_redirection_hosts",
+					"mtls_dead_hosts",
+					"mtls_streams",
+				],
+			},
 		},
 		query: {
 			$ref: "common#/properties/query",
@@ -30,9 +43,6 @@ const certificateSchema = {
 	properties: {
 		certificate_id: {
 			$ref: "common#/properties/id",
-		},
-		expand: {
-			$ref: "common#/properties/expand",
 		},
 	},
 };
@@ -77,7 +87,7 @@ router
 	 *
 	 * Retrieve all certificates
 	 */
-	.get(async (req, res, _next) => {
+	.get(async (req, res) => {
 		const data = await validator(listSchema, {
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
 			query: typeof req.query.query === "string" ? req.query.query : null,
@@ -91,7 +101,7 @@ router
 	 *
 	 * Create a new certificate
 	 */
-	.post(async (req, res, _next) => {
+	.post(async (req, res) => {
 		const payload = apiValidator(getValidationSchema("/nginx/certificates", "post"), req.body);
 		req.setTimeout(900000); // 15 minutes timeout
 		const result = await internalCertificate.create(res.locals.access, payload);
@@ -103,17 +113,14 @@ router
  */
 router
 	.route("/dns-providers")
-	.all(jwtdecode())
+	.all(requireLogin())
 
 	/**
 	 * GET /api/nginx/certificates/dns-providers
 	 *
 	 * Get list of all supported DNS providers
 	 */
-	.get((_req, res, _next) => {
-		if (!res.locals.access.token.getUserId()) {
-			throw new errs.PermissionError("Login required");
-		}
+	.get((_, res) => {
 		const clean = Object.keys(dnsPlugins).map((key) => ({
 			id: key,
 			name: dnsPlugins[key].name,
@@ -138,7 +145,7 @@ router
 	 *
 	 * Test HTTP challenge for domains
 	 */
-	.post(async (req, res, _next) => {
+	.post(async (req, res) => {
 		const payload = apiValidator(getValidationSchema("/nginx/certificates/test-http", "post"), req.body);
 		req.setTimeout(60000); // 1 minute timeout
 
@@ -160,7 +167,7 @@ router
 	 *
 	 * Validate certificates
 	 */
-	.post(parseCertFiles, (req, res, _next) => {
+	.post(parseCertFiles, (req, res) => {
 		if (!req.files?.certificate) return res.status(400).send({ error: "certificate file is required" });
 
 		const result = internalCertificate.validate(res.locals.access, {
@@ -183,14 +190,12 @@ router
 	 *
 	 * Retrieve a specific certificate
 	 */
-	.get(async (req, res, _next) => {
+	.get(async (req, res) => {
 		const data = await validator(certificateSchema, {
 			certificate_id: req.params.certificate_id,
-			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
 		});
 		const row = await internalCertificate.get(res.locals.access, {
 			id: Number.parseInt(data.certificate_id, 10),
-			expand: data.expand,
 		});
 		res.status(200).send(row);
 	})
@@ -200,7 +205,7 @@ router
 	 *
 	 * Update and existing certificate
 	 */
-	.delete(async (req, res, _next) => {
+	.delete(async (req, res) => {
 		const result = await internalCertificate.delete(res.locals.access, {
 			id: Number.parseInt(req.params.certificate_id, 10),
 		});
@@ -221,7 +226,7 @@ router
 	 *
 	 * Upload certificates
 	 */
-	.post(parseCertFiles, async (req, res, _next) => {
+	.post(parseCertFiles, async (req, res) => {
 		if (!req.files?.certificate) return res.status(400).send({ error: "certificate file is required" });
 
 		const result = await internalCertificate.upload(res.locals.access, {
@@ -245,7 +250,7 @@ router
 	 *
 	 * Renew certificate
 	 */
-	.post(async (req, res, _next) => {
+	.post(async (req, res) => {
 		req.setTimeout(900000); // 15 minutes timeout
 		const result = await internalCertificate.renew(res.locals.access, {
 			id: Number.parseInt(req.params.certificate_id, 10),

@@ -47,15 +47,12 @@ async function processResponse(response, reload = true) {
 	}
 	return camelizeKeys(payload);
 }
-async function baseGet({ url, params }, abortSource) {
+export async function get({ url, params, reload }, abortSource) {
 	const apiUrl = buildUrl({ url, params });
 	const method = "GET";
 	const signal = getAbortSignal(abortSource);
 	const response = await fetch(apiUrl, { method, signal });
-	return response;
-}
-export async function get(args, abortSource) {
-	return processResponse(await baseGet(args, abortSource), args.reload);
+	return processResponse(response, reload);
 }
 export async function download({ url, params }, filename = "download.file") {
 	const res = await fetch(buildUrl({ url, params }));

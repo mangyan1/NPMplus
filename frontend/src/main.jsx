@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "src/App.jsx";
 import installDeploymentRecovery from "src/fork/deployment-recovery";
 
-import "@tabler/core/dist/js/tabler.min.js";
+import "@tabler/core";
 
 installDeploymentRecovery();
 
@@ -14,7 +14,6 @@ installDeploymentRecovery();
 await (document.dir === "rtl"
 	? import("@tabler/core/dist/css/tabler.rtl.min.css")
 	: import("@tabler/core/dist/css/tabler.min.css"));
-await import("./App.css");
 
 ReactDOM.createRoot(document.getElementById("root")).render(
 	<React.StrictMode>

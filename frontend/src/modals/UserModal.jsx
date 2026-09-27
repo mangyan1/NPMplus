@@ -206,7 +206,7 @@ const UserModal = EasyModal.create(({ id, visible, remove }) => {
 										</h4>
 										<div className="divide-y">
 											<div>
-												<label className="row" htmlFor="isAdmin">
+												<label className="row cursor-pointer" htmlFor="isAdmin">
 													<span className="col">
 														<T id="role.admin" />
 													</span>
@@ -227,7 +227,7 @@ const UserModal = EasyModal.create(({ id, visible, remove }) => {
 												</label>
 											</div>
 											<div>
-												<label className="row" htmlFor="isDisabled">
+												<label className="row cursor-pointer" htmlFor="isDisabled">
 													<span className="col">
 														<T id="disabled" />
 													</span>

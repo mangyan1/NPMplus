@@ -75,7 +75,7 @@ export default function Table({
 			columnHelper.accessor(
 				(row) => {
 					if (!row.enabled) return "3disabled";
-					if (row.meta.nginxOnline) return "2online";
+					if (row.npmplusNginxOnline) return "2online";
 					return "1offline";
 				},
 				{
@@ -86,8 +86,8 @@ export default function Table({
 						return (
 							<StatusFormatter
 								enabled={value.enabled}
-								nginxOnline={value.meta.nginxOnline}
-								nginxErr={value.meta.nginxErr}
+								nginxOnline={value.npmplusNginxOnline}
+								nginxErr={value.npmplusNginxErr}
 							/>
 						);
 					},
@@ -110,6 +110,7 @@ export default function Table({
 							className="btn dropdown-toggle btn-action btn-sm px-1"
 							data-bs-boundary="viewport"
 							data-bs-toggle="dropdown"
+							data-bs-popper-config='{"strategy":"fixed"}'
 						>
 							<IconDotsVertical />
 						</button>

@@ -73,6 +73,10 @@ Every service should say `Up`, and `npmplus` should become `healthy` after start
 
 Moving to another machine, reading logs, recovering a failed update, and the advanced opt-ins an ordinary update deliberately preserves (AppSec, protected startup, the Cloudflare origin lock) are all covered in [host setup and operations](docs/setup-npmplus.md) - migration is three commands, and [Diagnostics](docs/setup-npmplus.md#diagnostics) covers logs, CrowdSec checks, and backup restoration.
 
+## Encrypted Client Hello (ECH)
+
+NPMplus can generate and automatically rotate ECH keys: fill `/opt/npmplus/tls/ech/cron.sh` with a script that calls the built-in `ech.sh` and pushes the resulting config to your DNS provider's HTTPS records. The container runs the script hourly (`ECH_ROTATION_INTERVAL` in `compose.yaml`), enables ECH in nginx, and reloads. Clearing the file disables ECH again. Full instructions and a Cloudflare example script ([`ech-cron-cloudflare-example.sh`](ech-cron-cloudflare-example.sh)) are in [docs/ech.md](docs/ech.md).
+
 ## What this fork adds
 
 - One interactive installer for installation, updates, diagnostics, restore, and uninstall, with loopback-only dashboard access by default.

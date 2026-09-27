@@ -59,7 +59,7 @@ export default {
 
 		const user = await userModel
 			.query()
-			.where("email", data.identity.toLowerCase().trim())
+			.where("email", data.identity.toLowerCase())
 			.andWhere("is_deleted", 0)
 			.andWhere("is_disabled", 0)
 			.first();

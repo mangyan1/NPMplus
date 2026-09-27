@@ -14,18 +14,18 @@ const fetchRedirectionHost = (id) => {
 			certificateId: 0,
 			sslForced: false,
 			advancedConfig: "",
-			meta: {},
-			http2Support: true,
+			npmplusDirectory: "",
+			npmplusMtlsCertificateId: 0,
+			npmplusMtlsVerifyClientOptional: false,
 			npmplusHttp3Support: false,
 			forwardScheme: "auto",
 			forwardHttpCode: 301,
-			blockExploits: false,
 			enabled: true,
 			hstsEnabled: false,
 			hstsSubdomains: false,
 		});
 	}
-	return getRedirectionHost(id, ["owner"]);
+	return getRedirectionHost(id);
 };
 
 const useRedirectionHost = (id, options = {}) => {

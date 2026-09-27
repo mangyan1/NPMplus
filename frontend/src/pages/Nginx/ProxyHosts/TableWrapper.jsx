@@ -36,11 +36,6 @@ export default function TableWrapper() {
 		);
 	}
 
-	const handleDelete = async (id) => {
-		await deleteProxyHost(id);
-		showObjectSuccess("proxy-host", "deleted");
-	};
-
 	const handleDisableToggle = async (id, enabled) => {
 		await toggleProxyHost(id, enabled);
 		await Promise.all([
@@ -77,7 +72,10 @@ export default function TableWrapper() {
 			const host = data?.find((item) => item.id === id);
 			showDeleteConfirmModal({
 				title: <T id="object.delete" tData={{ object: "proxy-host" }} />,
-				onConfirm: () => handleDelete(id),
+				onConfirm: async () => {
+					await deleteProxyHost(id);
+					showObjectSuccess("proxy-host", "deleted");
+				},
 				invalidations: [["proxy-hosts"], ["proxy-host", id]],
 				children: <T id="object.delete.content" tData={{ object: "proxy-host" }} />,
 				subject: host?.domainNames.join(", "),

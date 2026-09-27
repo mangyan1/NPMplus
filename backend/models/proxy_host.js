@@ -3,7 +3,7 @@
 
 import { Model } from "objection";
 import db from "../db.js";
-import { convertBoolFieldsToInt, convertIntFieldsToBool } from "../lib/helpers.js";
+import { convertBoolFieldsToInt, convertIntFieldsToBool, removeCertificateFields } from "../lib/helpers.js";
 import AccessList from "./access_list.js";
 import Certificate from "./certificate.js";
 import now from "./now_helper.js";
@@ -12,23 +12,19 @@ import User from "./user.js";
 Model.knex(db());
 
 const boolFields = [
-	"is_deleted",
 	"ssl_forced",
-	"caching_enabled",
-	"block_exploits",
-	"allow_websocket_upgrade",
-	"http2_support",
 	"npmplus_http3_support",
 	"enabled",
 	"hsts_enabled",
 	"hsts_subdomains",
-	"trust_forwarded_proto",
 	"npmplus_noindex",
 	"npmplus_crowdsec_appsec",
 	"npmplus_proxy_request_buffering",
 	"npmplus_proxy_response_buffering",
 	"npmplus_upstream_compression",
 	"npmplus_fancyindex",
+	"npmplus_nginx_online",
+	"npmplus_mtls_verify_client_optional",
 ];
 
 class ProxyHost extends Model {
@@ -37,24 +33,20 @@ class ProxyHost extends Model {
 		this.modified_on = now();
 
 		// Default for domain_names
-		if (typeof this.domain_names === "undefined") {
-			this.domain_names = [];
-		}
+		this.domain_names ??= [];
 
 		// Default for meta
-		if (typeof this.meta === "undefined") {
-			this.meta = {};
-		}
+		this.meta ??= {};
+		this.advanced_config ??= "";
+		this.npmplus_location_config ??= "";
+		this.npmplus_nginx_err ??= "";
+		this.locations ??= [];
 
 		// Default for access list type
-		if (typeof this.npmplus_access_list_type === "undefined") {
-			this.npmplus_access_list_type = "public";
-		}
+		this.npmplus_access_list_type ??= "public";
 
 		// Default for access list ids
-		if (typeof this.npmplus_access_list_ids === "undefined") {
-			this.npmplus_access_list_ids = [];
-		}
+		this.npmplus_access_list_ids ??= [];
 	}
 
 	$beforeUpdate() {
@@ -62,12 +54,21 @@ class ProxyHost extends Model {
 	}
 
 	$parseDatabaseJson(json) {
-		const thisJson = super.$parseDatabaseJson(json);
+		const {
+			is_deleted,
+			access_list_id,
+			caching_enabled,
+			block_exploits,
+			allow_websocket_upgrade,
+			http2_support,
+			trust_forwarded_proto,
+			...thisJson
+		} = super.$parseDatabaseJson(json);
 		return convertIntFieldsToBool(thisJson, boolFields);
 	}
 
 	$formatDatabaseJson(json) {
-		const thisJson = convertBoolFieldsToInt(json, boolFields);
+		const thisJson = convertBoolFieldsToInt(removeCertificateFields(json), boolFields);
 		return super.$formatDatabaseJson(thisJson);
 	}
 
@@ -81,10 +82,6 @@ class ProxyHost extends Model {
 
 	static get jsonAttributes() {
 		return ["domain_names", "meta", "locations", "npmplus_access_list_ids"];
-	}
-
-	static get defaultAllowGraph() {
-		return "[owner,access_lists.[clients,items],certificate]";
 	}
 
 	static get relationMappings() {

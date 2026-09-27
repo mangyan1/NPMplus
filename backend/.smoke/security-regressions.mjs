@@ -102,7 +102,7 @@ for (const destination of [
 }
 const created = await delegated.request("POST", "/nginx/proxy-hosts", host);
 check("normal delegated proxy created", created.status, 201);
-check("real nginx accepts normal proxy", created.data.meta.nginx_online, true);
+check("real nginx accepts normal proxy", created.data.npmplus_nginx_online, true);
 const hostUrl = `/nginx/proxy-hosts/${created.data.id}`;
 check(
 	"socket update rejected",
@@ -151,7 +151,7 @@ const app = await admin.request("POST", "/nginx/proxy-hosts", {
 	forward_port: null,
 });
 check("admin application socket remains supported", app.status, 201);
-check("nginx accepts application socket", app.data.meta.nginx_online, true);
+check("nginx accepts application socket", app.data.npmplus_nginx_online, true);
 await admin.request("DELETE", `/nginx/proxy-hosts/${app.data.id}`);
 for (const username of ["bad:name", "bad\nname", "bad\rname"]) {
 	check(

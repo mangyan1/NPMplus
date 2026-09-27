@@ -1,10 +1,8 @@
 import crypto from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
 import process from "node:process";
-import _ from "lodash";
 import { fetchWithTimeout, readBoundedBuffer } from "../lib/bounded-fetch.js";
 import errs from "../lib/error.js";
-import utils from "../lib/utils.js";
 import { gravatar as logger } from "../logger.js";
 import authModel from "../models/auth.js";
 import userModel from "../models/user.js";
@@ -13,16 +11,6 @@ import pjson from "../package.json" with { type: "json" };
 import internalAuditLog from "./audit-log.js";
 import internalToken from "./token.js";
 
-const omissions = () => [
-	"is_deleted",
-	"nickname",
-	"npmplus_token_valid_after",
-	"permissions.id",
-	"permissions.user_id",
-	"permissions.created_on",
-	"permissions.modified_on",
-];
-
 const avatarExts = ["png", "jpg", "gif", "webp"];
 
 const avatarExt = (b) => {
@@ -30,8 +18,9 @@ const avatarExt = (b) => {
 	if (b.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"))) return "png";
 	if (b.subarray(0, 3).equals(Buffer.from("ffd8ff", "hex"))) return "jpg";
 	if (b.subarray(0, 4).toString("latin1") === "GIF8") return "gif";
-	if (b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP")
+	if (b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP") {
 		return "webp";
+	}
 	return null;
 };
 
@@ -115,7 +104,7 @@ const internalUser = {
 		data.avatar = data.avatar || "";
 		data.roles = data.roles || [];
 
-		data.email = data.email.toLowerCase().trim();
+		data.email = data.email.toLowerCase();
 
 		if (typeof data.is_disabled !== "undefined") {
 			data.is_disabled = data.is_disabled ? 1 : 0;
@@ -127,7 +116,7 @@ const internalUser = {
 			throw new errs.ValidationError(`Email address already in use - ${data.email}`);
 		}
 
-		let user = utils.omitRow(omissions())(await userModel.query().insertAndFetch(data));
+		let user = await userModel.query().insertAndFetch(data);
 		if (auth) {
 			await authModel.query().insert({
 				user_id: user.id,
@@ -155,7 +144,7 @@ const internalUser = {
 			.query()
 			.patchAndFetchById(user.id, { avatar: await internalUser.fetchGravatar(user.id, user.email, user.name) });
 
-		user = await internalUser.get(access, { id: user.id, expand: ["permissions"] });
+		user = await internalUser.get(access, { id: user.id });
 
 		await internalAuditLog.add(access, {
 			action: "created",
@@ -178,7 +167,16 @@ const internalUser = {
 		await rmAvatars("avatar", user.id);
 		await writeFile(`/data/npmplus/avatar/${user.id}.${ext}`, file.buffer);
 		await userModel.query().patchAndFetchById(user.id, { avatar: `/images/avatar/${user.id}.${ext}` });
-		return internalUser.update(access, { id: user.id });
+		const savedUser = await internalUser.get(access, { id: user.id });
+
+		await internalAuditLog.add(access, {
+			action: "updated",
+			object_type: "user",
+			object_id: savedUser.id,
+			meta: { ...savedUser, avatar_changed: true },
+		});
+
+		return savedUser;
 	},
 
 	deleteAvatar: async (access, id) => {
@@ -211,7 +209,7 @@ const internalUser = {
 		const existingUser = await internalUser.get(access, { id: data.id });
 		// 2. if email is to be changed, find other users with that email
 		if (typeof data.email !== "undefined") {
-			data.email = data.email.toLowerCase().trim();
+			data.email = data.email.toLowerCase();
 
 			if (existingUser.email !== data.email && !(await internalUser.isEmailAvailable(data.email, data.id))) {
 				throw new errs.ValidationError(`Email address already in use - ${data.email}`);
@@ -242,7 +240,7 @@ const internalUser = {
 			action: "updated",
 			object_type: "user",
 			object_id: user.id,
-			meta: { ...data, id: user.id, name: user.name },
+			meta: user,
 		});
 
 		return user;
@@ -258,9 +256,7 @@ const internalUser = {
 	get: async (access, data) => {
 		const thisData = data || {};
 
-		if (typeof thisData.id === "undefined" || !thisData.id) {
-			thisData.id = access.token.getUserId(0);
-		}
+		thisData.id ||= access.token.getUserId(0);
 
 		access.canUser(thisData.id);
 
@@ -275,7 +271,7 @@ const internalUser = {
 			query.withGraphFetched(`[${thisData.expand.join(", ")}]`);
 		}
 
-		const row = utils.omitRow(omissions())(await query);
+		const row = await query;
 		if (!row?.id) {
 			throw new errs.ItemNotFoundError(thisData.id);
 		}
@@ -300,7 +296,7 @@ const internalUser = {
 	 * @param user_id
 	 */
 	isEmailAvailable: async (email, user_id) => {
-		const query = userModel.query().where("email", "=", email.toLowerCase().trim()).where("is_deleted", 0).first();
+		const query = userModel.query().where("email", "=", email.toLowerCase()).where("is_deleted", 0).first();
 
 		if (typeof user_id !== "undefined") {
 			query.where("id", "!=", user_id);
@@ -339,10 +335,10 @@ const internalUser = {
 			action: "deleted",
 			object_type: "user",
 			object_id: user.id,
-			meta: _.omit(user, omissions()),
+			meta: user,
 		});
 
-		return true;
+		return user;
 	},
 
 	/**
@@ -372,18 +368,12 @@ const internalUser = {
 	 * All users
 	 *
 	 * @param   {Access}  access
-	 * @param   {Array}   [expand]
 	 * @param   {String}  [search_query]
 	 * @returns {Promise}
 	 */
-	getAll: async (access, expand, search_query) => {
+	getAll: async (access, search_query) => {
 		access.canAdmin();
-		const query = userModel
-			.query()
-			.where("is_deleted", 0)
-			.groupBy("id")
-			.allowGraph("[permissions]")
-			.orderBy("name", "ASC");
+		const query = userModel.query().where("is_deleted", 0).groupBy("id").orderBy("name", "ASC");
 
 		// Query is used for searching
 		if (typeof search_query === "string") {
@@ -392,12 +382,7 @@ const internalUser = {
 			});
 		}
 
-		if (typeof expand !== "undefined" && expand !== null) {
-			query.withGraphFetched(`[${expand.join(", ")}]`);
-		}
-
-		const res = await query;
-		return utils.omitRows(omissions())(res);
+		return await query;
 	},
 
 	/**
@@ -426,7 +411,7 @@ const internalUser = {
 			}
 
 			await internalToken.getTokenFromEmail({
-				identity: user.email.toLowerCase().trim(),
+				identity: user.email.toLowerCase(),
 				secret: data.current,
 			});
 		}

@@ -15,10 +15,6 @@ function Button({
 	disabled,
 	...buttonProps
 }) {
-	const myOnClick = () => {
-		if (!isLoading) onClick?.();
-	};
-
 	const cns = cn(
 		"btn",
 		className,
@@ -38,7 +34,7 @@ function Button({
 			{...buttonProps}
 			type={type || "button"}
 			className={cns}
-			onClick={myOnClick}
+			onClick={() => !isLoading && onClick?.()}
 			disabled={disabled || isLoading}
 		>
 			{children}

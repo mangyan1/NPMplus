@@ -18,8 +18,8 @@ const internalNginx = {
 	 * - test the nginx config first to make sure it's OK
 	 * - create / recreate the config for the host
 	 * - test again
-	 * - IF OK:  update the meta with online status
-	 * - IF BAD: update the meta with offline status and rename the config
+	 * - IF OK:  save the online status
+	 * - IF BAD: save the offline status and rename the config
 	 * - then reload nginx
 	 *
 	 * @param   {Object|String}  model
@@ -28,10 +28,10 @@ const internalNginx = {
 	 * @returns {Promise}
 	 */
 	configure: async (model, host_type, host, { skipReload = false } = {}) => {
-		let combined_meta = {};
+		let status = {};
 
 		// skip disabled hosts
-		if (!host.enabled) return host.meta;
+		if (!host.enabled) return status;
 
 		await internalProxyHostAccessList.build(host_type, host);
 		await internalNginx.deleteConfig(host_type, host);
@@ -39,26 +39,22 @@ const internalNginx = {
 
 		try {
 			await (skipReload ? internalNginx.test() : internalNginx.reload());
-			combined_meta = { ...host.meta, nginx_online: true, nginx_err: null };
+			status = { npmplus_nginx_online: true, npmplus_nginx_err: "" };
 
-			await model.query().where("id", host.id).patch({
-				meta: combined_meta,
-			});
+			await model.query().where("id", host.id).patch(status);
 		} catch (err) {
 			logger.error(err.message);
 
-			// config is bad, update meta and rename config
-			combined_meta = { ...host.meta, nginx_online: false, nginx_err: err.message };
+			// config is bad, update status and rename config
+			status = { npmplus_nginx_online: false, npmplus_nginx_err: err.message };
 
-			await model.query().where("id", host.id).patch({
-				meta: combined_meta,
-			});
+			await model.query().where("id", host.id).patch(status);
 
 			await internalNginx.renameConfigAsError(host_type, host);
 			if (!skipReload) await internalNginx.reload();
 		}
 
-		return combined_meta;
+		return status;
 	},
 
 	/**
@@ -122,13 +118,7 @@ const internalNginx = {
 	 * @returns {Promise}
 	 */
 	renderLocations: async (host) => {
-		let template;
-
-		try {
-			template = await utils.getParsedTemplate(`${__dirname}/../templates/_proxy_host_custom_location.conf`);
-		} catch (err) {
-			throw new errs.ConfigurationError(err.message);
-		}
+		const template = await utils.getParsedTemplate(`${__dirname}/../templates/_proxy_host_custom_location.conf`);
 
 		const renderEngine = utils.getRenderEngine();
 		let renderedLocations = "";
@@ -167,13 +157,7 @@ const internalNginx = {
 	 * @returns {Promise}
 	 */
 	renderUpstreams: async (host) => {
-		let template;
-
-		try {
-			template = await utils.getParsedTemplate(`${__dirname}/../templates/_upstream.conf`);
-		} catch (err) {
-			throw new errs.ConfigurationError(err.message);
-		}
+		const template = await utils.getParsedTemplate(`${__dirname}/../templates/_upstream.conf`);
 
 		const renderEngine = utils.getRenderEngine();
 		let renderedUpstreams = "";
@@ -241,14 +225,9 @@ const internalNginx = {
 
 		const renderEngine = utils.getRenderEngine();
 
-		let template = null;
 		const filename = internalNginx.getConfigName(nice_host_type, host.id);
 
-		try {
-			template = await utils.getParsedTemplate(`${__dirname}/../templates/${nice_host_type}.conf`);
-		} catch (err) {
-			throw new errs.ConfigurationError(err.message);
-		}
+		const template = await utils.getParsedTemplate(`${__dirname}/../templates/${nice_host_type}.conf`);
 
 		host.env = process.env;
 
@@ -378,21 +357,16 @@ const internalNginx = {
 			}
 		}
 
-		try {
-			const config_text = await renderEngine.render(template, host);
+		const config_text = await renderEngine.render(template, host);
 
-			await writeFile(filename, config_text, { encoding: "utf8" });
-			debug(logger, "Wrote config:", filename);
+		await writeFile(filename, config_text, { encoding: "utf8" });
+		debug(logger, "Wrote config:", filename);
 
-			if (process.env.DISABLE_NGINX_BEAUTIFIER === "false") {
-				await utils.execFile("nginxbeautifier", ["-s", "2", filename]).catch(() => {});
-			}
-
-			return true;
-		} catch (err) {
-			debug(logger, `Could not write ${filename}:`, err.message);
-			throw new errs.ConfigurationError(err.message);
+		if (process.env.DISABLE_NGINX_BEAUTIFIER === "false") {
+			await utils.execFile("nginxbeautifier", ["-s", "2", filename]).catch(() => {});
 		}
+
+		return true;
 	},
 
 	/**

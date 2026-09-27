@@ -9,9 +9,7 @@ Model.knex(db());
 class Setting extends Model {
 	$beforeInsert() {
 		// Default for meta
-		if (typeof this.meta === "undefined") {
-			this.meta = {};
-		}
+		this.meta ??= {};
 	}
 
 	static get name() {

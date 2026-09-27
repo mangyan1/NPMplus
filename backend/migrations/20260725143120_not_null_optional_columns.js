@@ -19,8 +19,8 @@ const up = async (knex) => {
 	await knex("stream").whereNull("npmplus_description").update({ npmplus_description: "" });
 
 	await knex.schema.alterTable("proxy_host", (table) => {
-		table.json("locations").notNull().defaultTo("[]").alter();
-		table.json("npmplus_access_list_ids").notNull().defaultTo("[]").alter();
+		table.json("locations").notNull().defaultTo([]).alter();
+		table.json("npmplus_access_list_ids").notNull().defaultTo([]).alter();
 	});
 
 	logger.info(`[${migrateName}] proxy_host Table altered`);

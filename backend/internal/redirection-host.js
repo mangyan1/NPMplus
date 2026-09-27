@@ -1,15 +1,11 @@
-import _ from "lodash";
 import errs from "../lib/error.js";
 import { castJsonIfNeed } from "../lib/helpers.js";
 import { assertPrivilegedNginxFields } from "../lib/nginx-privilege.js";
-import utils from "../lib/utils.js";
 import redirectionHostModel from "../models/redirection_host.js";
 import internalAuditLog from "./audit-log.js";
 import internalCertificate from "./certificate.js";
 import internalHost from "./host.js";
 import internalNginx from "./nginx.js";
-
-const omissions = () => ["is_deleted", "owner.is_deleted", "certificate.is_deleted"];
 
 const internalRedirectionHost = {
 	/**
@@ -25,6 +21,9 @@ const internalRedirectionHost = {
 			delete thisData.certificate_id;
 		} else if (Number(thisData.certificate_id) > 0) {
 			await internalCertificate.get(access, { id: thisData.certificate_id });
+		}
+		if (Number(thisData.npmplus_mtls_certificate_id) > 0) {
+			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id });
 		}
 
 		access.can("redirection_hosts:manage");
@@ -43,36 +42,38 @@ const internalRedirectionHost = {
 		thisData.owner_user_id = access.token.getUserId(1);
 		thisData = internalHost.cleanSslHstsData(createCertificate, thisData);
 
-		const createdRow = utils.omitRow(omissions())(await redirectionHostModel.query().insertAndFetch(thisData));
+		const createdRow = await redirectionHostModel.query().insertAndFetch(thisData);
 
-		if (createCertificate) {
-			const cert = await internalCertificate.createQuickCertificate(access, thisData);
+		let savedRow;
+		try {
+			if (createCertificate) {
+				// update host with cert id
+				await redirectionHostModel
+					.query()
+					.where("id", createdRow.id)
+					.patch({ certificate_id: (await internalCertificate.createQuickCertificate(access, thisData)).id });
+			}
 
-			// update host with cert id
-			await internalRedirectionHost.update(access, {
+			const row = await internalRedirectionHost.get(access, {
 				id: createdRow.id,
-				certificate_id: cert.id,
+				expand: ["certificate"],
+			});
+
+			// Configure nginx
+			await internalNginx.configure(redirectionHostModel, "redirection_host", row);
+		} finally {
+			savedRow = await internalRedirectionHost.get(access, { id: createdRow.id });
+
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "created",
+				object_type: "redirection-host",
+				object_id: savedRow.id,
+				meta: savedRow,
 			});
 		}
 
-		const row = await internalRedirectionHost.get(access, {
-			id: createdRow.id,
-			expand: ["certificate", "owner"],
-		});
-
-		// Configure nginx
-		await internalNginx.configure(redirectionHostModel, "redirection_host", row);
-
-		// Add to audit log
-		thisData.meta = { ...thisData.meta, ...row.meta };
-		await internalAuditLog.add(access, {
-			action: "created",
-			object_type: "redirection-host",
-			object_id: row.id,
-			meta: thisData,
-		});
-
-		return row;
+		return savedRow;
 	},
 
 	/**
@@ -89,6 +90,9 @@ const internalRedirectionHost = {
 			delete thisData.certificate_id;
 		} else if (Number(thisData.certificate_id) > 0) {
 			await internalCertificate.get(access, { id: thisData.certificate_id });
+		}
+		if (Number(thisData.npmplus_mtls_certificate_id) > 0) {
+			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id });
 		}
 
 		access.can("redirection_hosts:manage");
@@ -118,42 +122,43 @@ const internalRedirectionHost = {
 
 		if (createCertificate) {
 			const cert = await internalCertificate.createQuickCertificate(access, {
+				...thisData,
 				domain_names: thisData.domain_names || existingRow.domain_names,
-				meta: { ...existingRow.meta, ...thisData.meta },
 			});
 
 			// update host with cert id
 			thisData.certificate_id = cert.id;
 		}
 
-		// Add domain_names to the data in case it isn't there, so that the audit log renders correctly. The order is important here.
-		thisData = { domain_names: existingRow.domain_names, ...thisData };
 		thisData = internalHost.cleanSslHstsData(createCertificate, thisData, existingRow);
 
 		await redirectionHostModel.query().where({ id: thisData.id }).patch(thisData);
 
-		// Add to audit log
-		await internalAuditLog.add(access, {
-			action: "updated",
-			object_type: "redirection-host",
-			object_id: existingRow.id,
-			meta: thisData,
-		});
+		let savedRow;
+		try {
+			const row = await internalRedirectionHost.get(access, {
+				id: thisData.id,
+				expand: ["certificate"],
+			});
 
-		const row = await internalRedirectionHost.get(access, {
-			id: thisData.id,
-			expand: ["certificate", "owner"],
-		});
-
-		if (!row.enabled) {
 			// No need to add nginx config if host is disabled
-			return _.omit(internalHost.cleanRowCertificateMeta(row), omissions());
+			if (row.enabled) {
+				// Configure nginx
+				await internalNginx.configure(redirectionHostModel, "redirection_host", row);
+			}
+		} finally {
+			savedRow = await internalRedirectionHost.get(access, { id: thisData.id });
+
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "updated",
+				object_type: "redirection-host",
+				object_id: savedRow.id,
+				meta: savedRow,
+			});
 		}
 
-		// Configure nginx
-		row.meta = await internalNginx.configure(redirectionHostModel, "redirection_host", row);
-
-		return _.omit(internalHost.cleanRowCertificateMeta(row), omissions());
+		return savedRow;
 	},
 
 	/**
@@ -161,7 +166,6 @@ const internalRedirectionHost = {
 	 * @param  {Object}   data
 	 * @param  {Number}   data.id
 	 * @param  {Array}    [data.expand]
-	 * @param  {Array}    [data.omit]
 	 * @return {Promise}
 	 */
 	get: async (access, data) => {
@@ -173,7 +177,7 @@ const internalRedirectionHost = {
 			.query()
 			.where("is_deleted", 0)
 			.andWhere("id", thisData.id)
-			.allowGraph(redirectionHostModel.defaultAllowGraph)
+			.allowGraph("[certificate]")
 			.first();
 
 		if (access.visibility !== "all") {
@@ -184,19 +188,12 @@ const internalRedirectionHost = {
 			query.withGraphFetched(`[${thisData.expand.join(", ")}]`);
 		}
 
-		const row = utils.omitRow(omissions())(await query);
+		const row = await query;
 		if (!row?.id) {
 			throw new errs.ItemNotFoundError(thisData.id);
 		}
 
-		const thisRow = internalHost.cleanRowCertificateMeta(row);
-
-		// Custom omissions
-		if (typeof thisData.omit !== "undefined" && thisData.omit !== null) {
-			return _.omit(thisRow, thisData.omit);
-		}
-
-		return thisRow;
+		return row;
 	},
 
 	/**
@@ -218,19 +215,21 @@ const internalRedirectionHost = {
 			is_deleted: 1,
 		});
 
-		// Delete Nginx Config
-		await internalNginx.deleteConfig("redirection_host", row);
-		await internalNginx.reload();
+		try {
+			// Delete Nginx Config
+			await internalNginx.deleteConfig("redirection_host", row);
+			await internalNginx.reload();
+		} finally {
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "deleted",
+				object_type: "redirection-host",
+				object_id: row.id,
+				meta: row,
+			});
+		}
 
-		// Add to audit log
-		await internalAuditLog.add(access, {
-			action: "deleted",
-			object_type: "redirection-host",
-			object_id: row.id,
-			meta: _.omit(row, omissions()),
-		});
-
-		return true;
+		return row;
 	},
 
 	/**
@@ -245,7 +244,7 @@ const internalRedirectionHost = {
 
 		const row = await internalRedirectionHost.get(access, {
 			id: data.id,
-			expand: ["certificate", "owner"],
+			expand: ["certificate"],
 		});
 		if (!row?.id) {
 			throw new errs.ItemNotFoundError(data.id);
@@ -268,18 +267,23 @@ const internalRedirectionHost = {
 			enabled: 1,
 		});
 
-		// Configure nginx
-		await internalNginx.configure(redirectionHostModel, "redirection_host", row);
+		let savedRow;
+		try {
+			// Configure nginx
+			await internalNginx.configure(redirectionHostModel, "redirection_host", row);
+		} finally {
+			savedRow = await internalRedirectionHost.get(access, { id: row.id });
 
-		// Add to audit log
-		await internalAuditLog.add(access, {
-			action: "enabled",
-			object_type: "redirection-host",
-			object_id: row.id,
-			meta: _.omit(row, omissions()),
-		});
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "enabled",
+				object_type: "redirection-host",
+				object_id: row.id,
+				meta: savedRow,
+			});
+		}
 
-		return true;
+		return savedRow;
 	},
 
 	/**
@@ -306,19 +310,24 @@ const internalRedirectionHost = {
 			enabled: 0,
 		});
 
-		// Delete Nginx Config
-		await internalNginx.deleteConfig("redirection_host", row);
-		await internalNginx.reload();
+		let savedRow;
+		try {
+			// Delete Nginx Config
+			await internalNginx.deleteConfig("redirection_host", row);
+			await internalNginx.reload();
+		} finally {
+			savedRow = await internalRedirectionHost.get(access, { id: row.id });
 
-		// Add to audit log
-		await internalAuditLog.add(access, {
-			action: "disabled",
-			object_type: "redirection-host",
-			object_id: row.id,
-			meta: _.omit(row, omissions()),
-		});
+			// Add to audit log
+			await internalAuditLog.add(access, {
+				action: "disabled",
+				object_type: "redirection-host",
+				object_id: row.id,
+				meta: savedRow,
+			});
+		}
 
-		return true;
+		return savedRow;
 	},
 
 	/**
@@ -336,7 +345,7 @@ const internalRedirectionHost = {
 			.query()
 			.where("is_deleted", 0)
 			.groupBy("id")
-			.allowGraph(redirectionHostModel.defaultAllowGraph)
+			.allowGraph("[owner,certificate]")
 			.orderBy(castJsonIfNeed("domain_names"), "ASC");
 
 		if (access.visibility !== "all") {
@@ -354,12 +363,7 @@ const internalRedirectionHost = {
 			query.withGraphFetched(`[${expand.join(", ")}]`);
 		}
 
-		const rows = utils.omitRows(omissions())(await query);
-		if (typeof expand !== "undefined" && expand !== null && expand.indexOf("certificate") !== -1) {
-			return internalHost.cleanAllRowsCertificateMeta(rows);
-		}
-
-		return rows;
+		return await query;
 	},
 
 	/**

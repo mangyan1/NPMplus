@@ -13,13 +13,15 @@ const fetchStream = (id) => {
 			npmplusProxyProtocolForwarding: 0,
 			npmplusProxyTls: false,
 			npmplusAdvancedConfig: "",
-			meta: {},
+			npmplusDirectory: "",
+			npmplusMtlsCertificateId: 0,
+			npmplusMtlsVerifyClientOptional: false,
 			enabled: true,
 			certificateId: 0,
 			npmplusDescription: "",
 		});
 	}
-	return getStream(id, ["owner"]);
+	return getStream(id);
 };
 
 const useStream = (id, options = {}) => {

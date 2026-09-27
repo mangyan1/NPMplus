@@ -3,7 +3,7 @@
 
 import { Model } from "objection";
 import db from "../db.js";
-import { convertBoolFieldsToInt, convertIntFieldsToBool } from "../lib/helpers.js";
+import { convertBoolFieldsToInt, convertIntFieldsToBool, removeCertificateFields } from "../lib/helpers.js";
 import Certificate from "./certificate.js";
 import now from "./now_helper.js";
 import User from "./user.js";
@@ -11,15 +11,14 @@ import User from "./user.js";
 Model.knex(db());
 
 const boolFields = [
-	"is_deleted",
 	"enabled",
 	"preserve_path",
 	"ssl_forced",
-	"block_exploits",
 	"hsts_enabled",
 	"hsts_subdomains",
-	"http2_support",
 	"npmplus_http3_support",
+	"npmplus_nginx_online",
+	"npmplus_mtls_verify_client_optional",
 ];
 
 class RedirectionHost extends Model {
@@ -28,14 +27,12 @@ class RedirectionHost extends Model {
 		this.modified_on = now();
 
 		// Default for domain_names
-		if (typeof this.domain_names === "undefined") {
-			this.domain_names = [];
-		}
+		this.domain_names ??= [];
 
 		// Default for meta
-		if (typeof this.meta === "undefined") {
-			this.meta = {};
-		}
+		this.meta ??= {};
+		this.advanced_config ??= "";
+		this.npmplus_nginx_err ??= "";
 	}
 
 	$beforeUpdate() {
@@ -43,12 +40,12 @@ class RedirectionHost extends Model {
 	}
 
 	$parseDatabaseJson(json) {
-		const thisJson = super.$parseDatabaseJson(json);
+		const { is_deleted, meta, block_exploits, http2_support, ...thisJson } = super.$parseDatabaseJson(json);
 		return convertIntFieldsToBool(thisJson, boolFields);
 	}
 
 	$formatDatabaseJson(json) {
-		const thisJson = convertBoolFieldsToInt(json, boolFields);
+		const thisJson = convertBoolFieldsToInt(removeCertificateFields(json), boolFields);
 		return super.$formatDatabaseJson(thisJson);
 	}
 
@@ -62,10 +59,6 @@ class RedirectionHost extends Model {
 
 	static get jsonAttributes() {
 		return ["domain_names", "meta"];
-	}
-
-	static get defaultAllowGraph() {
-		return "[owner,certificate]";
 	}
 
 	static get relationMappings() {

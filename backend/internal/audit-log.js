@@ -75,9 +75,7 @@ const internalAuditLog = {
 	 * @returns {Promise}
 	 */
 	add: (access, data) => {
-		if (typeof data.user_id === "undefined" || !data.user_id) {
-			data.user_id = access.token.getUserId(1);
-		}
+		data.user_id ||= access.token.getUserId(1);
 
 		if (typeof data.action === "undefined" || !data.action) {
 			throw new errs.InternalValidationError("Audit log entry must contain an Action");

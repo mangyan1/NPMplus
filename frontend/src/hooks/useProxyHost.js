@@ -14,19 +14,16 @@ const fetchProxyHost = (id) => {
 			npmplusAccessListIds: [],
 			certificateId: 0,
 			sslForced: false,
-			cachingEnabled: false,
-			blockExploits: false,
 			advancedConfig: "",
 			npmplusLocationConfig: "",
-			meta: {},
-			allowWebsocketUpgrade: true,
-			http2Support: true,
+			npmplusDirectory: "",
+			npmplusMtlsCertificateId: 0,
+			npmplusMtlsVerifyClientOptional: false,
 			npmplusHttp3Support: false,
 			forwardScheme: "",
 			enabled: true,
 			hstsEnabled: false,
 			hstsSubdomains: false,
-			trustForwardedProto: false,
 			npmplusNoindex: false,
 			npmplusCrowdsecAppsec: false,
 			npmplusProxyResponseBuffering: false,
@@ -39,7 +36,7 @@ const fetchProxyHost = (id) => {
 			npmplusAccessListType: "public",
 		});
 	}
-	return getProxyHost(id, ["owner"]);
+	return getProxyHost(id);
 };
 
 const useProxyHost = (id, options = {}) => {

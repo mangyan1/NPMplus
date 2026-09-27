@@ -36,11 +36,6 @@ export default function TableWrapper() {
 		);
 	}
 
-	const handleDelete = async (id) => {
-		await deleteRedirectionHost(id);
-		showObjectSuccess("redirection-host", "deleted");
-	};
-
 	const handleDisableToggle = async (id, enabled) => {
 		await toggleRedirectionHost(id, enabled);
 		await Promise.all([
@@ -75,7 +70,10 @@ export default function TableWrapper() {
 			const host = data?.find((item) => item.id === id);
 			showDeleteConfirmModal({
 				title: <T id="object.delete" tData={{ object: "redirection-host" }} />,
-				onConfirm: () => handleDelete(id),
+				onConfirm: async () => {
+					await deleteRedirectionHost(id);
+					showObjectSuccess("redirection-host", "deleted");
+				},
 				invalidations: [["redirection-hosts"], ["redirection-host", id]],
 				children: <T id="object.delete.content" tData={{ object: "redirection-host" }} />,
 				subject: host?.domainNames.join(", "),

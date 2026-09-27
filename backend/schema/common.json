@@ -18,6 +18,7 @@
 				{
 					"type": "array",
 					"minItems": 1,
+					"uniqueItems": true,
 					"items": {
 						"type": "string"
 					}
@@ -70,12 +71,6 @@
 			],
 			"example": 5
 		},
-		"access_list_id": {
-			"description": "Access List ID",
-			"type": "integer",
-			"minimum": 0,
-			"example": 3
-		},
 		"domain_names": {
 			"description": "Domain Names array",
 			"type": "array",
@@ -118,30 +113,39 @@
 			"pattern": "^(letsencrypt|other|mtls)$",
 			"example": "letsencrypt"
 		},
-		"http2_support": {
-			"description": "HTTP2 Protocol Support",
-			"type": "boolean",
-			"example": true
-		},
 		"npmplus_http3_support": {
 			"description": "HTTP3 Protocol Support",
 			"type": "boolean",
 			"example": true
 		},
-		"block_exploits": {
-			"description": "This is always disabled. Your value will be ignored",
+		"npmplus_nginx_online": {
+			"description": "Whether the nginx config of this host is loaded",
 			"type": "boolean",
-			"example": false
-		},
-		"caching_enabled": {
-			"description": "This is always disabled. Your value will be ignored",
-			"type": "boolean",
-			"example": false
-		},
-		"allow_websocket_upgrade": {
-			"description": "This is always enabled. Your value will be ignored",
-			"type": "boolean",
+			"readOnly": true,
 			"example": true
+		},
+		"npmplus_nginx_err": {
+			"description": "nginx error if the config of this host could not be loaded",
+			"type": "string",
+			"readOnly": true,
+			"example": ""
+		},
+		"npmplus_directory": {
+			"description": "Directory to group this host in the UI",
+			"type": "string",
+			"maxLength": 255,
+			"example": "Production"
+		},
+		"npmplus_mtls_certificate_id": {
+			"description": "mTLS Certificate ID",
+			"type": "integer",
+			"minimum": 0,
+			"example": 0
+		},
+		"npmplus_mtls_verify_client_optional": {
+			"description": "Make the mTLS client verification optional",
+			"type": "boolean",
+			"example": false
 		},
 		"npmplus_noindex": {
 			"description": "Send noindex header and block some user agents",

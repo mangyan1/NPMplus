@@ -88,13 +88,12 @@ const created = await request("POST", "/api/nginx/proxy-hosts", createBody);
 check("proxy host is created", created.status === 200 || created.status === 201, JSON.stringify(created));
 const hostId = created.json?.id;
 const listAfterCreate = await request("GET", "/api/nginx/proxy-hosts");
-const createdMeta = listAfterCreate.json?.find((item) => item.id === hostId)?.meta;
+const createdRow = listAfterCreate.json?.find((item) => item.id === hostId);
+const createdMeta = createdRow?.meta;
 check(
 	"created host appears in the list with online meta and a reachability probe",
-	listAfterCreate.json?.some((item) => item.id === hostId && item.meta) &&
-		createdMeta?.nginx_online === true &&
-		createdMeta?.reach_ok === false,
-	JSON.stringify(createdMeta),
+	createdRow?.npmplus_nginx_online === true && createdMeta?.reach_ok === false,
+	JSON.stringify(createdRow),
 );
 
 const updated = await request("PUT", `/api/nginx/proxy-hosts/${hostId}`, {

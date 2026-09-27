@@ -18,7 +18,7 @@ router
 	/**
 	 * GET / (Now serves the Swagger UI interface)
 	 */
-	.get(async (_req, res, _next) => {
+	.get(async (_, res) => {
 		const swaggerJSON = await getCompiledSchema();
 		swaggerJSON.info.version = PACKAGE.version;
 		swaggerJSON.servers[0].url = "/api";

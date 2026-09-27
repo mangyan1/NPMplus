@@ -14,13 +14,16 @@ class AccessListClient extends Model {
 		this.modified_on = now();
 
 		// Default for meta
-		if (typeof this.meta === "undefined") {
-			this.meta = {};
-		}
+		this.meta ??= {};
 	}
 
 	$beforeUpdate() {
 		this.modified_on = now();
+	}
+
+	$parseDatabaseJson(json) {
+		const { meta, ...thisJson } = super.$parseDatabaseJson(json);
+		return thisJson;
 	}
 
 	static get name() {
