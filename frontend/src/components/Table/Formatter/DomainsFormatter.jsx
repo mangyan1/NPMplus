@@ -47,7 +47,7 @@ export function DomainsFormatter({ domains, createdOn, niceName, provider, color
 
 	return (
 		<div className="flex-fill">
-			<div className="font-weight-medium">{...elms}</div>
+			<div className="font-weight-medium">{elms}</div>
 			{createdOn ? (
 				<div className="text-secondary mt-1">
 					<T id="created-on" data={{ date: formatDateTime(createdOn) }} />
