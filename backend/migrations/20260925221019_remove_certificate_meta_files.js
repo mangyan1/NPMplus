@@ -15,7 +15,7 @@ const up = async (knex) => {
 
 	for (const row of await knex("certificate").select("id", "meta")) {
 		const { certificate, certificate_key, intermediate_certificate, ...meta } =
-			typeof row.meta === "string" ? JSON.parse(row.meta) : row.meta;
+			(typeof row.meta === "string" ? JSON.parse(row.meta) : row.meta) ?? {};
 		await knex("certificate")
 			.where("id", row.id)
 			.update({ meta: JSON.stringify(meta) });

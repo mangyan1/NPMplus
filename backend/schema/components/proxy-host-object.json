@@ -297,6 +297,14 @@
 				"$ref": "./access-list-object.json"
 			},
 			"example": []
+		},
+		"meta": {
+			"type": "object",
+			"description": "fork reachability probe state, absent until the next save repopulates it",
+			"example": {
+				"reach_ok": false,
+				"reach_err": null
+			}
 		}
 	}
 }

@@ -337,6 +337,36 @@ test("cached permission checks never leak one user's id into another's validatio
 	assert.equal(adminSeesPeon.status, 200, adminSeesPeon.text);
 });
 
+// --- response-shape security contract ---
+//
+// The session-revocation cutoff (user.npmplus_token_valid_after) and the
+// permission-row internals are backend state: lib/access.js and lib/token.js
+// read the cutoff from raw model instances, but it must never serialize into
+// an API response, and expanded permissions expose only their access fields.
+// The strip lives in the models' $formatJson, so every response path (me,
+// get, getAll, create/update returns) is covered at once.
+test("user responses strip the token cutoff and permission row internals", async () => {
+	const me = await api("GET", "/api/users/me", { cookie: adminCookie });
+	assert.equal(me.status, 200, me.text);
+	assert.equal("npmplus_token_valid_after" in me.body, false);
+	assert.equal("is_deleted" in me.body, false);
+	assert.equal("nickname" in me.body, false);
+
+	const expanded = await api("GET", `/api/users/${peonId}?expand=permissions`, { cookie: adminCookie });
+	assert.equal(expanded.status, 200, expanded.text);
+	assert.equal("npmplus_token_valid_after" in expanded.body, false);
+	for (const field of ["id", "user_id", "created_on", "modified_on"]) {
+		assert.equal(field in (expanded.body.permissions ?? {}), false, `permissions.${field} leaked`);
+	}
+
+	const list = await api("GET", "/api/users", { cookie: adminCookie });
+	assert.equal(list.status, 200, list.text);
+	assert.equal(
+		list.body.some((row) => "npmplus_token_valid_after" in row),
+		false,
+	);
+});
+
 test("proxy host CRUD round-trips through nginx config generation", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 

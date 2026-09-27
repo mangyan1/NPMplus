@@ -34,6 +34,14 @@ class User extends Model {
 		return super.$formatDatabaseJson(thisJson);
 	}
 
+	// serialization-only strip: lib/access.js and lib/token.js read the
+	// revocation cutoff from raw model instances, but it never belongs in an
+	// API response or audit metadata
+	$formatJson(json) {
+		const { npmplus_token_valid_after, ...thisJson } = super.$formatJson(json);
+		return thisJson;
+	}
+
 	static get name() {
 		return "User";
 	}
