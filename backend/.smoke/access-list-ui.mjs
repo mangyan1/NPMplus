@@ -60,7 +60,7 @@ try {
 	await dialog.getByRole("button", { name: "Save", exact: true }).click();
 	await dialog.getByText(message, { exact: true }).waitFor();
 	assert.equal(writes, 0, "blank-password rename must be rejected before the API request");
-	await page.screenshot({ path: "backend/.smoke/security-access-list-validation.png" });
+	await page.screenshot({ path: "backend/.smoke/security-access-list-validation.png", animations: "disabled" });
 	await dialog.locator('#tab-auth input[type="text"]').fill("original");
 	const unchanged = page.waitForResponse(
 		(response) =>
