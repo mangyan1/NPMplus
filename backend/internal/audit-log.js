@@ -74,7 +74,7 @@ const internalAuditLog = {
 	 * @param   {Object}   [data.meta]
 	 * @returns {Promise}
 	 */
-	add: (access, data) => {
+	add: (access, data, transaction) => {
 		data.user_id ||= access.token.getUserId(1);
 
 		if (typeof data.action === "undefined" || !data.action) {
@@ -82,7 +82,7 @@ const internalAuditLog = {
 		}
 
 		// Make sure at least 1 of the IDs are set and action
-		return auditLogModel.query().insert({
+		return auditLogModel.query(transaction).insert({
 			user_id: data.user_id,
 			action: data.action,
 			object_type: data.object_type || "",
