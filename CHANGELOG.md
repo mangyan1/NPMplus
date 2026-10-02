@@ -4,6 +4,10 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Reconciled upstream develop through `e0acff4a` with a regular merge, adopting AWS-LC 5.11.0, the Dockerfile frontend update, and dependency releases that meet the seven-day aging policy. Preserved fork attribution, test scripts, Playwright, lodash, and the hardened Caddy source build. Newer dependency releases remain deferred.
+
+- Fixed the NPMplus image scan findings by constraining vulnerable brace-expansion and fast-uri transitive releases to patched versions and pinning urllib3 2.8.0 alongside Certbot. Rebuilding refreshes Alpine's PCRE2 and Python packages. Runtime Certbot DNS-plugin installation and the existing reviewed scanner baselines remain intact.
+
 - CodeQL's JavaScript extractor cannot parse the JSX spread children construct upstream renders the `DomainsFormatter` domain badges through (`{...elms}`) — every code-scanning run reported `Could not process some files due to syntax errors` and silently skipped the file, leaving that component without any code-quality or security coverage. The children now render as the array itself (`{elms}` — React flattens both identically and every element is already keyed), restoring scanning coverage at the cost of a single-line divergence from upstream.
 
 - The docker-develop sha256 pin caught nginx PR 1756 being rewritten by its author (2026-09-27) from the single reused-port patch into a three-patch QUIC BPF series — the image build failed closed on the hash mismatch until a human reviewed it. The pin is bumped to the new PR head (`9ada959a…`, landed via #41) after verifying the series applies to the pinned nginx `45a318d0…` with the openresty pipelining/reuseport patches 9/10 still applying over it, plus a local image build and the 171-check container smoke. Upstream fetches this same patch with a bare un-pinned `wget`, so an author rewrite silently changes its build; here it fails instead. The new head is pinned and reviewed, not trusted.
