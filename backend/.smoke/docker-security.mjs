@@ -64,6 +64,7 @@ try {
 	]);
 	run("security-regressions.mjs", api);
 	run("modal-ui.mjs", api);
+	run("access-list-ui.mjs", api);
 	run("ui-driver.mjs", api);
 	const setup = await start("setup", ["INITIAL_SETUP_TOKEN=local-security-setup-token-20260919-only"]);
 	run("security-ui.mjs", setup);
