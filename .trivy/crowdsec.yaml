@@ -1,32 +1,33 @@
-# Reassessed against current upstream image scans on 2026-09-19; expiry unchanged.
+# Reassessed against current upstream image scans on 2026-10-02; expiry unchanged.
+# Scanned with Trivy 0.74.0 on 2026-10-02: crowdsecurity/crowdsec@sha256:0f2523fa61ef507f15d953045cface490cc880670c62f2755ced17524107f71a
 vulnerabilities:
   - id: CVE-2026-14456
     expired_at: 2026-10-04
-    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships libcrypto3 3.5.7-r0. Scanner lists fixes: 3.5.8-r0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
+    statement: "Rechecked 2026-10-02: upstream CrowdSec 1.8.1 still ships libcrypto3 and libssl3 3.5.7-r0. Scanner lists fixes: 3.5.8-r0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-25681
     expired_at: 2026-10-04
-    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.55.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
+    statement: "Rechecked 2026-10-02: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.55.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-27136
     expired_at: 2026-10-04
-    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.55.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
+    statement: "Rechecked 2026-10-02: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.55.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-32286
     expired_at: 2026-10-04
-    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships github.com/jackc/pgproto3/v2 v2.3.3. Scanner lists no fixed version. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
+    statement: "Rechecked 2026-10-02: upstream CrowdSec 1.8.1 still ships github.com/jackc/pgproto3/v2 v2.3.3. Scanner lists no fixed version. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-33814
     expired_at: 2026-10-04
-    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.53.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
+    statement: "Rechecked 2026-10-02: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.53.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-39821
     expired_at: 2026-10-04
-    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.55.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
+    statement: "Rechecked 2026-10-02: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.55.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-46600
     expired_at: 2026-10-04
-    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.56.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
+    statement: "Rechecked 2026-10-02: upstream CrowdSec 1.8.1 still ships golang.org/x/net v0.48.0. Scanner lists fixes: 0.56.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-56852
     expired_at: 2026-10-04
-    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships golang.org/x/text v0.32.0. Scanner lists fixes: 0.39.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
+    statement: "Rechecked 2026-10-02: upstream CrowdSec 1.8.1 still ships golang.org/x/text v0.32.0. Scanner lists fixes: 0.39.0. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-84304
     expired_at: 2026-10-04
-    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships google.golang.org/grpc v1.83.0. Scanner lists fixes: 1.83.1. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
+    statement: "Rechecked 2026-10-02: upstream CrowdSec 1.8.1 still ships google.golang.org/grpc v1.83.0. Scanner lists fixes: 1.83.1. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
   - id: CVE-2026-84445
     expired_at: 2026-10-04
-    statement: "Rechecked 2026-09-19: upstream CrowdSec 1.8.1 still ships google.golang.org/grpc v1.83.0. Scanner lists fixes: 1.82.2, 1.83.2, 1.85.0-dev.0.20260825072537-93e31b48545e. Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
+    statement: "Rechecked 2026-10-02: upstream CrowdSec 1.8.1 still ships google.golang.org/grpc v1.83.0. Scanner lists fixes: 1.82.2, 1.83.2 (stable). Await upstream image refresh. Private listeners are defense in depth, not proof of unreachability."
