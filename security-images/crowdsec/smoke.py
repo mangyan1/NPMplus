@@ -89,16 +89,19 @@ def main():
         print("PASS LAPI auth, bouncer read-only, machine write, metrics, AppSec allow/block", flush=True)
         docker("restart", name)
         lapi, metrics, appsec = endpoints()
+        waf_headers["X-Crowdsec-Appsec-Uri"] = "/normal"
         deadline = time.monotonic() + 120
         while True:
             try:
                 status, body = request(lapi, "/v1/decisions?ip=192.0.2.55", headers)
-                if status == 200 and any(row["value"] == "192.0.2.55" for row in json.loads(body)):
+                if (status == 200 and any(row["value"] == "192.0.2.55" for row in json.loads(body))
+                        and request(metrics, "/metrics")[0] == 200
+                        and request(appsec, "/", waf_headers, "POST")[0] == 200):
                     break
             except (OSError, urllib.error.URLError):
                 pass
             if time.monotonic() >= deadline:
-                raise AssertionError("key or SQLite decision lost after restart")
+                raise AssertionError("key, SQLite decision, metrics or AppSec failed after restart")
             time.sleep(2)
         docker("exec", name, "cscli", "decisions", "delete", "--ip", "192.0.2.55")
         assert json.loads(request(lapi, "/v1/decisions?ip=192.0.2.55", headers)[1]) in (None, []), "decision deletion failed"
