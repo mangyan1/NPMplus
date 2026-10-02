@@ -1,6 +1,7 @@
 import { appendFile, rm, writeFile } from "node:fs/promises";
 import bcrypt from "bcryptjs";
 import _ from "lodash";
+import { serializeAccessListUpdate, snapshotAccessListFiles } from "../lib/access-list-recovery.js";
 import errs from "../lib/error.js";
 import { access as logger } from "../logger.js";
 import accessListModel from "../models/access_list.js";
@@ -94,120 +95,108 @@ const internalAccessList = {
 	 * @param  {String}  [data.items]
 	 * @return {Promise}
 	 */
-	update: async (access, data) => {
-		access.can("access_lists:manage");
-		const row = await internalAccessList.get(access, { id: data.id, expand: ["items"] });
-		if (row.id !== data.id) {
-			// Sanity check that something crazy hasn't happened
-			throw new errs.InternalValidationError(
-				`Access List could not be updated, IDs do not match: ${row.id} !== ${data.id}`,
-			);
-		}
-
-		// A masked password may retain an existing username, never create a new one.
-		const existingUsernames = new Set((row.items || []).map((item) => item.username));
-		if ((data.items || []).some((item) => !item.password && !existingUsernames.has(item.username))) {
-			throw Object.assign(
-				new errs.ValidationError("A password is required for new or renamed access-list users"),
-				{ message_i18n: "error.access.password-required" },
-			);
-		}
-
-		// patch fields if specified
-		const patch = {};
-		if (typeof data.name !== "undefined" && data.name) patch.name = data.name;
-		if (typeof data.satisfy_any !== "undefined") patch.satisfy_any = data.satisfy_any;
-		if (typeof data.pass_auth !== "undefined") patch.pass_auth = data.pass_auth;
-		if (Object.keys(patch).length > 0) {
-			await accessListModel.query().where({ id: data.id }).patch(patch);
-		}
-
-		// Check for items and add/update/remove them
-		if (typeof data.items !== "undefined" && data.items) {
-			// Items supplied with an empty password are kept, but their password is left untouched
-			const itemsToKeep = data.items.filter((item) => !item.password).map((item) => item.username);
-
-			const query = accessListAuthModel.query().delete().where("access_list_id", data.id);
-
-			if (itemsToKeep.length > 0) {
-				query.andWhere("username", "NOT IN", itemsToKeep);
-			}
-
-			await query;
-			// Add new items
-			await Promise.all(
-				data.items
-					.filter((item) => item.password)
-					.map(async (item) =>
-						accessListAuthModel.query().insert({
-							access_list_id: data.id,
-							username: item.username,
-							password: await bcrypt.hash(item.password, 6),
-						}),
-					),
-			);
-		}
-
-		// Check for clients and add/update/remove them
-		if (typeof data.clients !== "undefined" && data.clients) {
-			await accessListClientModel.query().delete().where("access_list_id", data.id);
-
-			await Promise.all(
-				data.clients
-					.filter((client) => client.address)
-					.map((client) =>
-						accessListClientModel.query().insert({
-							access_list_id: data.id,
-							address: client.address,
-							directive: client.directive,
-						}),
-					),
-			);
-		}
-
-		// re-fetch with expansions
-		const freshRow = await internalAccessList.get(access, {
-			id: data.id,
-			expand: ["items", "clients", "proxy_hosts.[certificate,access_lists.[clients,items]]"],
-		});
-
-		const savedRow = { ...freshRow, proxy_hosts: undefined };
-
-		const finalize = async () => {
-			// Add to audit log
-			await internalAuditLog.add(access, {
-				action: "updated",
-				object_type: "access-list",
-				object_id: data.id,
-				meta: savedRow,
+	update: (access, data) =>
+		serializeAccessListUpdate(async () => {
+			access.can("access_lists:manage");
+			const row = await internalAccessList.get(access, {
+				id: data.id,
+				expand: ["items", "clients", "proxy_hosts.[certificate,access_lists.[clients,items]]"],
 			});
-		};
-		try {
-			await internalAccessList.build(freshRow);
-			if (Number.parseInt(freshRow.proxy_host_count, 10)) {
-				// locations don't have accessList objects, only IDs, so populate it with the object itself
-				freshRow.proxy_hosts = await Promise.all(
-					(freshRow.proxy_hosts || []).map((host) => {
-						const cleanedHost = internalProxyHostAccessList.cleanAccessListTypes(host);
-						return internalProxyHostAccessList.populateLocationAccessLists(cleanedHost);
-					}),
+			const existingUsernames = new Set((row.items || []).map((item) => item.username));
+			if ((data.items || []).some((item) => !item.password && !existingUsernames.has(item.username))) {
+				throw Object.assign(
+					new errs.ValidationError("A password is required for new or renamed access-list users"),
+					{ message_i18n: "error.access.password-required" },
 				);
-				await internalNginx.bulkGenerateConfigs(proxyHostModel, "proxy_host", freshRow.proxy_hosts);
 			}
-			await internalNginx.reload();
-		} catch (operationError) {
-			// the audit write must never replace the operation's own error
+			const patch = {};
+			if (typeof data.name !== "undefined" && data.name) patch.name = data.name;
+			if (typeof data.satisfy_any !== "undefined") patch.satisfy_any = data.satisfy_any;
+			if (typeof data.pass_auth !== "undefined") patch.pass_auth = data.pass_auth;
+			const newItems = [];
+			for (const item of data.items || []) {
+				if (item.password)
+					newItems.push({
+						access_list_id: data.id,
+						username: item.username,
+						password: await bcrypt.hash(item.password, 6),
+					});
+			}
+			const restoreFiles = await snapshotAccessListFiles(
+				row,
+				(row.proxy_hosts || []).filter((host) => host.enabled),
+			);
+			let filesChanged = false;
 			try {
-				await finalize();
-			} catch (cleanupError) {
-				logger.error(`Error auditing access list update ${data.id}: ${cleanupError.message}`);
+				return await accessListModel.transaction(async (trx) => {
+					if (Object.keys(patch).length > 0) await accessListModel.query(trx).findById(data.id).patch(patch);
+					if (data.items) {
+						const kept = data.items.filter((item) => !item.password).map((item) => item.username);
+						const deletion = accessListAuthModel.query(trx).delete().where("access_list_id", data.id);
+						if (kept.length > 0) deletion.whereNotIn("username", kept);
+						await deletion;
+						for (const item of newItems) await accessListAuthModel.query(trx).insert(item);
+					}
+					if (data.clients) {
+						await accessListClientModel.query(trx).delete().where("access_list_id", data.id);
+						for (const client of data.clients.filter((entry) => entry.address)) {
+							await accessListClientModel.query(trx).insert({
+								access_list_id: data.id,
+								address: client.address,
+								directive: client.directive,
+							});
+						}
+					}
+					const freshRow = await internalAccessList.get(
+						access,
+						{
+							id: data.id,
+							expand: ["items", "clients", "proxy_hosts.[certificate,access_lists.[clients,items]]"],
+						},
+						trx,
+					);
+					filesChanged = true;
+					await internalAccessList.build(freshRow);
+					for (const host of (freshRow.proxy_hosts || []).filter((entry) => entry.enabled)) {
+						const populated = await internalProxyHostAccessList.populateLocationAccessLists(
+							internalProxyHostAccessList.cleanAccessListTypes(host),
+							trx,
+						);
+						await internalProxyHostAccessList.build("proxy_host", populated);
+						await internalNginx.generateConfig("proxy_host", populated);
+						await rm(`${internalNginx.getConfigName("proxy_host", host.id)}.err`, { force: true });
+						await proxyHostModel
+							.query(trx)
+							.findById(host.id)
+							.patch({ npmplus_nginx_online: true, npmplus_nginx_err: "" });
+					}
+					// Validation and reload must succeed before either the policy or audit commits.
+					await internalNginx.test();
+					await internalNginx.reload();
+					const savedRow = { ...freshRow, proxy_hosts: undefined };
+					await internalAuditLog.add(
+						access,
+						{ action: "updated", object_type: "access-list", object_id: data.id, meta: savedRow },
+						trx,
+					);
+					return savedRow;
+				});
+			} catch (operationError) {
+				if (filesChanged) {
+					try {
+						await restoreFiles();
+						await internalNginx.reload();
+					} catch (recoveryError) {
+						logger.error(`Access list ${data.id} recovery failed: ${recoveryError.message}`);
+						throw new AggregateError(
+							[operationError, recoveryError],
+							"Access-list update and recovery failed",
+						);
+					}
+				}
+				throw operationError;
 			}
-			throw operationError;
-		}
-		await finalize();
-
-		return savedRow;
-	},
+		}),
 
 	/**
 	 * @param  {Access}   access
@@ -216,12 +205,12 @@ const internalAccessList = {
 	 * @param  {Array}    [data.expand]
 	 * @return {Promise}
 	 */
-	get: async (access, data) => {
+	get: async (access, data, transaction) => {
 		const thisData = data || {};
 		access.can("access_lists:view");
 
 		const query = accessListModel
-			.query()
+			.query(transaction)
 			.select("access_list.*", accessListModel.raw("COUNT(DISTINCT proxy_host.id) as proxy_host_count"))
 			.leftJoin(
 				"npmplus_proxy_host_access_list",

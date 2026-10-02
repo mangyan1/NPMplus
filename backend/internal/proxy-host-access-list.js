@@ -328,7 +328,7 @@ const internalProxyHostAccessList = {
 	 * @param {*} proxyHost
 	 * @returns
 	 */
-	populateLocationAccessLists: async (proxyHost) => {
+	populateLocationAccessLists: async (proxyHost, transaction) => {
 		if (!proxyHost || !Array.isArray(proxyHost.locations) || proxyHost.locations.length === 0) {
 			return proxyHost;
 		}
@@ -352,7 +352,7 @@ const internalProxyHostAccessList = {
 		}
 
 		const rows = await accessListModel
-			.query()
+			.query(transaction)
 			.whereIn("id", allIds)
 			.andWhere("is_deleted", 0)
 			.withGraphFetched("[clients,items]");
