@@ -345,6 +345,8 @@ Since setup script v1.55, restore acquires the same lock as backup and update, s
 
 Setup script v1.63 validates a private copy of the archive before stopping services. Database files must be regular files; hard links, special files, duplicate paths, and links that escape the backup or point through another link are refused. Normal Certbot certificate links and CrowdSec hub links remain supported. Validation uses Python already shipped in the installed NPMplus image, with networking disabled.
 
+Setup script v1.64 also restores uploaded avatars and downloaded Gravatar images with their database references. It removes destination-only image caches so reused user IDs do not display another machine's images. These files share the database's recovery snapshot and return to their prior state if restore fails.
+
 A full migration to a new machine is therefore:
 
 ```bash

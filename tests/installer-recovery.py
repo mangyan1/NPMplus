@@ -235,6 +235,7 @@ PYTHON
   esac
 }
 cp() {
+  if [[ "${FAIL_AVATAR_APPLY:-0}" == 1 && "$*" == *extract*'/npmplus/gravatar '* ]]; then return 1; fi
   if [[ "${FAIL_SNAPSHOT:-0}" == 1 && "$*" == *pre-restore-*/data/npmplus ]]; then return 1; fi
   if [[ "${FAIL_APPLY:-0}" == 1 && "$*" == *extract*database.backup.sqlite* ]]; then
     printf broken >"$FIXTURE_ROOT/opt/npmplus/npmplus/database.sqlite"; return 1
@@ -259,6 +260,44 @@ cp() {
         self.assertEqual((self.data / "tls/certificate").read_text(), "restored-cert")
         snapshot = next((self.root / "var/backups/npmplus").glob("pre-restore-*/data/npmplus/database.sqlite"))
         self.assertEqual(self.rows(snapshot), ["original"])
+
+    def avatar_fixture(self, include_incoming=True):
+        for kind in ("avatar", "gravatar"):
+            original = self.data / f"npmplus/{kind}"
+            original.mkdir(parents=True)
+            (original / "1.png").write_text(f"original-{kind}")
+            if include_incoming:
+                incoming = self.root / f"incoming/opt/npmplus/npmplus/{kind}"
+                incoming.mkdir(parents=True)
+                (incoming / "2.png").write_text(f"restored-{kind}")
+        with tarfile.open(self.archive, "w:gz", dereference=False) as archive:
+            archive.add(self.root / "incoming/opt/npmplus", arcname="opt/npmplus")
+
+    def test_restore_recovers_uploaded_and_downloaded_avatar_files(self):
+        self.avatar_fixture()
+        result = self.restore()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for kind in ("avatar", "gravatar"):
+            cache = self.data / f"npmplus/{kind}"
+            self.assertEqual((cache / "2.png").read_text(), f"restored-{kind}")
+            self.assertFalse((cache / "1.png").exists())
+
+    def test_restore_without_avatars_does_not_keep_the_new_machine_user_images(self):
+        self.avatar_fixture(include_incoming=False)
+        result = self.restore()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for kind in ("avatar", "gravatar"):
+            self.assertFalse((self.data / f"npmplus/{kind}/1.png").exists())
+
+    def test_avatar_copy_failure_recovers_the_original_database_and_both_image_caches(self):
+        self.avatar_fixture()
+        result = self.restore(FAIL_AVATAR_APPLY="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.rows(), ["original"])
+        for kind in ("avatar", "gravatar"):
+            cache = self.data / f"npmplus/{kind}"
+            self.assertEqual((cache / "1.png").read_text(), f"original-{kind}")
+            self.assertFalse((cache / "2.png").exists())
 
     def test_restore_rejects_database_symlinks_before_stopping_or_chmod(self):
         external = self.root / "external.sqlite"
