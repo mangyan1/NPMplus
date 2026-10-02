@@ -162,11 +162,29 @@ docker() {
       if [[ -f "$FIXTURE_ROOT/fail-up-once" ]]; then
         rm "$FIXTURE_ROOT/fail-up-once"; return 1
       fi ;;
-    inspect*) echo "${CONTAINER_HEALTH:-healthy}" ;;
+    inspect*)
+      if [[ "$*" == *'.Image'* ]]; then printf 'sha256:%064d\n' 0
+      else echo "${CONTAINER_HEALTH:-healthy}"; fi ;;
     'exec npmplus curl'*) echo '{"status":"OK"}' ;;
     'exec npmplus node'*)
       [[ "${FAIL_ONLINE_BACKUP:-0}" == 0 ]] || return 1
       command cp "$FIXTURE_ROOT/opt/npmplus/npmplus/database.sqlite" "$FIXTURE_ROOT/opt/npmplus/npmplus/database.backup.sqlite" ;;
+    run*)
+      [[ "${FAIL_CROWDSEC_BACKUP:-0}" == 0 ]] || return 1
+      local snapshot="" arg
+      for arg in "$@"; do
+        if [[ "$arg" == *'dst=/snapshot' ]]; then snapshot="${arg#type=bind,src=}"; snapshot="${snapshot%,dst=/snapshot}"; fi
+      done
+      [[ -n "$snapshot" ]] || return 1
+      python3 - "$FIXTURE_ROOT/opt/crowdsec/data/crowdsec.db" "$snapshot/crowdsec.backup.db" <<'PYTHON'
+import sqlite3, sys
+from contextlib import closing
+with closing(sqlite3.connect(f'file:{sys.argv[1]}?mode=ro', uri=True)) as source:
+    with closing(sqlite3.connect(sys.argv[2])) as destination:
+        source.backup(destination)
+        destination.execute('pragma journal_mode=delete')
+PYTHON
+      ;;
     *) return 1 ;;
   esac
 }
@@ -315,6 +333,76 @@ RULES
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.data / "npmplus/database.backup.sqlite").exists())
         self.assertFalse(list((self.root / "var/backups/npmplus").glob("npmplus-*.tar.gz")))
+
+    def test_daily_backup_contains_a_consistent_crowdsec_snapshot_without_stopping_protection(self):
+        directory = self.root / "opt/crowdsec/data"
+        directory.mkdir(parents=True)
+        self.database(directory / "crowdsec.db", "crowdsec-original")
+        with closing(sqlite3.connect(directory / "crowdsec.db")) as writer:
+            writer.execute("pragma journal_mode=wal")
+            writer.execute("pragma wal_autocheckpoint=0")
+            writer.execute("insert into records values ('committed-in-wal')")
+            writer.commit()
+            result = self.shell(BACKUP)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr + (self.root / "var/log/npmplus-backup.log").read_text())
+            archive_path = next((self.root / "var/backups/npmplus").glob("npmplus-*.tar.gz"))
+            with tarfile.open(archive_path) as archive:
+                names = archive.getnames()
+                self.assertIn("opt/crowdsec/data/crowdsec.backup.db", names)
+                self.assertNotIn("opt/crowdsec/data/crowdsec.db", names)
+                self.assertNotIn("opt/crowdsec/data/crowdsec.db-wal", names)
+                self.assertNotIn("opt/crowdsec/data/crowdsec.db-shm", names)
+                self.assertNotIn("opt/npmplus/npmplus/database.sqlite", names)
+                self.assertIn("opt/npmplus/npmplus/database.backup.sqlite", names)
+                destination = self.root / "copied-crowdsec.db"
+                destination.write_bytes(archive.extractfile("opt/crowdsec/data/crowdsec.backup.db").read())
+            self.assertEqual(self.rows(destination), ["crowdsec-original", "committed-in-wal"])
+        calls = (self.root / "docker.calls").read_text()
+        self.assertNotIn(" stop", calls)
+        self.assertIn("--network none --read-only --cap-drop ALL", calls)
+        self.assertIn("dst=/source,readonly", calls)
+        self.assertEqual(archive_path.stat().st_mode & 0o777, 0o600)
+
+    def test_failed_crowdsec_snapshot_preserves_previous_archives_and_cleans_staging(self):
+        directory = self.root / "opt/crowdsec/data"
+        directory.mkdir(parents=True)
+        self.database(directory / "crowdsec.db", "original")
+        previous = self.root / "var/backups/npmplus/npmplus-2000-01-01-000000.tar.gz"
+        previous.write_bytes(b"previous archive")
+        result = self.shell(BACKUP, FAIL_CROWDSEC_BACKUP="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(previous.read_bytes(), b"previous archive")
+        self.assertEqual(list(previous.parent.glob("npmplus-*.tar.gz")), [previous])
+        self.assertFalse(list(previous.parent.glob(".npmplus-backup-*")))
+        self.assertFalse((self.data / "npmplus/database.backup.sqlite").exists())
+
+    def test_failed_archive_creation_never_publishes_a_partial_backup(self):
+        fail_tar = '''tar() { if [[ "$1" == -czf ]]; then printf partial >"$2"; return 1; fi; command tar "$@"; }\n'''
+        result = self.shell(fail_tar + BACKUP)
+        self.assertNotEqual(result.returncode, 0)
+        directory = self.root / "var/backups/npmplus"
+        self.assertFalse(list(directory.glob("npmplus-*.tar.gz")))
+        self.assertFalse(list(directory.glob(".npmplus-backup-*")))
+
+    def test_restore_prefers_consistent_crowdsec_snapshot_and_removes_stale_wal(self):
+        incoming = self.root / "incoming/opt/crowdsec/data"
+        incoming.mkdir(parents=True)
+        self.database(incoming / "crowdsec.backup.db", "consistent-snapshot")
+        self.database(incoming / "crowdsec.db", "stale-main")
+        (incoming / "crowdsec.db-wal").write_bytes(b"stale-wal")
+        (incoming / "crowdsec.db-shm").write_bytes(b"stale-shm")
+        with tarfile.open(self.archive, "w:gz") as archive:
+            archive.add(self.root / "incoming/opt/npmplus", arcname="opt/npmplus")
+            archive.add(incoming.parent, arcname="opt/crowdsec")
+        services = '''docker() { if [[ "$*" == *'config --services'* ]]; then printf 'npmplus\\ncrowdsec\\n'; else fixture_docker "$@"; fi; }\n'''
+        # Rename the fixture function while keeping all ordinary restore behavior.
+        code = RESTORE + '\nDATA_DIR="/opt/npmplus"\nCROWDSEC_DIR="/opt/crowdsec"\nCOMPOSE_FILE="$DATA_DIR/compose.yaml"\neval "$(declare -f docker | sed \'1s/docker/fixture_docker/\')"\n' + services + 'run_restore "$FIXTURE_ROOT/backup.tar.gz"\n'
+        result = self.shell(code)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        restored = self.root / "opt/crowdsec/data/crowdsec.db"
+        self.assertEqual(self.rows(restored), ["consistent-snapshot"])
+        self.assertFalse(Path(str(restored) + "-wal").exists())
+        self.assertFalse(Path(str(restored) + "-shm").exists())
 
 
 if __name__ == "__main__":

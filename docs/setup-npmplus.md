@@ -39,7 +39,7 @@ Enter that token in the setup form. The token file is mode `0600` and is removed
 The script installs these root-owned helpers:
 
 - `/usr/local/bin/npmplus-safe-update`: transactional monthly update.
-- `/usr/local/bin/npmplus-backup`: daily data backup, retaining seven archives.
+- `/usr/local/bin/npmplus-backup`: daily data backup, retaining seven archives. NPMplus and CrowdSec SQLite databases use consistent online snapshots; CrowdSec, AppSec, Anubis, and the firewall bouncer stay active. Completed root-only archives are published atomically, and failed snapshots or archive creation leave previous backups intact.
 - `/usr/local/bin/npmplus-crowdsec-heal`: daily validation and repair of CrowdSec credentials.
 - `/usr/local/bin/anubis-honeypot-ban`: optional five-minute Anubis-to-CrowdSec bridge.
 - `/usr/local/sbin/npmplus-start-protected`: optional fail-closed startup gate for the public containers.
