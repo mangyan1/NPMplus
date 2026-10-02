@@ -1,4 +1,6 @@
 # Reassessed against current upstream image scans on 2026-10-02; expiry unchanged.
+# Historical upstream baseline only. The deployed fork build is scanned without
+# this file; original upstream images remain in unsuppressed comparison reports.
 # Scanned with Trivy 0.74.0 on 2026-10-02: ghcr.io/techarohq/anubis@sha256:8828275668b7bc675679f100970f9714f731388fbbf66ae94de8aca952e3fc4a
 vulnerabilities:
   - id: CVE-2026-33818

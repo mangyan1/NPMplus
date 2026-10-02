@@ -134,7 +134,7 @@ services:
 #  crowdsec:
 #    container_name: crowdsec
 #    restart: unless-stopped
-#    image: docker.io/crowdsecurity/crowdsec:latest
+#    image: ghcr.io/mangyan1/npmplus:crowdsec
 #    pull_policy: always
 #    ports:
 #      - "127.0.0.1:6060:6060"
@@ -154,7 +154,7 @@ services:
 #  anubis:
 #    container_name: npmplus-anubis
 #    restart: unless-stopped
-#    image: ghcr.io/techarohq/anubis:latest
+#    image: ghcr.io/mangyan1/npmplus:anubis
 #    pull_policy: always
 #    ports:
 #      - "127.0.0.1:8923:8923"
@@ -163,7 +163,7 @@ services:
 #      - "TARGET= " # important: this needs to be and stay one single space
 #      - "POLICY_FNAME=/etc/botPolicies.yaml" # required so the status codes can be changed
 #    volumes:
-#      - "/opt/anubis.yaml:/etc/botPolicies.yaml:ro" # since a file is mounted here, you first need to create it before deploying this container, you can download the default file matching your anubis image version from https://raw.githubusercontent.com/TecharoHQ/anubis/refs/tags/<version>/data/botPolicies.yaml (pin image and policy to the same release, a policy from main can be newer than the image and fail to parse)
+#      - "/opt/anubis.yaml:/etc/botPolicies.yaml:ro" # create this file before deployment; use the image's io.npmplus.upstream.revision label in https://raw.githubusercontent.com/TecharoHQ/anubis/<upstream-commit>/data/botPolicies.yaml so the policy matches the pinned build
 
 # This can be used with GOA=true to keep the geoip database updated, environment variables must be configured
 #  geoipupdate:

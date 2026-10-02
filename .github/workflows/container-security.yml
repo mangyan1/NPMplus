@@ -14,12 +14,17 @@ env:
   TRIVY_IMAGE: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
 jobs:
   resolve:
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
       anubis_image: ${{ steps.anubis.outputs.image }}
+      npmplus: ${{ steps.stack.outputs.npmplus }}
+      caddy: ${{ steps.stack.outputs.caddy }}
+      crowdsec: ${{ steps.stack.outputs.crowdsec }}
+      anubis: ${{ steps.stack.outputs.anubis }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Resolve latest stable Anubis release
         id: anubis
         env:
@@ -35,6 +40,32 @@ jobs:
             exit 1
           fi
           echo "image=ghcr.io/techarohq/anubis:$tag" >> "$GITHUB_OUTPUT"
+          built_version="$(sed -n 's/^ARG ANUBIS_VERSION=\(v[0-9.]*\)-mangyan1\.security\..*/\1/p' security-images/anubis/Dockerfile)"
+          test "$built_version" = "$tag" || {
+            echo "Rebuild the patched Anubis image for latest stable $tag (currently $built_version)" >&2
+            exit 1
+          }
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Resolve exact deployed-stack channels
+        id: stack
+        env:
+          OWNER: ${{ github.repository_owner }}
+          ANUBIS_VERSION: ${{ steps.anubis.outputs.version }}
+        run: |
+          for spec in npmplus:develop caddy:caddy crowdsec:crowdsec anubis:anubis; do
+            name="${spec%%:*}"
+            ref="ghcr.io/$OWNER/npmplus:${spec#*:}"
+            digest="$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -er '.digest')"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            echo "$name=$ref@$digest" >> "$GITHUB_OUTPUT"
+            if [ "$name" = anubis ]; then
+              docker pull --platform linux/amd64 "$ref@$digest" >/dev/null
+              version="$(docker image inspect "$ref@$digest" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')"
+              [[ "$version" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+)-mangyan1\.security\.[0-9]+$ ]]
+              test "${BASH_REMATCH[1]}" = "$ANUBIS_VERSION"
+            fi
+          done
 
   scan:
     needs: resolve
@@ -47,17 +78,21 @@ jobs:
       matrix:
         include:
           - name: npmplus
-            image: ghcr.io/${{ github.repository_owner }}/npmplus:develop
+            image: ${{ needs.resolve.outputs.npmplus }}
             ignore: .trivy/npmplus.yaml
+            severity: HIGH,CRITICAL
           - name: caddy
-            image: ghcr.io/${{ github.repository_owner }}/npmplus:caddy
+            image: ${{ needs.resolve.outputs.caddy }}
             ignore: ""
+            severity: MEDIUM,HIGH,CRITICAL
           - name: crowdsec
-            image: docker.io/crowdsecurity/crowdsec:latest
-            ignore: .trivy/crowdsec.yaml
+            image: ${{ needs.resolve.outputs.crowdsec }}
+            ignore: ""
+            severity: MEDIUM,HIGH,CRITICAL
           - name: anubis
-            image: ${{ needs.resolve.outputs.anubis_image }}
-            ignore: .trivy/anubis.yaml
+            image: ${{ needs.resolve.outputs.anubis }}
+            ignore: ""
+            severity: MEDIUM,HIGH,CRITICAL
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Create reviewable report
@@ -65,6 +100,7 @@ jobs:
           IMAGE: ${{ matrix.image }}
           IGNORE_FILE: ${{ matrix.ignore }}
           REPORT_NAME: ${{ matrix.name }}
+          SEVERITY: ${{ matrix.severity }}
         run: |
           report_ignore_args=()
           sarif_ignore_args=()
@@ -79,7 +115,7 @@ jobs:
             -v trivy-cache:/root/.cache/trivy \
             "$TRIVY_IMAGE" image \
             --scanners vuln \
-            --severity HIGH,CRITICAL \
+            --severity "$SEVERITY" \
             --format table \
             --output "/workspace/trivy-$REPORT_NAME.txt" \
             "${report_ignore_args[@]}" \
@@ -89,15 +125,20 @@ jobs:
             -v trivy-cache:/root/.cache/trivy \
             "$TRIVY_IMAGE" image \
             --scanners vuln \
-            --severity HIGH,CRITICAL \
+            --severity "$SEVERITY" \
             --format sarif \
             --output "/workspace/trivy-$REPORT_NAME.sarif" \
             "${sarif_ignore_args[@]}" \
             "$IMAGE"
+          # Include every severity, including unclassified Go advisories.
+          docker run --rm -v "$PWD:/workspace" -v trivy-cache:/root/.cache/trivy \
+            "$TRIVY_IMAGE" image --scanners vuln --format json \
+            --output "/workspace/trivy-$REPORT_NAME.json" "$IMAGE"
       - name: Enforce reviewed baseline
         env:
           IMAGE: ${{ matrix.image }}
           IGNORE_FILE: ${{ matrix.ignore }}
+          SEVERITY: ${{ matrix.severity }}
         run: |
           ignore_args=()
           if [ -n "$IGNORE_FILE" ]; then
@@ -108,7 +149,7 @@ jobs:
             -v trivy-cache:/root/.cache/trivy \
             "$TRIVY_IMAGE" image \
             --scanners vuln \
-            --severity HIGH,CRITICAL \
+            --severity "$SEVERITY" \
             --exit-code 1 \
             "${ignore_args[@]}" \
             "$IMAGE"
@@ -120,6 +161,7 @@ jobs:
           path: |
             trivy-${{ matrix.name }}.txt
             trivy-${{ matrix.name }}.sarif
+            trivy-${{ matrix.name }}.json
           if-no-files-found: error
           retention-days: 30
       - name: Publish SARIF
@@ -128,3 +170,44 @@ jobs:
         with:
           sarif_file: trivy-${{ matrix.name }}.sarif
           category: container-${{ matrix.name }}
+
+  upstream-tracking:
+    needs: resolve
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: crowdsec
+            image: docker.io/crowdsecurity/crowdsec:latest
+          - name: anubis
+            image: ${{ needs.resolve.outputs.anubis_image }}
+    steps:
+      - name: Report original upstream images for reassessment
+        env:
+          IMAGE: ${{ matrix.image }}
+          REPORT_NAME: ${{ matrix.name }}
+        run: |
+          # These images are no longer selected by the installer. Keep their
+          # unsuppressed findings visible separately from the deployed-image gate.
+          for format in json table; do
+            docker run --rm -v "$PWD:/workspace" -v trivy-cache:/root/.cache/trivy \
+              "$TRIVY_IMAGE" image --scanners vuln --format "$format" \
+              --output "/workspace/upstream-$REPORT_NAME-$format.txt" "$IMAGE"
+          done
+          {
+            echo "### Original upstream $REPORT_NAME (comparison only)"
+            echo 'The deployed fork image has a separate blocking scan without exceptions.'
+            echo '```'
+            cat "upstream-$REPORT_NAME-table.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ always() }}
+        with:
+          name: upstream-${{ matrix.name }}
+          path: upstream-${{ matrix.name }}-*.txt
+          if-no-files-found: error
+          retention-days: 30

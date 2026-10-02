@@ -25,6 +25,36 @@ ANUBIS = re.search(r"write_root_file /usr/local/bin/npmplus-collect-anubis 755 <
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_anubis_policy_uses_the_pinned_images_validated_source(self):
+        metadata = re.search(r"^read_anubis_image_metadata\(\).*?^}\n", INSTALLER, re.M | re.S).group()
+        policy = re.search(r"^anubis_policy\(\).*?^}\n", INSTALLER, re.M | re.S).group()
+        stub = '''
+docker() {
+ case "$*" in
+  *org.opencontainers.image.version*) printf '%s\\n' "$FIXTURE_VERSION" ;;
+  *io.npmplus.upstream.revision*) printf '%s\\n' "$FIXTURE_REVISION" ;;
+  *) return 1 ;;
+ esac
+}
+fetch() {
+ printf '%s\\n' "$1" >"$FIXTURE_ROOT/policy-url"
+ printf 'bots: []\\nstatus_codes:\\n  CHALLENGE: 200\\n  DENY: 200\\nstore:\\n  backend: memory\\n  parameters: {}\\nhoneypot:\\n  implementation: naive\\n' >"$3"
+}
+'''
+        code = stub + metadata + policy + '\nread_anubis_image_metadata fake@sha256:fixed\nanubis_policy "$ANUBIS_VERSION" n "$ANUBIS_SOURCE_REVISION"\n'
+        valid = {"FIXTURE_VERSION": "v1.27.0-mangyan1.security.1", "FIXTURE_REVISION": "d39e26cedcc96bea5e4915297c756e7eec74aaf7"}
+        result = self.shell(code, **valid)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / "policy-url").read_text().strip(), "https://raw.githubusercontent.com/TecharoHQ/anubis/" + valid["FIXTURE_REVISION"] + "/data/botPolicies.yaml")
+        self.assertIn("CHALLENGE: 401", (self.root / "opt/anubis.yaml").read_text())
+        self.assertIn("backend: bbolt", (self.root / "opt/anubis.yaml").read_text())
+        for version, revision in [("v1.27.0", valid["FIXTURE_REVISION"]), ("v1.27.0-mangyan1.security.1", "main")]:
+            with self.subTest(version=version, revision=revision):
+                (self.root / "policy-url").unlink(missing_ok=True)
+                result = self.shell(code, FIXTURE_VERSION=version, FIXTURE_REVISION=revision)
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertFalse((self.root / "policy-url").exists())
+
     def test_honeypot_bridge_detects_reset_and_regrowth_beyond_old_cursor(self):
         directory = self.root / "opt/anubis-data/anubis"
         directory.mkdir(parents=True)
