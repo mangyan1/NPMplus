@@ -6,6 +6,7 @@ import Modal from "react-bootstrap/Modal";
 import { AccessClientFields, BasicAuthFields, Button, Loading } from "src/components";
 import { useAccessList, useSetAccessList } from "src/hooks";
 import { intl, T } from "src/locale";
+import { hasMissingAccessPassword } from "src/modules/AccessListValidation";
 import EasyModal from "src/modules/easyModal";
 import { showTabOfInvalid, validateString } from "src/modules/Validations";
 import { showObjectSuccess } from "src/notifications";
@@ -31,6 +32,9 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 		const uniqueUsernames = Array.from(new Set(usernames));
 		if (usernames.length !== uniqueUsernames.length) {
 			return intl.formatMessage({ id: "error.access.duplicate-usernames" });
+		}
+		if (hasMissingAccessPassword(values.items, data?.items || [])) {
+			return intl.formatMessage({ id: "error.access.password-required" });
 		}
 
 		return null;

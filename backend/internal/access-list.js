@@ -96,11 +96,20 @@ const internalAccessList = {
 	 */
 	update: async (access, data) => {
 		access.can("access_lists:manage");
-		const row = await internalAccessList.get(access, { id: data.id });
+		const row = await internalAccessList.get(access, { id: data.id, expand: ["items"] });
 		if (row.id !== data.id) {
 			// Sanity check that something crazy hasn't happened
 			throw new errs.InternalValidationError(
 				`Access List could not be updated, IDs do not match: ${row.id} !== ${data.id}`,
+			);
+		}
+
+		// A masked password may retain an existing username, never create a new one.
+		const existingUsernames = new Set((row.items || []).map((item) => item.username));
+		if ((data.items || []).some((item) => !item.password && !existingUsernames.has(item.username))) {
+			throw Object.assign(
+				new errs.ValidationError("A password is required for new or renamed access-list users"),
+				{ message_i18n: "error.access.password-required" },
 			);
 		}
 
