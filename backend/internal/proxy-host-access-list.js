@@ -127,7 +127,9 @@ const internalProxyHostAccessList = {
 		const specificRules = lists
 			.flatMap((l) => l.clients || [])
 			.filter((c) => c.address?.trim().toLowerCase() !== "all");
-		const clients = specificRules.length === 0 ? [] : [...specificRules, catchAll];
+		// No IP policy is distinct from an explicit catch-all-only policy.
+		const hasClientRules = lists.some((entry) => (entry.clients || []).length > 0);
+		const clients = hasClientRules ? [...specificRules, catchAll] : [];
 		return {
 			items: getMergedItems(lists),
 			clients,
