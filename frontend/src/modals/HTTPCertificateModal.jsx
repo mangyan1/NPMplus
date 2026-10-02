@@ -12,7 +12,7 @@ import EasyModal from "src/modules/easyModal";
 import { showObjectSuccess } from "src/notifications";
 
 const showHTTPCertificateModal = () => {
-	EasyModal.show(HTTPCertificateModal);
+	void EasyModal.show(HTTPCertificateModal);
 };
 
 const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {

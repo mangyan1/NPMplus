@@ -18,7 +18,7 @@ import { showTabOfInvalid } from "src/modules/Validations";
 import { showObjectSuccess } from "src/notifications";
 
 const showDeadHostModal = (id) => {
-	EasyModal.show(DeadHostModal, { id });
+	void EasyModal.show(DeadHostModal, { id });
 };
 
 const DeadHostModal = EasyModal.create(({ id, visible, remove }) => {

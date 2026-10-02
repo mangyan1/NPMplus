@@ -11,7 +11,7 @@ import EasyModal from "src/modules/easyModal";
 import { showObjectSuccess } from "src/notifications";
 
 const showDNSCertificateModal = () => {
-	EasyModal.show(DNSCertificateModal);
+	void EasyModal.show(DNSCertificateModal);
 };
 
 const DNSCertificateModal = EasyModal.create(({ visible, remove }) => {

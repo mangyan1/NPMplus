@@ -6,7 +6,7 @@ import { T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
 
 const showEventDetailsModal = (id) => {
-	EasyModal.show(EventDetailsModal, { id });
+	void EasyModal.show(EventDetailsModal, { id });
 };
 
 const EventDetailsModal = EasyModal.create(({ id, visible, remove }) => {

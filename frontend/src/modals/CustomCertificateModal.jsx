@@ -12,7 +12,7 @@ import { validateString } from "src/modules/Validations";
 import { showObjectSuccess } from "src/notifications";
 
 const showCustomCertificateModal = (cert, provider) => {
-	EasyModal.show(CustomCertificateModal, { cert, provider });
+	void EasyModal.show(CustomCertificateModal, { cert, provider });
 };
 
 const CustomCertificateModal = EasyModal.create(({ visible, remove, cert, provider = "other" }) => {

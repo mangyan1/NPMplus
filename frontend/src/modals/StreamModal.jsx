@@ -10,7 +10,7 @@ import { showTabOfInvalid, validateString } from "src/modules/Validations";
 import { showObjectSuccess } from "src/notifications";
 
 const showStreamModal = (id) => {
-	EasyModal.show(StreamModal, { id });
+	void EasyModal.show(StreamModal, { id });
 };
 
 const StreamModal = EasyModal.create(({ id, visible, remove }) => {
