@@ -71,7 +71,6 @@ try {
 	await page.getByRole("button", { name: "Add Access List", exact: true }).click();
 	await dialog.getByLabel("Name", { exact: true }).fill("Synthetic rejected create");
 	await dialog.getByRole("tab", { name: "Authorizations", exact: true }).click();
-	await dialog.locator("#tab-auth").getByRole("button", { name: "Add", exact: true }).click();
 	await dialog.locator('#tab-auth input[type="text"]').fill("new-user");
 	await dialog.locator('#tab-auth input[type="password"]').fill("Synthetic-Fixture-Password-1");
 	const rejected = page.waitForResponse(
