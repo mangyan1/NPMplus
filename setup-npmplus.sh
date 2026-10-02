@@ -1339,7 +1339,7 @@ run_restore() (
 	[[ -f "$source" && -s "$source" ]] || { echo "backup not found: $source" >&2; return 1; }
 	# Validate and extract the same private copy, even if the supplied archive
 	# came from a directory writable by another user.
-	local supplied_source="$source" restore_image
+	local supplied_source="$source" restore_image restore_validator
 	ts=$(date +%F-%H%M%S)
 	mkdir -p /var/backups/npmplus
 	staging=$(mktemp -d "/var/backups/npmplus/pre-restore-$ts.XXXXXX")
@@ -1378,9 +1378,7 @@ run_restore() (
 	# image to inspect archive metadata without adding a host dependency.
 	restore_image=$(docker inspect --format '{{.Image}}' npmplus) || return 1
 	[[ "$restore_image" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "cannot resolve the installed NPMplus image" >&2; return 1; }
-	if ! docker run --rm -i --network none --read-only --cap-drop ALL \
-		--security-opt no-new-privileges --mount "type=bind,src=$source,dst=/backup.tar.gz,readonly" \
-		--entrypoint python3 "$restore_image" - /backup.tar.gz <<'PYTHON'
+	restore_validator=$(cat <<'PYTHON'
 import posixpath
 import sys
 import tarfile
@@ -1389,7 +1387,7 @@ def allowed(name):
     return name in ("opt/npmplus", "opt/crowdsec", "opt/anubis.yaml") or name.startswith(("opt/npmplus/", "opt/crowdsec/"))
 
 try:
-    with tarfile.open(sys.argv[1], "r:gz") as archive:
+    with tarfile.open(fileobj=sys.stdin.buffer, mode="r|gz") as archive:
         members = {}
         for member in archive:
             name = member.name.rstrip("/")
@@ -1422,6 +1420,12 @@ except (OSError, tarfile.TarError, ValueError) as error:
     print("unsafe backup archive: " + str(error), file=sys.stderr)
     sys.exit(1)
 PYTHON
+	)
+	# Stream the private copy so Docker also works through a remote/socket
+	# daemon; no archive path or additional host mount is exposed to it.
+	if ! docker run --rm -i --network none --read-only --cap-drop ALL \
+		--security-opt no-new-privileges --entrypoint python3 "$restore_image" \
+		-c "$restore_validator" <"$source"
 	then
 		echo "backup metadata validation failed - nothing was changed" >&2
 		return 1

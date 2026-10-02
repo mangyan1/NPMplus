@@ -808,7 +808,7 @@ jobs:
           mkdir -p /tmp/restore-health-fixture
           cat >/tmp/restore-health-fixture/Dockerfile <<'DOCKERFILE'
           FROM alpine:3.22
-          RUN apk add --no-cache curl openssl \
+          RUN apk add --no-cache curl openssl python3 \
               && mkdir /www \
               && printf '{"status":"OK"}\n' >/www/api \
               && openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
