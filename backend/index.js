@@ -22,11 +22,11 @@ async function appStart() {
 			logger.info("Cloudflares IPs are NOT trusted");
 			await internalIpRanges.generateConfig([]);
 		}
-		internalCertificate.initTimer();
 		await internalNginx.reload();
 
 		const server = app.listen("/run/npmplus.sock", () => {
 			logger.info(`Backend PID ${process.pid} listening on unix socket...`);
+			internalCertificate.initTimer();
 			startTelemetry();
 			if (process.env.TRUST_CLOUDFLARE === "true") {
 				internalIpRanges.initTimer();
