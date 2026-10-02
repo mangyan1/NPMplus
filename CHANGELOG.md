@@ -4,6 +4,7 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Render the incoming request scheme for redirection hosts set to Auto, instead of returning an unusable `auto://` destination. Explicit HTTP/HTTPS schemes and optional path preservation remain supported.
 - Preserve explicit catch-all-only access-list rules on proxy hosts and custom locations, including `deny all`.
 - Require a new password when adding or renaming an access-list authorization user. Unchanged usernames keep their masked passwords; the modal explains invalid edits before saving.
 - Roll back failed access-list updates across database rows, password files, merged host/location files, nginx configuration, and audit writes. Validate and reload nginx before committing the policy.
