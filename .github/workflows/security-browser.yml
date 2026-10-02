@@ -37,6 +37,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: security-browser-screenshots
-          path: backend/.smoke/security-*.png
+          path: |
+            backend/.smoke/security-*.png
+            backend/.smoke/ui-*.png
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
