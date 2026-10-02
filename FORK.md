@@ -630,6 +630,12 @@ drop or misread them:
 
 ## Upstream merge resolution notes (October 2)
 
+The later reconciliation through `668b1b74` records upstream's React Query
+5.104.1 update with a normal merge while retaining the mature 5.103.2 pin. React
+Query and query-core 5.104.1 were published on October 2 and do not yet meet the
+seven-day quarantine. The fork's semantic type-check gate and typed interfaces
+remain intact; neither the package manifest nor lockfile changes in this merge.
+
 The reconciliation through `e0acff4a` preserves upstream ancestry with a regular
 merge. The remaining upstream changes are dependency and build-tool updates.
 AWS-LC 5.11.0 and the digest-pinned Dockerfile frontend 1.27.1 are adopted.
