@@ -862,7 +862,7 @@ if [ "$GOA" = "true" ] && [ "$LOGROTATE" = "false" ]; then
 fi
 
 
-export TV="21"
+export TV="22"
 NPMPLUS_ENV_HASH=$(node /app/lib/environment-hash.js) || {
     echo "Could not fingerprint the template environment; refusing startup."
     sleep inf
