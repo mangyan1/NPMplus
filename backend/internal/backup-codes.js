@@ -3,7 +3,8 @@ import bcrypt from "bcryptjs";
 import { hash, verify } from "../lib/argon2.js";
 import authModel from "../models/auth.js";
 
-const codesOf = (userId) => authModel.query().where("user_id", userId).andWhere("type", "backup_code");
+const codesOf = (userId, transaction) =>
+	authModel.query(transaction).where("user_id", userId).andWhere("type", "backup_code");
 
 /**
  * Generate backup codes
@@ -37,15 +38,20 @@ const internalBackupCodes = {
 	 * Replace all backup codes of a user with a freshly generated set
 	 *
 	 * @param   {number} userId
+	 * @param   {Object} [transaction] Share the MFA regeneration transaction when provided
 	 * @returns {Promise<string[]>}
 	 */
-	create: async (userId) => {
+	create: async (userId, transaction) => {
 		const { plain, hashed } = await generate();
 
-		await codesOf(userId).delete();
-		for (const secret of hashed) {
-			await authModel.query().insert({ user_id: userId, type: "backup_code", secret, meta: {} });
-		}
+		// Keep the previous recovery set usable until every replacement commits.
+		const replace = async (trx) => {
+			await codesOf(userId, trx).delete();
+			for (const secret of hashed) {
+				await authModel.query(trx).insert({ user_id: userId, type: "backup_code", secret, meta: {} });
+			}
+		};
+		await (transaction ? replace(transaction) : authModel.transaction(replace));
 
 		return plain;
 	},

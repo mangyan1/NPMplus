@@ -163,24 +163,25 @@ const internalMfa = {
 			throw new errs.ValidationError("Invalid verification code");
 		}
 
-		const plain = await backupCodes.create(userId);
-
-		await userModel
-			.query()
-			.where("id", userId)
-			.patch({ npmplus_token_valid_after: Math.floor(Date.now() / 1000) });
-
-		await internalAuditLog.add(access, {
-			action: "updated",
-			object_type: "user",
-			object_id: user.id,
-			meta: {
-				name: user.name,
-				backup_codes_regenerated: true,
-			},
+		// Revocation and audit failures must not discard codes the user never received.
+		return userModel.transaction(async (transaction) => {
+			const plain = await backupCodes.create(userId, transaction);
+			await userModel
+				.query(transaction)
+				.where("id", userId)
+				.patch({ npmplus_token_valid_after: Math.floor(Date.now() / 1000) });
+			await internalAuditLog.add(
+				access,
+				{
+					action: "updated",
+					object_type: "user",
+					object_id: user.id,
+					meta: { name: user.name, backup_codes_regenerated: true },
+				},
+				transaction,
+			);
+			return { backup_codes: plain };
 		});
-
-		return { backup_codes: plain };
 	},
 };
 
