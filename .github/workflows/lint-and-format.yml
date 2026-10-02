@@ -44,6 +44,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm biome ci --reporter=default --reporter=github
           ./translations/sort-locale.sh
+          pnpm typecheck
           pnpm test
           pnpm vite build
       - name: diff

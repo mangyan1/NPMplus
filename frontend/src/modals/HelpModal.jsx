@@ -4,7 +4,7 @@ import { getHelpFile, T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
 
 const showHelpModal = (section) => {
-	EasyModal.show(HelpModal, { section });
+	void EasyModal.show(HelpModal, { section });
 };
 
 const HelpModal = EasyModal.create(({ section, visible, remove }) => {

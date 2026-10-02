@@ -11,7 +11,7 @@ import { showTabOfInvalid, validateString } from "src/modules/Validations";
 import { showObjectSuccess } from "src/notifications";
 
 const showAccessListModal = (id) => {
-	EasyModal.show(AccessListModal, { id });
+	void EasyModal.show(AccessListModal, { id });
 };
 
 const AccessListModal = EasyModal.create(({ id, visible, remove }) => {

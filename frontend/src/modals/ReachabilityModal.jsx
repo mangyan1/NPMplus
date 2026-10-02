@@ -6,7 +6,7 @@ import { T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
 
 const showReachabilityModal = (domains) => {
-	EasyModal.show(ReachabilityModal, { domains });
+	void EasyModal.show(ReachabilityModal, { domains });
 };
 
 const ReachabilityModal = EasyModal.create(({ visible, remove, domains }) => {

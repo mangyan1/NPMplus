@@ -11,7 +11,7 @@ import EasyModal from "src/modules/easyModal";
 import { validateString } from "src/modules/Validations";
 
 const showMfaModal = (id) => {
-	EasyModal.show(MfaModal, { id });
+	void EasyModal.show(MfaModal, { id });
 };
 
 const MfaModal = EasyModal.create(({ id, visible, remove }) => {

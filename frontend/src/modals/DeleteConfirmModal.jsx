@@ -7,7 +7,7 @@ import { T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
 
 const showDeleteConfirmModal = (props) => {
-	EasyModal.show(DeleteConfirmModal, props);
+	void EasyModal.show(DeleteConfirmModal, props);
 };
 
 const DeleteConfirmModal = EasyModal.create(

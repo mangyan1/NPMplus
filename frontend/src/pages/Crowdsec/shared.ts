@@ -23,7 +23,7 @@ export interface NotificationPlan {
 // on a count or a bucket, or an ongoing attack would re-notify on every poll
 // that observes a different number.
 export const notificationPlan = (
-	signals: { type: string }[] | undefined,
+	signals: { type: string; count?: number }[] | undefined,
 	lapiUnavailable: boolean,
 	seen: (type: string) => boolean,
 ): NotificationPlan => {

@@ -13,7 +13,7 @@ import { validateEmail, validateString } from "src/modules/Validations";
 import { showObjectSuccess } from "src/notifications";
 
 const showUserModal = (id) => {
-	EasyModal.show(UserModal, { id });
+	void EasyModal.show(UserModal, { id });
 };
 
 const UserModal = EasyModal.create(({ id, visible, remove }) => {

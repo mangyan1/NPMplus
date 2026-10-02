@@ -12,7 +12,7 @@ import EasyModal from "src/modules/easyModal";
 import { isAdmin } from "src/modules/Permissions";
 
 const showPermissionsModal = (id) => {
-	EasyModal.show(PermissionsModal, { id });
+	void EasyModal.show(PermissionsModal, { id });
 };
 
 const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {

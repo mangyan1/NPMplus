@@ -6,7 +6,8 @@
 	"license": "AGPL-3.0 (and MIT)",
 	"type": "module",
 	"scripts": {
-		"test": "node --test test/*.test.ts"
+		"test": "node --test test/*.test.ts",
+		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@ebay/nice-modal-react": "1.2.13",
@@ -32,7 +33,11 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.14",
+		"@types/node": "24.13.6",
+		"@types/react": "19.3.0",
+		"@types/react-dom": "19.3.0",
 		"@vitejs/plugin-react": "6.1.1",
+		"typescript": "7.0.2",
 		"vite": "8.3.1"
 	}
 }

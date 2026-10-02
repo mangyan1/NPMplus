@@ -19,7 +19,7 @@ import { showTabOfInvalid, validateString } from "src/modules/Validations";
 import { showObjectSuccess } from "src/notifications";
 
 const showRedirectionHostModal = (id) => {
-	EasyModal.show(RedirectionHostModal, { id });
+	void EasyModal.show(RedirectionHostModal, { id });
 };
 
 const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {

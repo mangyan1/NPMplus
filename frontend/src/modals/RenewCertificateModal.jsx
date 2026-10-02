@@ -10,7 +10,7 @@ import EasyModal from "src/modules/easyModal";
 import { showObjectSuccess } from "src/notifications";
 
 const showRenewCertificateModal = (id) => {
-	EasyModal.show(RenewCertificateModal, { id });
+	void EasyModal.show(RenewCertificateModal, { id });
 };
 
 const RenewCertificateModal = EasyModal.create(({ id, visible, remove }) => {

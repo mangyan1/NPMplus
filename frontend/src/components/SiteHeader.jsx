@@ -127,7 +127,7 @@ export function SiteHeader() {
 									className="dropdown-item"
 									onClick={(e) => {
 										e.preventDefault();
-										logout();
+										void logout();
 									}}
 								>
 									<IconLogout width={18} />
@@ -138,7 +138,7 @@ export function SiteHeader() {
 									className="dropdown-item"
 									onClick={(e) => {
 										e.preventDefault();
-										logoutEverywhere();
+										void logoutEverywhere();
 									}}
 								>
 									<IconDevicesX width={18} />

@@ -10,7 +10,7 @@ import EasyModal from "src/modules/easyModal";
 import { validateString } from "src/modules/Validations";
 
 const showSetPasswordModal = (id) => {
-	EasyModal.show(SetPasswordModal, { id });
+	void EasyModal.show(SetPasswordModal, { id });
 };
 
 const SetPasswordModal = EasyModal.create(({ id, visible, remove }) => {

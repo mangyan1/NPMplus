@@ -18,7 +18,7 @@ interface Props extends InnerModalProps, ShowProps {}
 const DURATION_OPTIONS = ["1h", "4h", "24h", "7d", "30d"];
 
 const showManualBanModal = (props: ShowProps) => {
-	EasyModal.show(ManualBanModal, props);
+	void EasyModal.show(ManualBanModal, props);
 };
 
 const ManualBanModal = EasyModal.create(({ visible, remove, onCreated, initialTarget = "" }: Props) => {
