@@ -266,7 +266,9 @@ jobs:
           test "$after" -gt "$before"
           newest="$(sudo bash -c 'ls -1t /var/backups/npmplus/npmplus-*.tar.gz | head -1')"
           sudo test -s "$newest"
-          sudo tar -tzf "$newest" | grep -q 'opt/npmplus/npmplus/database'
+          # Consume the full listing: grep -q closes its pipe on the first
+          # match and makes tar fail with SIGPIPE under pipefail on large backups.
+          sudo tar -tzf "$newest" | grep 'opt/npmplus/npmplus/database' > /dev/null
           # the scp hint must carry the real archive name so the migration
           # copy step can be pasted as-is (no timestamp typing)
           grep -q "sudo scp \"$newest\" user@NEW-MACHINE:/tmp/" /tmp/npmplus-manual-backup.log
