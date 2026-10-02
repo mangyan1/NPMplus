@@ -40,7 +40,9 @@ const useSetAccessList = () => {
 			}));
 			return () => queryClient.setQueryData(["access-list", values.id], previousObject);
 		},
-		onError: (_, __, rollback) => rollback(),
+		onError: (_, __, rollback) => {
+			if (typeof rollback === "function") rollback();
+		},
 		onSuccess: async ({ id }) => {
 			await Promise.all([
 				queryClient.invalidateQueries({ queryKey: ["access-list", id] }),
