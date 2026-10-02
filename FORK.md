@@ -627,3 +627,35 @@ drop or misread them:
   scope; the DNS-01 pipeline and its `certificate-dns.test.js` pins are
   untouched and green. This is a deliberate, owner-approved exception, not
   a precedent for restructuring the file.
+
+## Upstream merge resolution notes (October 2)
+
+The reconciliation through `e0acff4a` preserves upstream ancestry with a regular
+merge. The remaining upstream changes are dependency and build-tool updates.
+AWS-LC 5.11.0 and the digest-pinned Dockerfile frontend 1.27.1 are adopted.
+
+Both package manifests retain fork attribution, test commands, Playwright, and
+the backend's lodash dependency. The Caddy Dockerfile retains the source build,
+patched Go modules, non-root runtime, validation, and health check; only its
+Dockerfile frontend changes.
+
+Registry publication times and frozen installs enforce the seven-day policy.
+Adopted mature versions include schema-ref-parser 16.0.3, swagger-parser 13.1.0,
+undici 8.11.2, Biome 2.5.14, Tabler core 1.6.0/icons 3.48.0, React Query 5.103.2,
+markdown-to-jsx 9.10.3, react-intl 12.1.3, and Vite 8.3.1. Upstream's newer
+LiquidJS, mysql2, pg, Biome, Tabler core, React Query, and Vite releases stay
+deferred until they meet the policy. Both lockfiles are regenerated under it.
+
+The image security gate additionally requires patched brace-expansion 5.0.11,
+fast-uri 3.1.7, and urllib3 2.8.0. Backend overrides constrain only vulnerable
+version ranges; urllib3 is pinned alongside the existing pip/Certbot versions.
+Runtime DNS-plugin installation stays intact. A fresh image build refreshes
+Alpine's PCRE2 and Python packages. Latest stable pip 26.2.1 still vendors
+urllib3 2.7.0; two package/version-scoped exceptions in `.trivy/npmplus.yaml`
+accept that packaging-tool risk until October 4. The patched installed urllib3
+remains scanned, suppressed findings remain in reports, and existing exception
+expiries are unchanged. No bundled pip module is rewritten.
+
+The Caddy source replacement argument now includes `@$CADDY_VERSION` as well
+as the local source path. Without it, xcaddy's plugin request selects the newest
+Caddy release and conflicts with the separately requested pinned version.

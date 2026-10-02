@@ -1,11 +1,11 @@
-# syntax=docker/dockerfile:1.27.0@sha256:bde3983e9c939224420ddaf6b784cc30e09b035a4dea01f581230c50809f372e
+# syntax=docker/dockerfile:1.27.1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS nginx
 SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 
 ARG LUAJIT_INC=/usr/include/luajit-2.1
 ARG LUAJIT_LIB=/usr/lib
 
-ARG AWSLC_VER=3fe7e081e62131b6776f0d923312b5e6756907ce # v5.10.0
+ARG AWSLC_VER=fa9bc8d6f7cfb2cf849b247fb06bbbfc41ecc9d6 # v5.11.0
 
 ARG NGINX_VER=45a318d05a0fd23f57ffe9579f7f0969c0fe402a # release-1.31.6
 ARG DTR_VER=1.29.2
@@ -227,6 +227,8 @@ ARG COF_VER=da93e0cec7fdb1a80f4972f75b3638763d012c0e # main
 ARG NBF_VER=5cee8db2a505f2a253e24691399c828c043071fc # master
 ARG PIP_VER=26.2.1
 ARG CERTBOT_VER=5.7.0
+# CVE-2026-97687 and CVE-2026-97689; preserve runtime DNS-plugin installation.
+ARG URLLIB3_VER=2.8.0
 
 COPY --from=nginx /usr/local/nginx                                                                         /usr/local/nginx
 COPY --from=nginx /usr/local/bin/bssl                                                                      /usr/local/bin/bssl
@@ -276,7 +278,7 @@ RUN apk upgrade --no-cache -a && \
     apk del --no-cache luarocks5.1 git make && \
     \
     python3 -m venv /usr/local && \
-    pip install --no-cache-dir --upgrade "pip==$PIP_VER" "certbot==$CERTBOT_VER" && \
+    pip install --no-cache-dir --upgrade "pip==$PIP_VER" "certbot==$CERTBOT_VER" "urllib3==$URLLIB3_VER" && \
     \
     wget -q https://raw.githubusercontent.com/tomwassenberg/certbot-ocsp-fetcher/"$COF_VER"/certbot-ocsp-fetcher -O /usr/local/bin/certbot-ocsp-fetcher.sh && \
     echo "60148ed2ffef2f1354427d3e080400d008132f8e5fb014f721f5986f438dd621  /usr/local/bin/certbot-ocsp-fetcher.sh" | sha256sum -c - && \
