@@ -116,43 +116,54 @@ const internalUser = {
 			throw new errs.ValidationError(`Email address already in use - ${data.email}`);
 		}
 
-		let user = await userModel.query().insertAndFetch(data);
-		if (auth) {
-			await authModel.query().insert({
-				user_id: user.id,
-				type: auth.type,
-				secret: auth.secret,
-				meta: {},
+		const user = await userModel.transaction(async (trx) => {
+			let createdUser = await userModel.query(trx).insertAndFetch(data);
+			if (auth) {
+				await authModel.query(trx).insert({
+					user_id: createdUser.id,
+					type: auth.type,
+					secret: auth.secret,
+					meta: {},
+				});
+			}
+
+			// Create permissions row as well
+			const isAdmin = data.roles.indexOf("admin") !== -1;
+
+			await userPermissionModel.query(trx).insert({
+				user_id: createdUser.id,
+				visibility: isAdmin ? "all" : "user",
+				proxy_hosts: "hidden",
+				redirection_hosts: "hidden",
+				dead_hosts: "hidden",
+				streams: "hidden",
+				access_lists: "hidden",
+				certificates: "hidden",
 			});
+
+			createdUser = await internalUser.get(access, { id: createdUser.id }, trx);
+
+			await internalAuditLog.add(
+				access,
+				{
+					action: "created",
+					object_type: "user",
+					object_id: createdUser.id,
+					meta: createdUser,
+				},
+				trx,
+			);
+			return createdUser;
+		});
+
+		// Avatar failures must not turn a committed account into a failed setup response.
+		try {
+			const avatar = await internalUser.fetchGravatar(user.id, user.email, user.name);
+			await userModel.query().findById(user.id).patch({ avatar });
+			user.avatar = avatar || "/images/default-avatar.jpg";
+		} catch (error) {
+			logger.error(`Error saving account avatar: ${error.message}`);
 		}
-
-		// Create permissions row as well
-		const isAdmin = data.roles.indexOf("admin") !== -1;
-
-		await userPermissionModel.query().insert({
-			user_id: user.id,
-			visibility: isAdmin ? "all" : "user",
-			proxy_hosts: "hidden",
-			redirection_hosts: "hidden",
-			dead_hosts: "hidden",
-			streams: "hidden",
-			access_lists: "hidden",
-			certificates: "hidden",
-		});
-
-		await userModel
-			.query()
-			.patchAndFetchById(user.id, { avatar: await internalUser.fetchGravatar(user.id, user.email, user.name) });
-
-		user = await internalUser.get(access, { id: user.id });
-
-		await internalAuditLog.add(access, {
-			action: "created",
-			object_type: "user",
-			object_id: user.id,
-			meta: user,
-		});
-
 		return user;
 	},
 
@@ -253,7 +264,7 @@ const internalUser = {
 	 * @param  {Array}    [data.expand]
 	 * @return {Promise}
 	 */
-	get: async (access, data) => {
+	get: async (access, data, transaction) => {
 		const thisData = data || {};
 
 		thisData.id ||= access.token.getUserId(0);
@@ -261,7 +272,7 @@ const internalUser = {
 		access.canUser(thisData.id);
 
 		const query = userModel
-			.query()
+			.query(transaction)
 			.where("is_deleted", 0)
 			.andWhere("id", thisData.id)
 			.allowGraph("[permissions]")
