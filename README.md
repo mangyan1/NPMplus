@@ -25,6 +25,8 @@ sudo bash setup-npmplus.sh
 
 Review the script before running it on a production host. Select **Install NPMplus**, then answer the questions; if you are unsure, press Enter to accept the displayed default. The recommended defaults enable CrowdSec, CrowdSec AppSec, the firewall bouncer, and Anubis. Anubis's global catch-all challenge defaults off so APIs, licensing servers, webhooks, monitors, and other non-browser clients keep working, and AppSec can be turned off per proxy host if an application has a confirmed compatibility problem.
 
+Develop installer v1.62 uses fork-maintained [CrowdSec](security-images/crowdsec/README.md) and [Anubis](security-images/anubis/README.md) builds, tested and scanned on both architectures. It pins images and matching Anubis policies. Existing RC installers retain their original behavior; the build guides explain maintenance responsibilities.
+
 For the easiest first login, provide an administrator email and password when the installer asks. The password is handled as a temporary secret and is not saved in `compose.yaml`.
 
 Do not run this over an existing manual Nginx Proxy Manager deployment. Read the [compatibility and migration notes](ADVANCED.md#compatibility-to-upstream) and take a backup first; migrating back to the original project is not supported.

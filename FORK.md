@@ -665,3 +665,31 @@ expiries are unchanged. No bundled pip module is rewritten.
 The Caddy source replacement argument now includes `@$CADDY_VERSION` as well
 as the local source path. Without it, xcaddy's plugin request selects the newest
 Caddy release and conflicts with the separately requested pinned version.
+
+## Pre-expiry auxiliary image adoption (2026-10-02)
+
+Installer v1.62 selects fork-maintained CrowdSec 1.8.1 and Anubis 1.27.0 builds.
+Immutable source/base pins, native AMD64 and ARM64 tests, a scan without exceptions
+at MEDIUM/HIGH/CRITICAL, and exact tested-image promotion precede publication.
+The fork now owns their dependency updates and upstream release compatibility.
+
+CrowdSec keeps the official entrypoint, staged data, native RE2, static SQLite,
+all notification plugins, LAPI, AppSec, CAPI and firewall-bouncer integration.
+The maintained pgx/v5 stdlib driver replaces the end-of-life pgx/v4 protocol
+through two imports. Malformed-field and real PostgreSQL concurrency tests pin
+that change. A dependency guard excludes deprecated OpenPGP from all commands;
+its unclassified module advisory remains in raw reports without suppression.
+
+Anubis retains its non-root runtime and challenge/honeypot behavior. The installer
+reads validated upstream release/source metadata from the digest-pinned image and
+fetches the policy by its exact source commit, preserving catch-all choices.
+A negative-verified recovery test rejects arbitrary policy references.
+
+Daily and release enforcement targets the auxiliary images actually selected by
+the installer, without the historical CrowdSec/Anubis exception files. Daily
+upstream comparison artifacts retain all original findings, and a newer stable
+Anubis release fails the compatibility check until a rebuilt image is available.
+Existing upstream exception dates remain October 4; they are historical records,
+not permission to suppress deployed-image findings. NPMplus packaging exceptions
+also keep that expiry. Runtime Certbot DNS plugins and pinned pip remain intact.
+No RC tag is moved and no release is created by this installer change.

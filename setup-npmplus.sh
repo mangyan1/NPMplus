@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.61"
+SCRIPT_VERSION="1.62"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -20,7 +20,8 @@ ADMIN_SECRET_FILE="/run/npmplus-initial-admin-password"
 SELF_URL="https://raw.githubusercontent.com/mangyan1/NPMplus/develop/setup-npmplus.sh"
 NPMPLUS_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:develop"
 CADDY_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:caddy"
-CROWDSEC_IMAGE_CHANNEL="docker.io/crowdsecurity/crowdsec:latest"
+CROWDSEC_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:crowdsec"
+ANUBIS_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:anubis"
 DOCKER_INSTALL_URL="https://get.docker.com"
 DOCKER_INSTALL_SHA256="36bab4d12295a539f7493d52ed8296244895d2febceff5e725dedc0b0708f77b"
 PACKAGECLOUD_INSTALL_URL="https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh"
@@ -2313,25 +2314,28 @@ migrate_anubis_honeypot_mount() {
 	say "repaired legacy Anubis honeypot mount"
 }
 
-anubis_latest_version() {
-	local latest_url version
-	# GitHub's releases/latest web redirect is not subject to the small anonymous
-	# REST API quota. Read its final URL, then validate the tag before using it in
-	# either a registry reference or a raw-content URL.
-	latest_url=$(fetch https://github.com/TecharoHQ/anubis/releases/latest \
-		-o /dev/null -w '%{url_effective}\n')
-	version=${latest_url##*/}
-	[[ "$version" =~ ^v[0-9][0-9A-Za-z._+-]*$ ]] || {
-		echo "could not determine the latest Anubis release from $latest_url" >&2
+read_anubis_image_metadata() { # derive the matching policy from the pinned image
+	local version revision
+	version=$(docker image inspect "$1" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')
+	revision=$(docker image inspect "$1" --format '{{index .Config.Labels "io.npmplus.upstream.revision"}}')
+	[[ "$version" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+)-mangyan1\.security\.[0-9]+$ ]] || {
+		echo "pinned Anubis image has invalid release metadata: $version" >&2
 		return 1
 	}
-	printf '%s\n' "$version"
+	ANUBIS_VERSION=${BASH_REMATCH[1]}
+	[[ "$revision" =~ ^[0-9a-f]{40}$ ]] || {
+		echo "pinned Anubis image has invalid upstream source metadata" >&2
+		return 1
+	}
+	ANUBIS_SOURCE_REVISION="$revision"
 }
 
 # fetch the bot policy for a given anubis release and adapt it for the auth_request
 # integration; refuses to deploy if upstream changed the policy format
-anubis_policy() { # anubis_policy <version> [challenge_all]
-	fetch "https://raw.githubusercontent.com/TecharoHQ/anubis/refs/tags/$1/data/botPolicies.yaml" -o /opt/anubis.yaml
+anubis_policy() { # anubis_policy <version> [challenge_all] [source_commit]
+	local source_path="refs/tags/$1"
+	[[ -z "${3:-}" ]] || source_path="$3"
+	fetch "https://raw.githubusercontent.com/TecharoHQ/anubis/$source_path/data/botPolicies.yaml" -o /opt/anubis.yaml
 	# auth_request needs 401/403 instead of anubis' scraper-friendly 200s
 	sed -E -i 's/^([[:space:]]*CHALLENGE:)[[:space:]]*.*/\1 401/; s/^([[:space:]]*DENY:)[[:space:]]*.*/\1 403/' /opt/anubis.yaml
 	# the docs advise against the memory store in production; bbolt survives restarts
@@ -3400,11 +3404,10 @@ if [[ "${1:-}" == "--update" ]]; then
 	# improvements reach existing installs, not just fresh ones
 	install_host_tooling
 	repair_admin_lan_proxy
-	# anubis is release-pinned in the compose; move it to the latest release together
-	# with its policy file so the two can never disagree
+	# Resolve the scanned fork image first, then fetch its exact upstream policy.
 	if grep -q "npmplus-anubis" "$COMPOSE_FILE"; then
-		ANUBIS_VERSION=$(anubis_latest_version)
-		ANUBIS_IMAGE=$(pin_image "ghcr.io/techarohq/anubis:$ANUBIS_VERSION")
+		ANUBIS_IMAGE=$(pin_image "$ANUBIS_IMAGE_CHANNEL")
+		read_anubis_image_metadata "$ANUBIS_IMAGE"
 		set_compose_service_image anubis "$ANUBIS_IMAGE"
 		# keep the catchall choice from the existing policy unless explicitly
 		# requested for this update
@@ -3412,7 +3415,7 @@ if [[ "${1:-}" == "--update" ]]; then
 		grep -q "name: everything-else" /opt/anubis.yaml 2>/dev/null && CATCHALL="y"
 		[[ "$ENABLE_ANUBIS_CATCHALL_ON_UPDATE" != "true" ]] || CATCHALL="y"
 		say "anubis -> $ANUBIS_VERSION (policy refreshed)"
-		anubis_policy "$ANUBIS_VERSION" "$CATCHALL"
+		anubis_policy "$ANUBIS_VERSION" "$CATCHALL" "$ANUBIS_SOURCE_REVISION"
 	fi
 	grep -q "container_name: crowdsec" "$COMPOSE_FILE" && harden_auxiliary_service crowdsec crowdsec
 	grep -q "container_name: npmplus-anubis" "$COMPOSE_FILE" && harden_auxiliary_service anubis anubis
@@ -3600,8 +3603,8 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 	CROWDSEC_IMAGE=$(pin_image "$CROWDSEC_IMAGE_CHANNEL")
 fi
 if [[ "$USE_ANUBIS" == "y" ]]; then
-	ANUBIS_VERSION=$(anubis_latest_version)
-	ANUBIS_IMAGE=$(pin_image "ghcr.io/techarohq/anubis:$ANUBIS_VERSION")
+	ANUBIS_IMAGE=$(pin_image "$ANUBIS_IMAGE_CHANNEL")
+	read_anubis_image_metadata "$ANUBIS_IMAGE"
 fi
 if [[ "$USE_CADDY" == "y" ]]; then
 	CADDY_IMAGE=$(pin_image "$CADDY_IMAGE_CHANNEL")
@@ -3858,7 +3861,7 @@ mkdir -p "$DATA_DIR/nginx/logs"
 
 if [[ "$USE_ANUBIS" == "y" ]]; then
 	say "fetching anubis bot policy $ANUBIS_VERSION (status codes adjusted for auth_request)"
-	anubis_policy "$ANUBIS_VERSION" "$CHALLENGE_ALL"
+	anubis_policy "$ANUBIS_VERSION" "$CHALLENGE_ALL" "$ANUBIS_SOURCE_REVISION"
 	prepare_anubis_data "$ANUBIS_IMAGE" # subdir holds the honeypot IP log
 fi
 

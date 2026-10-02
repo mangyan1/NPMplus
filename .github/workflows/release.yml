@@ -96,14 +96,20 @@ jobs:
             https://api.github.com/repos/TecharoHQ/anubis/releases/latest | jq -er '.tag_name')"
           [[ "$anubis_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           caddy="ghcr.io/${{ github.repository_owner }}/npmplus:caddy"
-          crowdsec="docker.io/crowdsecurity/crowdsec:latest"
-          anubis="ghcr.io/techarohq/anubis:$anubis_tag"
+          crowdsec="ghcr.io/${{ github.repository_owner }}/npmplus:crowdsec"
+          anubis="ghcr.io/${{ github.repository_owner }}/npmplus:anubis"
           for spec in "caddy:$caddy" "crowdsec:$crowdsec" "anubis:$anubis"; do
             name="${spec%%:*}"
             ref="${spec#*:}"
             digest="$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -er '.digest')"
             [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
             echo "$name=$ref@$digest" >> "$GITHUB_OUTPUT"
+            if [ "$name" = anubis ]; then
+              docker pull --platform linux/amd64 "$ref@$digest" >/dev/null
+              version="$(docker image inspect "$ref@$digest" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')"
+              [[ "$version" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+)-mangyan1\.security\.[0-9]+$ ]]
+              test "${BASH_REMATCH[1]}" = "$anubis_tag"
+            fi
           done
 
   build-amd64:
@@ -265,13 +271,11 @@ jobs:
         run: |
           set -eu
           case "$SERVICE" in
-            anubis) image="$ANUBIS_REF"; ignore=.trivy/anubis.yaml ;;
-            caddy) image="$CADDY_REF"; ignore=; severity=MEDIUM,HIGH,CRITICAL ;;
-            crowdsec) image="$CROWDSEC_REF"; ignore=.trivy/crowdsec.yaml ;;
+            anubis) image="$ANUBIS_REF" ;;
+            caddy) image="$CADDY_REF" ;;
+            crowdsec) image="$CROWDSEC_REF" ;;
           esac
-          severity="${severity:-HIGH,CRITICAL}"
-          ignore_args=()
-          [ -z "$ignore" ] || ignore_args=(--ignorefile "/workspace/$ignore")
+          severity=MEDIUM,HIGH,CRITICAL
           report="trivy-stack-${SERVICE}-${PLATFORM#linux/}.txt"
           docker run --rm \
             -v "$PWD:/workspace" \
@@ -283,7 +287,6 @@ jobs:
             --format table \
             --output "/workspace/$report" \
             --exit-code 1 \
-            "${ignore_args[@]}" \
             "$image"
       - name: Upload auxiliary vulnerability report
         if: ${{ always() }}
