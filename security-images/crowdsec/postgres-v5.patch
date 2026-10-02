@@ -1,0 +1,24 @@
+diff --git a/pkg/database/drv_postgres.go b/pkg/database/drv_postgres.go
+--- a/pkg/database/drv_postgres.go
++++ b/pkg/database/drv_postgres.go
+@@ -4,7 +4,7 @@
+ 
+ import (
+ 	// register database driver as side effect
+-	_ "github.com/jackc/pgx/v4/stdlib"
++	_ "github.com/jackc/pgx/v5/stdlib"
+ 
+ 	"github.com/crowdsecurity/crowdsec/pkg/cwversion/component"
+ )
+diff --git a/pkg/database/alerts_pg_race_test.go b/pkg/database/alerts_pg_race_test.go
+--- a/pkg/database/alerts_pg_race_test.go
++++ b/pkg/database/alerts_pg_race_test.go
+@@ -11,7 +11,7 @@
+ 	"testing"
+ 	"time"
+ 
+-	_ "github.com/jackc/pgx/v4/stdlib"
++	_ "github.com/jackc/pgx/v5/stdlib"
+ 
+ 	"github.com/go-openapi/strfmt"
+ 	"github.com/stretchr/testify/require"
