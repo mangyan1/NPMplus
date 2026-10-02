@@ -1,11 +1,12 @@
 # Packaging-tool exceptions; reviewed on 2026-10-02, all expire 2026-10-04.
+# Scanned with Trivy 0.74.0 on 2026-10-02: ghcr.io/mangyan1/npmplus@sha256:a23d3d57a509feb8a0e38f576bee1db14d30c048a55bb42ed8a364d2d3d95430
 vulnerabilities:
   - id: CVE-2025-47273
     expired_at: 2026-10-04
-    statement: "Rechecked 2026-09-19: setuptools metadata finding persists, but no installed setuptools distribution is listed by Python. Keep upstream-compatible Certbot runtime plugin support; reassess with the next pip image update."
+    statement: "Rechecked 2026-10-02: setuptools metadata finding persists, but no installed setuptools distribution is listed by Python. Keep upstream-compatible Certbot runtime plugin support; reassess with the next pip image update."
   - id: GHSA-6v7p-g79w-8964
     expired_at: 2026-10-04
-    statement: "Rechecked 2026-09-19: pip 26.2.1 vendors msgpack 1.1.2; scanner lists 1.2.1 as fixed. Runtime Certbot plugin installation remains intentional; await a reviewed pip vendor update rather than modifying its bundled modules."
+    statement: "Rechecked 2026-10-02: pip 26.2.1 vendors msgpack 1.1.2; scanner lists 1.2.1 as fixed. Runtime Certbot plugin installation remains intentional; await a reviewed pip vendor update rather than modifying its bundled modules."
   - id: CVE-2026-97687
     purls:
       - pkg:pypi/urllib3@2.7.0
