@@ -207,12 +207,13 @@ docker() {
       [[ "${FAIL_ONLINE_BACKUP:-0}" == 0 ]] || return 1
       command cp "$FIXTURE_ROOT/opt/npmplus/npmplus/database.sqlite" "$FIXTURE_ROOT/opt/npmplus/npmplus/database.backup.sqlite" ;;
     run*)
-      if [[ "$*" == *'dst=/backup.tar.gz,readonly'* ]]; then
-        local archive="" mount
-        for mount in "$@"; do
-          if [[ "$mount" == type=bind,src=*,dst=/backup.tar.gz,readonly ]]; then archive="${mount#type=bind,src=}"; archive="${archive%,dst=/backup.tar.gz,readonly}"; fi
+      if [[ "$*" == *'--entrypoint python3'* ]]; then
+        local validator="" argument previous=""
+        for argument in "$@"; do
+          [[ "$previous" != -c ]] || validator="$argument"
+          previous="$argument"
         done
-        python3 - "$archive"
+        python3 -c "$validator"
         return
       fi
       [[ "${FAIL_CROWDSEC_BACKUP:-0}" == 0 ]] || return 1
