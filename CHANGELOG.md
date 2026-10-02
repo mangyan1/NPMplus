@@ -4,6 +4,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Aligned Caddy's OTLP trace exporters with the patched 1.45.0 logging modules, removing three Low-severity TLS findings. Updated mature CEL, Chi and compression pins after checking Go advisories. Caddy remains stable 2.11.4; its generated build module now passes a source vulnerability gate, an OpenPGP import guard, and upstream HTTP/tracing tests before publication.
+
 - Installer v1.62 adopts fork-maintained CrowdSec 1.8.1 and Anubis 1.27.0 builds with patched Go, modules and system libraries. Both native architectures pass runtime tests and scans without exceptions before exact-image promotion. CrowdSec's end-of-life PostgreSQL driver moves to maintained pgx/v5 with parser and real-database regression checks. Anubis's policy is fetched from the exact source commit recorded in the digest-pinned image. Daily and release gates scan the deployed auxiliary images without the former upstream exceptions; original upstream findings remain in separate comparison reports. NPMplus's pip packaging exceptions still expire October 4.
 
 - Updated the backend transitive security pins to brace-expansion 5.0.12, fast-uri 3.1.8, and ip-address 10.7.2 after the production dependency audit identified four remaining moderate advisories. These releases meet the seven-day aging policy; the existing pins had prevented Dependabot from resolving the fixes.

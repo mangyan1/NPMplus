@@ -8,11 +8,13 @@ ARG X_NET_VERSION=v0.57.0
 # v1.83.2 fixes GHSA-2v4p-qf9q-27wj (CVE-2026-84445): xDS servers crash on
 # requests missing both :authority and Host headers.
 ARG GRPC_VERSION=v1.83.2
-ARG CEL_GO_VERSION=v0.29.2
+ARG CEL_GO_VERSION=v0.30.0
+ARG CHI_VERSION=v5.3.0
+ARG COMPRESS_VERSION=v1.18.7
 # Caddy 2.11.4 pins the OTLP log modules at v0.19.0. That exporter accepted a
 # TLS certificate without validating it (CVE-2026-81871, fixed in v0.21.0).
 # The log modules carry their own v0.x line, so pin the whole set to the
-# aligned otel v1.45.0 release instead of the exporter alone.
+# aligned otel v1.45.0 release, including the trace exporters (CVE-2026-81870).
 ARG OTEL_VERSION=v1.45.0
 ARG OTEL_LOG_VERSION=v0.21.0
 
@@ -27,15 +29,20 @@ RUN apk upgrade --no-cache -a && \
 	cp -a "$(go env GOMODCACHE)/github.com/caddyserver/caddy/v2@$CADDY_VERSION" /tmp/caddy-source && \
 	chmod -R u+w /tmp/caddy-source && \
 	patch -d /tmp/caddy-source -p1 < /tmp/cel-go-0.29.patch && \
-	CGO_ENABLED=0 XCADDY_SETCAP=0 xcaddy build "$CADDY_VERSION" --output /usr/bin/caddy \
+	CGO_ENABLED=0 XCADDY_SETCAP=0 XCADDY_SKIP_CLEANUP=1 xcaddy build "$CADDY_VERSION" --output /usr/bin/caddy \
 		--with "github.com/caddyserver/caddy/v2@$CADDY_VERSION=/tmp/caddy-source" \
 		--replace "github.com/google/cel-go=github.com/google/cel-go@$CEL_GO_VERSION" \
+		--replace "github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@$CHI_VERSION" \
+		--replace "github.com/klauspost/compress=github.com/klauspost/compress@$COMPRESS_VERSION" \
 		--replace "golang.org/x/crypto=golang.org/x/crypto@$X_CRYPTO_VERSION" \
 		--replace "golang.org/x/net=golang.org/x/net@$X_NET_VERSION" \
 		--replace "google.golang.org/grpc=google.golang.org/grpc@$GRPC_VERSION" \
 		--replace "go.opentelemetry.io/otel=go.opentelemetry.io/otel@$OTEL_VERSION" \
 		--replace "go.opentelemetry.io/otel/log=go.opentelemetry.io/otel/log@$OTEL_LOG_VERSION" \
 		--replace "go.opentelemetry.io/otel/sdk/log=go.opentelemetry.io/otel/sdk/log@$OTEL_LOG_VERSION" \
+		--replace "go.opentelemetry.io/otel/exporters/otlp/otlptrace=go.opentelemetry.io/otel/exporters/otlp/otlptrace@$OTEL_VERSION" \
+		--replace "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc=go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@$OTEL_VERSION" \
+		--replace "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp=go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@$OTEL_VERSION" \
 		--replace "go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc@$OTEL_LOG_VERSION" \
 		--replace "go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp=go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@$OTEL_LOG_VERSION" \
 		--replace "go.opentelemetry.io/otel/exporters/stdout/stdoutlog=go.opentelemetry.io/otel/exporters/stdout/stdoutlog@$OTEL_LOG_VERSION" && \

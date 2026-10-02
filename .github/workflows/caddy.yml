@@ -8,12 +8,14 @@ on:
       - caddy/Dockerfile
       - caddy/Caddyfile
       - caddy/cel-go-0.29.patch
+      - caddy/source-check.sh
   pull_request:
     paths:
       - .github/workflows/caddy.yml
       - caddy/Dockerfile
       - caddy/Caddyfile
       - caddy/cel-go-0.29.patch
+      - caddy/source-check.sh
   workflow_dispatch:
 permissions:
   contents: read
@@ -43,6 +45,20 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+      - name: Load Caddy builder for source checks
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: caddy
+          target: builder
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: npmplus-caddy:source-check
+      - name: Check compiled dependencies and upstream HTTP tests
+        run: |
+          docker run --rm \
+            -v "$PWD/caddy/source-check.sh:/source-check.sh:ro" \
+            npmplus-caddy:source-check sh /source-check.sh
       - name: Scan Caddy candidate
         run: |
           docker run --rm \
