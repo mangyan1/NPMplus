@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.63"
+SCRIPT_VERSION="1.64"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -1528,6 +1528,16 @@ PYTHON
 		done
 	fi
 	chmod 600 "$DATA_DIR/npmplus/database.sqlite" 2>/dev/null || true
+
+	# The database stores URLs for these images; restore them alongside it.
+	# They share the npmplus directory already covered by snapshot/recovery.
+	# Discard destination-only caches so reused user IDs cannot show another
+	# machine's images when an older backup has no avatar payload.
+	for item in avatar gravatar; do
+		rm -rf -- "${DATA_DIR:?}/npmplus/${item:?}"
+		[[ ! -d "$extract/opt/npmplus/npmplus/$item" ]] || \
+			cp -a "$extract/opt/npmplus/npmplus/$item" "$DATA_DIR/npmplus/$item"
+	done
 
 	# certificates, access lists and every other /data payload ride along with
 	# the data dir; the compose file, admin secret and host helpers are
