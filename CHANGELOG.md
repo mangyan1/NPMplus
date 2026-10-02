@@ -6,7 +6,9 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 - Reconciled upstream develop through `e0acff4a` with a regular merge, adopting AWS-LC 5.11.0, the Dockerfile frontend update, and dependency releases that meet the seven-day aging policy. Preserved fork attribution, test scripts, Playwright, lodash, and the hardened Caddy source build. Newer dependency releases remain deferred.
 
-- Fixed the NPMplus image scan findings by constraining vulnerable brace-expansion and fast-uri transitive releases to patched versions and pinning urllib3 2.8.0 alongside Certbot. Rebuilding refreshes Alpine's PCRE2 and Python packages. Runtime Certbot DNS-plugin installation and the existing reviewed scanner baselines remain intact.
+- Fixed the NPMplus runtime image findings by constraining vulnerable brace-expansion and fast-uri transitive releases to patched versions and pinning urllib3 2.8.0 alongside Certbot. Rebuilding refreshes Alpine's PCRE2 and Python packages. Latest stable pip still bundles vulnerable urllib3 2.7.0; two version-scoped packaging-tool exceptions expire October 4, with residual risk documented. Runtime Certbot DNS-plugin installation remains intact.
+
+- Caddy's patched source build now supplies the pinned version on the xcaddy replacement argument too. A newer upstream Caddy release no longer makes xcaddy request conflicting versions of the same module.
 
 - CodeQL's JavaScript extractor cannot parse the JSX spread children construct upstream renders the `DomainsFormatter` domain badges through (`{...elms}`) — every code-scanning run reported `Could not process some files due to syntax errors` and silently skipped the file, leaving that component without any code-quality or security coverage. The children now render as the array itself (`{elms}` — React flattens both identically and every element is already keyed), restoring scanning coverage at the cost of a single-line divergence from upstream.
 

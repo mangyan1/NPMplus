@@ -650,4 +650,12 @@ The image security gate additionally requires patched brace-expansion 5.0.11,
 fast-uri 3.1.7, and urllib3 2.8.0. Backend overrides constrain only vulnerable
 version ranges; urllib3 is pinned alongside the existing pip/Certbot versions.
 Runtime DNS-plugin installation stays intact. A fresh image build refreshes
-Alpine's PCRE2 and Python packages; no scanner exception is added or extended.
+Alpine's PCRE2 and Python packages. Latest stable pip 26.2.1 still vendors
+urllib3 2.7.0; two package/version-scoped exceptions in `.trivy/npmplus.yaml`
+accept that packaging-tool risk until October 4. The patched installed urllib3
+remains scanned, suppressed findings remain in reports, and existing exception
+expiries are unchanged. No bundled pip module is rewritten.
+
+The Caddy source replacement argument now includes `@$CADDY_VERSION` as well
+as the local source path. Without it, xcaddy's plugin request selects the newest
+Caddy release and conflicts with the separately requested pinned version.

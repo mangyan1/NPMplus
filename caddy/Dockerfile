@@ -28,7 +28,7 @@ RUN apk upgrade --no-cache -a && \
 	chmod -R u+w /tmp/caddy-source && \
 	patch -d /tmp/caddy-source -p1 < /tmp/cel-go-0.29.patch && \
 	CGO_ENABLED=0 XCADDY_SETCAP=0 xcaddy build "$CADDY_VERSION" --output /usr/bin/caddy \
-		--with "github.com/caddyserver/caddy/v2=/tmp/caddy-source" \
+		--with "github.com/caddyserver/caddy/v2@$CADDY_VERSION=/tmp/caddy-source" \
 		--replace "github.com/google/cel-go=github.com/google/cel-go@$CEL_GO_VERSION" \
 		--replace "golang.org/x/crypto=golang.org/x/crypto@$X_CRYPTO_VERSION" \
 		--replace "golang.org/x/net=golang.org/x/net@$X_NET_VERSION" \

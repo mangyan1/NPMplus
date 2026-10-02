@@ -1,4 +1,4 @@
-# Reassessed against current upstream image scans on 2026-09-19; expiry unchanged.
+# Packaging-tool exceptions; reviewed on 2026-10-02, all expire 2026-10-04.
 vulnerabilities:
   - id: CVE-2025-47273
     expired_at: 2026-10-04
@@ -6,3 +6,13 @@ vulnerabilities:
   - id: GHSA-6v7p-g79w-8964
     expired_at: 2026-10-04
     statement: "Rechecked 2026-09-19: pip 26.2.1 vendors msgpack 1.1.2; scanner lists 1.2.1 as fixed. Runtime Certbot plugin installation remains intentional; await a reviewed pip vendor update rather than modifying its bundled modules."
+  - id: CVE-2026-97687
+    purls:
+      - pkg:pypi/urllib3@2.7.0
+    expired_at: 2026-10-04
+    statement: "Reviewed 2026-10-02: latest stable pip 26.2.1 embeds urllib3 2.7.0 in its vendor bundle/SBOM; the separately installed Certbot urllib3 is pinned to patched 2.8.0 and pip check passes. Accept the remaining packaging-tool HTTPS-proxy TLS risk temporarily under the owner decision preserving runtime DNS-plugin installation; not universally unreachable. Await a fixed pip release, retain suppressed findings in artifacts, and reassess by expiry. Advisory: https://github.com/advisories/GHSA-8988-9cw3-xx77"
+  - id: CVE-2026-97689
+    purls:
+      - pkg:pypi/urllib3@2.7.0
+    expired_at: 2026-10-04
+    statement: "Reviewed 2026-10-02: latest stable pip 26.2.1 embeds urllib3 2.7.0 in its vendor bundle/SBOM; installed Certbot urllib3 is patched at 2.8.0. Malicious chunked responses during pip downloads remain a packaging-tool availability risk, not a false positive. Keep runtime DNS-plugin installation per the owner decision, do not modify pip's bundled modules, retain suppressed findings in artifacts, and reassess by expiry. Advisory: https://github.com/advisories/GHSA-vxq7-64xx-v4gw"
