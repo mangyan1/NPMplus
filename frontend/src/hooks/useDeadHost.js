@@ -48,7 +48,9 @@ const useSetDeadHost = () => {
 			}));
 			return () => queryClient.setQueryData(["dead-host", values.id], previousObject);
 		},
-		onError: (_, __, rollback) => rollback(),
+		onError: (_, __, rollback) => {
+			if (typeof rollback === "function") rollback();
+		},
 		onSuccess: async ({ id }) => {
 			await Promise.all([
 				queryClient.invalidateQueries({ queryKey: ["dead-host", id] }),
