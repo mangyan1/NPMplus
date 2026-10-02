@@ -863,7 +863,11 @@ fi
 
 
 export TV="21"
-if [ ! -s /data/npmplus/env.sha512sum ] || [ "$(cat /data/npmplus/env.sha512sum)" != "$( (grep "env\.[A-Z0-9_]\+" -roh /app/templates | sed "s|env.||g" | sort | uniq | xargs printenv; echo "$TV") | tr -d "\n" | sha512sum | cut -d" " -f1)" ]; then
+NPMPLUS_ENV_HASH=$(node /app/lib/environment-hash.js) || {
+    echo "Could not fingerprint the template environment; refusing startup."
+    sleep inf
+}
+if [ ! -s /data/npmplus/env.sha512sum ] || [ "$(cat /data/npmplus/env.sha512sum)" != "$NPMPLUS_ENV_HASH" ]; then
     echo "At least one env or the template version changed, all hosts will be regenerated. Please make sure to read the changelog."
     export REGENERATE_ALL="true"
 fi

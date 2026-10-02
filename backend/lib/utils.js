@@ -1,11 +1,11 @@
 import { execFile as nodeExecFile } from "node:child_process";
-import crypto from "node:crypto";
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { Liquid } from "liquidjs";
 import { debug, global as logger } from "../logger.js";
+import { getEnvironmentHash } from "./environment-hash.js";
 import errs from "./error.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,26 +31,7 @@ const authRequestUpstreamPattern = /^https?:\/\/([^/:]+|\[[a-fA-F0-9:]+\]):[0-9]
 const isValidAuthRequestUpstream = (value) => typeof value === "string" && authRequestUpstreamPattern.test(value);
 
 const writeHash = async () => {
-	const referencedEnvVars = new Set();
-	const templateFiles = await readdir(`${__dirname}/../templates`);
-
-	for (const fileName of templateFiles) {
-		const content = await readFile(`${__dirname}/../templates/${fileName}`, "utf8");
-		const matches = content.match(/env\.[A-Z0-9_]+/g) || [];
-
-		for (const match of matches) {
-			referencedEnvVars.add(match.replace("env.", ""));
-		}
-	}
-
-	let hashInput = "";
-	for (const varName of [...referencedEnvVars].sort()) {
-		hashInput += process.env[varName] || "";
-	}
-	hashInput += process.env.TV;
-
-	const hash = crypto.createHash("sha512").update(hashInput).digest("hex");
-	await writeFile("/data/npmplus/env.sha512sum", hash);
+	await writeFile("/data/npmplus/env.sha512sum", await getEnvironmentHash());
 };
 
 /**
