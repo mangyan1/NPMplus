@@ -174,9 +174,16 @@ docker() {
             return [row[0] for row in db.execute("select value from records")]
 
     def shell(self, code, **env):
+        # Validator paths describe the archive/container, not the disposable
+        # host filesystem. Keep that Python body byte-for-byte unchanged.
+        validator = re.search(r"<<'PYTHON'\n(import posixpath\n.*?)\nPYTHON", code, re.S)
+        if validator:
+            code = code.replace(validator.group(1), "ARCHIVE_VALIDATOR_BODY")
         # Rewrite only absolute host paths; archive members remain opt/...
         code = re.sub(r"(?<![\w}$])/(opt|var|run|etc)/", lambda match: str(self.root) + match.group(), code)
         code = code.replace("-C / ", f"-C '{self.root}' ")
+        if validator:
+            code = code.replace("ARCHIVE_VALIDATOR_BODY", validator.group(1))
         stub = r'''
 set -euo pipefail
 say() { printf '%s\n' "$*"; }
@@ -200,6 +207,15 @@ docker() {
       [[ "${FAIL_ONLINE_BACKUP:-0}" == 0 ]] || return 1
       command cp "$FIXTURE_ROOT/opt/npmplus/npmplus/database.sqlite" "$FIXTURE_ROOT/opt/npmplus/npmplus/database.backup.sqlite" ;;
     run*)
+      if [[ "$*" == *'--entrypoint python3'* ]]; then
+        local validator="" argument previous=""
+        for argument in "$@"; do
+          [[ "$previous" != -c ]] || validator="$argument"
+          previous="$argument"
+        done
+        python3 -c "$validator"
+        return
+      fi
       [[ "${FAIL_CROWDSEC_BACKUP:-0}" == 0 ]] || return 1
       local snapshot="" arg
       for arg in "$@"; do
@@ -224,7 +240,7 @@ cp() {
     printf broken >"$FIXTURE_ROOT/opt/npmplus/npmplus/database.sqlite"; return 1
   fi
   # Quiescence must precede every pre-restore copy.
-  if [[ "$*" == *pre-restore-* && "$*" != *extract* && ! -f "$FIXTURE_ROOT/stopped" ]]; then return 1; fi
+  if [[ "$*" == *pre-restore-* && "$*" != *extract* && "$*" != *archive.tar.gz* && ! -f "$FIXTURE_ROOT/stopped" ]]; then return 1; fi
   command cp "$@"
 }
 '''
@@ -244,12 +260,66 @@ cp() {
         snapshot = next((self.root / "var/backups/npmplus").glob("pre-restore-*/data/npmplus/database.sqlite"))
         self.assertEqual(self.rows(snapshot), ["original"])
 
+    def test_restore_rejects_database_symlinks_before_stopping_or_chmod(self):
+        external = self.root / "external.sqlite"
+        self.database(external, "external")
+        external.chmod(0o644)
+        incoming = self.root / "incoming/opt/npmplus"
+        database = incoming / "npmplus/database.backup.sqlite"
+        database.unlink()
+        database.symlink_to(external)
+        with tarfile.open(self.archive, "w:gz", dereference=False) as archive:
+            archive.add(incoming, arcname="opt/npmplus")
+        result = self.restore()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.root / "stopped").exists())
+        self.assertEqual(external.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(self.rows(), ["original"])
+
+    def test_restore_preserves_relative_certbot_links_with_regular_archive_targets(self):
+        incoming = self.root / "incoming/opt/npmplus"
+        archive_dir = incoming / "tls/certbot/archive/example.test"
+        live_dir = incoming / "tls/certbot/live/example.test"
+        archive_dir.mkdir(parents=True)
+        live_dir.mkdir(parents=True)
+        (archive_dir / "fullchain1.pem").write_text("certificate fixture")
+        (live_dir / "fullchain.pem").symlink_to("../../archive/example.test/fullchain1.pem")
+        with tarfile.open(self.archive, "w:gz", dereference=False) as archive:
+            archive.add(incoming, arcname="opt/npmplus")
+        result = self.restore()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        restored = self.data / "tls/certbot/live/example.test/fullchain.pem"
+        self.assertTrue(restored.is_symlink())
+        self.assertEqual(restored.read_text(), "certificate fixture")
+
     def test_snapshot_failure_does_not_replace_the_original_state(self):
         result = self.restore(FAIL_SNAPSHOT="1")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.rows(), ["original"])
         self.assertEqual((self.data / "access/1").read_text(), "original-auth")
         self.assertIn("up -d", (self.root / "docker.calls").read_text())
+
+    def test_restore_accepts_absolute_crowdsec_hub_links_in_the_managed_conf_directory(self):
+        incoming = self.root / "incoming/opt/crowdsec/conf"
+        hub = incoming / "hub/collections/crowdsecurity"
+        enabled = incoming / "collections"
+        hub.mkdir(parents=True)
+        enabled.mkdir(parents=True)
+        (hub / "linux.yaml").write_text("collection fixture")
+        (enabled / "linux.yaml").symlink_to("/etc/crowdsec/hub/collections/crowdsecurity/linux.yaml")
+        with tarfile.open(self.archive, "w:gz", dereference=False) as archive:
+            archive.add(self.root / "incoming/opt/npmplus", arcname="opt/npmplus")
+            archive.add(incoming.parent, arcname="opt/crowdsec")
+        result = self.restore()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.rows(), ["restored"])
+
+    def test_missing_installation_is_reported_before_trying_to_inspect_an_image(self):
+        (self.root / "opt/npmplus/compose.yaml").unlink()
+        result = self.restore()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no installation found", result.stderr)
+        self.assertFalse((self.root / "docker.calls").exists())
 
     def test_snapshot_preserves_commits_only_present_in_wal(self):
         # Simulate an uncleanly stopped SQLite writer: committed pages remain

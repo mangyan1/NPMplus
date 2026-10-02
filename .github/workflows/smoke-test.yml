@@ -492,8 +492,10 @@ jobs:
           test -s /opt/npmplus/compose.yaml
           compose_before="$(sudo sha256sum /opt/npmplus/compose.yaml | awk '{print $1}')"
 
+          set +e
           printf 'restore\n' | sudo /opt/npmplus/setup-npmplus.sh --restore "$backup_file" >/tmp/npmplus-restore.log 2>&1
           restore_status="${PIPESTATUS[1]}"
+          set -e
           cat /tmp/npmplus-restore.log
           test "$restore_status" -eq 0 || { echo "restore exited $restore_status"; exit 1; }
           grep -q 'restore complete' /tmp/npmplus-restore.log
@@ -806,7 +808,7 @@ jobs:
           mkdir -p /tmp/restore-health-fixture
           cat >/tmp/restore-health-fixture/Dockerfile <<'DOCKERFILE'
           FROM alpine:3.22
-          RUN apk add --no-cache curl openssl \
+          RUN apk add --no-cache curl openssl python3 \
               && mkdir /www \
               && printf '{"status":"OK"}\n' >/www/api \
               && openssl req -x509 -newkey rsa:2048 -nodes -days 1 \

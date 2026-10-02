@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.62"
+SCRIPT_VERSION="1.63"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -1337,6 +1337,15 @@ run_restore() (
 		done
 	fi
 	[[ -f "$source" && -s "$source" ]] || { echo "backup not found: $source" >&2; return 1; }
+	# Validate and extract the same private copy, even if the supplied archive
+	# came from a directory writable by another user.
+	local supplied_source="$source" restore_image restore_validator
+	ts=$(date +%F-%H%M%S)
+	mkdir -p /var/backups/npmplus
+	staging=$(mktemp -d "/var/backups/npmplus/pre-restore-$ts.XXXXXX")
+	cp -- "$source" "$staging/archive.tar.gz"
+	chmod 600 "$staging/archive.tar.gz"
+	source="$staging/archive.tar.gz"
 
 	# validate the archive layout before touching anything: it must contain the
 	# data dir and a database to be worth applying
@@ -1361,11 +1370,67 @@ run_restore() (
 		echo "backup contains unexpected member paths - refusing to extract" >&2
 		return 1
 	fi
-
 	if [[ ! -s "$COMPOSE_FILE" ]]; then
 		echo "no installation found - run --install first, then --restore" >&2
 		return 1
 	fi
+	# NPMplus already ships Python for Certbot. Use the installed immutable
+	# image to inspect archive metadata without adding a host dependency.
+	restore_image=$(docker inspect --format '{{.Image}}' npmplus) || return 1
+	[[ "$restore_image" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "cannot resolve the installed NPMplus image" >&2; return 1; }
+	restore_validator=$(cat <<'PYTHON'
+import posixpath
+import sys
+import tarfile
+
+def allowed(name):
+    return name in ("opt/npmplus", "opt/crowdsec", "opt/anubis.yaml") or name.startswith(("opt/npmplus/", "opt/crowdsec/"))
+
+try:
+    with tarfile.open(fileobj=sys.stdin.buffer, mode="r|gz") as archive:
+        members = {}
+        for member in archive:
+            name = member.name.rstrip("/")
+            if not allowed(name) or name != posixpath.normpath(name) or ".." in name.split("/") or name in members:
+                raise ValueError("unsafe or duplicate archive path")
+            if not (member.isfile() or member.isdir() or member.issym()):
+                raise ValueError("unsupported archive member type")
+            members[name] = member
+        for name, member in members.items():
+            parent = posixpath.dirname(name)
+            while parent:
+                if parent in members and not members[parent].isdir():
+                    raise ValueError("archive member has a non-directory ancestor")
+                parent = posixpath.dirname(parent)
+            if posixpath.basename(name) in ("database.sqlite", "database.backup.sqlite", "database.sqlite-wal", "database.sqlite-shm", "crowdsec.db", "crowdsec.backup.db", "crowdsec.db-wal", "crowdsec.db-shm") and not member.isfile():
+                raise ValueError("database snapshots must be regular files")
+            if member.issym():
+                target = member.linkname
+                # cscli may use absolute container paths for hub YAML links.
+                config_root = next((root for root in ("opt/crowdsec/conf/", "opt/crowdsec/config/") if name.startswith(root)), None)
+                if target.startswith("/etc/crowdsec/hub/") and config_root:
+                    target = config_root + target.removeprefix("/etc/crowdsec/")
+                elif posixpath.isabs(target):
+                    raise ValueError("archive contains an absolute symlink")
+                else:
+                    target = posixpath.normpath(posixpath.join(posixpath.dirname(name), target))
+                if not allowed(target) or target not in members or not members[target].isfile():
+                    raise ValueError("symlink must point to a regular file inside the backup")
+except (OSError, tarfile.TarError, ValueError) as error:
+    print("unsafe backup archive: " + str(error), file=sys.stderr)
+    sys.exit(1)
+PYTHON
+	)
+	# Stream the private copy so Docker also works through a remote/socket
+	# daemon; no archive path or additional host mount is exposed to it.
+	if ! docker run --rm -i --network none --read-only --cap-drop ALL \
+		--security-opt no-new-privileges --entrypoint python3 "$restore_image" \
+		-c "$restore_validator" <"$source"
+	then
+		echo "backup metadata validation failed - nothing was changed" >&2
+		return 1
+	fi
+
 	mapfile -t services < <(docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null)
 	((${#services[@]} > 0)) || { echo "cannot list the compose services" >&2; return 1; }
 
@@ -1382,10 +1447,6 @@ run_restore() (
 	flock -n 9 || { echo "another NPMplus maintenance job is already running" >&2; return 1; }
 
 	# Unique root-only staging; extraction completes before services are stopped.
-	ts=$(date +%F-%H%M%S)
-	mkdir -p /var/backups/npmplus
-	staging=$(mktemp -d "/var/backups/npmplus/pre-restore-$ts.XXXXXX")
-
 	# extract into a staging dir first; only a complete extraction is applied.
 	# Only the validated members are extracted, so nothing outside the backup
 	# layout is ever written even if the listing check were bypassed.
@@ -1451,10 +1512,12 @@ run_restore() (
 	# travel along, or the newest writes are silently lost on the next open.
 	if [[ -f "$extract/opt/npmplus/npmplus/database.backup.sqlite" ]]; then
 		mkdir -p "$DATA_DIR/npmplus"
+		rm -f "$DATA_DIR/npmplus/database.sqlite"
 		rm -f "$DATA_DIR/npmplus/database.sqlite-wal" "$DATA_DIR/npmplus/database.sqlite-shm"
 		cp -a "$extract/opt/npmplus/npmplus/database.backup.sqlite" "$DATA_DIR/npmplus/database.sqlite"
 	elif [[ -f "$extract/opt/npmplus/npmplus/database.sqlite" ]]; then
 		mkdir -p "$DATA_DIR/npmplus"
+		rm -f "$DATA_DIR/npmplus/database.sqlite"
 		rm -f "$DATA_DIR/npmplus/database.sqlite-wal" "$DATA_DIR/npmplus/database.sqlite-shm"
 		cp -a "$extract/opt/npmplus/npmplus/database.sqlite" "$DATA_DIR/npmplus/database.sqlite"
 		# replay the write-ahead log from the archive on the next open
@@ -1556,7 +1619,7 @@ run_restore() (
 				curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"'; then
 				restore_complete=true
 				say "restore complete"
-				echo "  restored from: $source"
+				echo "  restored from: $supplied_source"
 				echo "  a copy of the replaced state is in $staging"
 				echo "  log in with the OLD machine's admin account"
 				return 0
@@ -1566,7 +1629,7 @@ run_restore() (
 			if [[ "$state" == "healthy" ]] && docker exec npmplus curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"'; then
 				restore_complete=true
 				say "restore complete (no published 443 in this compose - container verified)"
-				echo "  restored from: $source"
+				echo "  restored from: $supplied_source"
 				echo "  a copy of the replaced state is in $staging"
 				echo "  log in with the OLD machine's admin account"
 				return 0
