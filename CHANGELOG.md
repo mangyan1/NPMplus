@@ -4,6 +4,13 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Preserve explicit catch-all-only access-list rules on proxy hosts and custom locations, including `deny all`.
+- Require a new password when adding or renaming an access-list authorization user. Unchanged usernames keep their masked passwords; the modal explains invalid edits before saving.
+- Roll back failed access-list updates across database rows, password files, merged host/location files, nginx configuration, and audit writes. Validate and reload nginx before committing the policy.
+- Keep first-admin setup retryable after failed credential, permission, or audit writes. Account creation is transactional; optional avatar failures retain the default image.
+- Prevent extra rollback errors after rejected create requests in the six resource mutation hooks. Failed edits still restore their cached values.
+- Setup script v1.63 validates archive member types and link targets before restore stops services. Database snapshots must be regular files; supported Certbot certificate links and CrowdSec hub links are preserved.
+
 - Aligned Caddy's OTLP trace exporters with the patched 1.45.0 logging modules, removing three Low-severity TLS findings. Updated mature CEL, Chi and compression pins after checking Go advisories. Caddy remains stable 2.11.4; its generated build module now passes a source vulnerability gate, an OpenPGP import guard, and upstream HTTP/tracing tests before publication.
 
 - Installer v1.62 adopts fork-maintained CrowdSec 1.8.1 and Anubis 1.27.0 builds with patched Go, modules and system libraries. Both native architectures pass runtime tests and scans without exceptions before exact-image promotion. CrowdSec's end-of-life PostgreSQL driver moves to maintained pgx/v5 with parser and real-database regression checks. Anubis's policy is fetched from the exact source commit recorded in the digest-pinned image. Daily and release gates scan the deployed auxiliary images without the former upstream exceptions; original upstream findings remain in separate comparison reports. NPMplus's pip packaging exceptions still expire October 4.
