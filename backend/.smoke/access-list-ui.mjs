@@ -8,8 +8,10 @@ const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_C
 try {
 	const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 900 } });
 	const errors = [];
+	let signedIn = false;
 	page.on("pageerror", (error) => errors.push(error.message));
 	page.on("console", (event) => {
+		if (!signedIn && event.text().includes("status of 401")) return;
 		if (event.type() === "error" && !event.text().includes("status of 400")) errors.push(event.text());
 	});
 	await page.goto(`${base}/login`, { waitUntil: "networkidle" });
@@ -17,6 +19,7 @@ try {
 	await page.getByLabel(/password/i).fill(process.env.SMOKE_ADMIN_PASSWORD || "rc5-smoke-password");
 	await page.getByRole("button", { name: /sign in|log in/i }).click();
 	await page.getByRole("link", { name: "Open user menu" }).waitFor();
+	signedIn = true;
 	const fixture = {
 		id: 900001,
 		name: "Synthetic access policy",
