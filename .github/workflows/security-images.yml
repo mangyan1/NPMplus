@@ -1,0 +1,156 @@
+name: Security Images
+on:
+  push:
+    branches: [develop]
+    paths: ["security-images/**", ".github/workflows/security-images.yml"]
+  pull_request:
+    paths: ["security-images/**", ".github/workflows/security-images.yml"]
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+jobs:
+  candidate:
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [anubis]
+        architecture: [amd64, arm64]
+        include:
+          - architecture: amd64
+            runner: ubuntu-latest
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: security-images/${{ matrix.service }}
+          platforms: linux/${{ matrix.architecture }}
+          push: false
+          load: true
+          tags: npmplus-${{ matrix.service }}:candidate-${{ matrix.architecture }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=security-${{ matrix.service }}-${{ matrix.architecture }}
+          cache-to: type=gha,mode=max,scope=security-${{ matrix.service }}-${{ matrix.architecture }}
+      - name: Verify runtime contracts
+        env:
+          SERVICE: ${{ matrix.service }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: python3 "security-images/$SERVICE/smoke.py" "npmplus-$SERVICE:candidate-$ARCHITECTURE"
+      - name: Scan the exact candidate without exceptions
+        env:
+          SERVICE: ${{ matrix.service }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          image="npmplus-$SERVICE:candidate-$ARCHITECTURE"
+          mkdir -p evidence
+          for format in json cyclonedx; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              -v trivy-cache:/root/.cache/trivy -v "$PWD/evidence:/evidence" \
+              "$TRIVY_IMAGE" image --scanners vuln --format "$format" \
+              --output "/evidence/$SERVICE-$ARCHITECTURE-$format.json" "$image"
+          done
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v trivy-cache:/root/.cache/trivy -v "$PWD/evidence:/evidence" \
+            "$TRIVY_IMAGE" image --scanners vuln --severity MEDIUM,HIGH,CRITICAL \
+            --exit-code 1 --output "/evidence/$SERVICE-$ARCHITECTURE.txt" "$image"
+      - name: Retain the tested image
+        env:
+          SERVICE: ${{ matrix.service }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          image="npmplus-$SERVICE:candidate-$ARCHITECTURE"
+          docker image inspect "$image" --format '{{.Id}}' > "evidence/$SERVICE-$ARCHITECTURE.id"
+          docker save "$image" -o "evidence/$SERVICE-$ARCHITECTURE.tar"
+          cd evidence
+          sha256sum "$SERVICE-$ARCHITECTURE.tar" > "$SERVICE-$ARCHITECTURE.tar.sha256"
+      - name: Upload reports and tested image
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: security-${{ matrix.service }}-${{ matrix.architecture }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: candidate
+    if: ${{ github.repository == 'mangyan1/NPMplus' && github.event_name != 'pull_request' && github.ref == 'refs/heads/develop' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    strategy:
+      matrix:
+        service: [anubis]
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: security-${{ matrix.service }}-*
+          merge-multiple: true
+          path: evidence
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+      - name: Publish the scanned image contents
+        id: publish
+        env:
+          SERVICE: ${{ matrix.service }}
+          REVISION: ${{ github.sha }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          cd evidence
+          image="ghcr.io/$OWNER/npmplus"
+          refs=()
+          for architecture in amd64 arm64; do
+            sha256sum -c "$SERVICE-$architecture.tar.sha256"
+            docker load -i "$SERVICE-$architecture.tar"
+            local_image="npmplus-$SERVICE:candidate-$architecture"
+            test "$(docker image inspect "$local_image" --format '{{.Id}}')" = "$(cat "$SERVICE-$architecture.id")"
+            test "$(docker image inspect "$local_image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$REVISION"
+            tag="$image:$SERVICE-$REVISION-$architecture"
+            docker tag "$local_image" "$tag"
+            docker push "$tag"
+            digest="$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' | jq -er '.digest')"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            refs+=("$image@$digest")
+          done
+          docker buildx imagetools create -t "$image:$SERVICE-$REVISION" -t "$image:$SERVICE" "${refs[@]}"
+          digest="$(docker buildx imagetools inspect "$image:$SERVICE-$REVISION" --format '{{json .Manifest}}' | jq -er '.digest')"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Attest the promoted image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/npmplus
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          subject-version: ${{ matrix.service }}-${{ github.sha }}
+          push-to-registry: true
+      - name: Attest AMD64 SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/npmplus
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          sbom-path: evidence/${{ matrix.service }}-amd64-cyclonedx.json
+          push-to-registry: true
+      - name: Attest ARM64 SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/npmplus
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          sbom-path: evidence/${{ matrix.service }}-arm64-cyclonedx.json
+          push-to-registry: true
