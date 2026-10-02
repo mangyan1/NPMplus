@@ -209,3 +209,35 @@ test("a successful replacement updates attached host and custom-location files a
 		1,
 	);
 });
+
+test("hosts attached after initial validation are included in failure recovery", async (t) => {
+	const list = await seed();
+	const originalGet = internalAccessList.get;
+	let attached = false;
+	let files;
+	let before;
+	t.mock.method(internalAccessList, "get", async (...args) => {
+		const result = await originalGet(...args);
+		if (!attached) {
+			attached = true;
+			const host = await attach(list);
+			files = [
+				internalNginx.getConfigName("proxy_host", host.id),
+				`/data/access/host-${host.id}`,
+				`/data/access/host-${host.id}-location-1`,
+			];
+			before = await Promise.all(files.map((filename) => readFile(filename, "utf8")));
+		}
+		return result;
+	});
+	t.mock.method(internalNginx, "test", () => Promise.reject(new Error("injected validation failure")));
+	t.mock.method(internalNginx, "reload", async () => {});
+	await assert.rejects(
+		internalAccessList.update(access, {
+			id: list.id,
+			items: [{ username: "replacement", password: "new-password" }],
+		}),
+		/injected validation failure/,
+	);
+	assert.deepEqual(await Promise.all(files.map((filename) => readFile(filename, "utf8"))), before);
+});

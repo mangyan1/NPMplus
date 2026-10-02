@@ -122,10 +122,7 @@ const internalAccessList = {
 						password: await bcrypt.hash(item.password, 6),
 					});
 			}
-			const restoreFiles = await snapshotAccessListFiles(
-				row,
-				(row.proxy_hosts || []).filter((host) => host.enabled),
-			);
+			let restoreFiles;
 			let filesChanged = false;
 			try {
 				return await accessListModel.transaction(async (trx) => {
@@ -154,6 +151,11 @@ const internalAccessList = {
 							expand: ["items", "clients", "proxy_hosts.[certificate,access_lists.[clients,items]]"],
 						},
 						trx,
+					);
+					// The transaction's graph includes hosts attached since validation.
+					restoreFiles = await snapshotAccessListFiles(
+						freshRow,
+						(freshRow.proxy_hosts || []).filter((host) => host.enabled),
 					);
 					filesChanged = true;
 					await internalAccessList.build(freshRow);
