@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.60"
+SCRIPT_VERSION="1.61"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -1481,6 +1481,12 @@ run_restore() (
 		if docker compose -f "$COMPOSE_FILE" config --services | grep -qx crowdsec; then
 			rm -rf "$CROWDSEC_DIR"
 			cp -a "$extract/opt/crowdsec" "$CROWDSEC_DIR"
+			# New archives carry a consistent online copy, never live SQLite/WAL files.
+			if [[ -f "$CROWDSEC_DIR/data/crowdsec.backup.db" ]]; then
+				rm -f "$CROWDSEC_DIR/data/crowdsec.db-wal" "$CROWDSEC_DIR/data/crowdsec.db-shm" "$CROWDSEC_DIR/data/crowdsec.db-journal"
+				mv -f "$CROWDSEC_DIR/data/crowdsec.backup.db" "$CROWDSEC_DIR/data/crowdsec.db"
+				chmod 600 "$CROWDSEC_DIR/data/crowdsec.db"
+			fi
 		else
 			echo "note: backup contains CrowdSec but this install does not run it - skipped" >&2
 		fi
@@ -2770,10 +2776,11 @@ say "installing daily data backup (keeps the last 7)"
 write_root_file /usr/local/bin/npmplus-backup 755 <<'EOF'
 #!/bin/bash
 # daily npmplus backup. the tar contains the data dir (database, certs, htpasswd
-# files), the crowdsec dir and the anubis policy. restores: untar into / and, if
-# present, copy npmplus/database.backup.sqlite over npmplus/database.sqlite (it
-# is the consistent copy, see below), then: docker compose up -d
+# files), consistent SQLite snapshots, the crowdsec dir and the anubis policy.
+# Restore through setup-npmplus.sh --restore so both snapshots replace the live
+# database names before services restart and CrowdSec credentials are healed.
 set -euo pipefail
+umask 077
 
 BACKUP_DIR=/var/backups/npmplus
 KEEP=7 # one week of daily backups
@@ -2788,6 +2795,14 @@ log() { echo "$(date '+%F %T') $*"; }
 # the tars contain private keys and the database, so keep them root-only
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
+snapshot=""
+archive_tmp=""
+cleanup_backup() {
+	rm -f /opt/npmplus/npmplus/database.backup.sqlite
+	[[ -z "$archive_tmp" ]] || rm -f -- "$archive_tmp"
+	[[ -z "$snapshot" ]] || rm -rf -- "$snapshot"
+}
+trap cleanup_backup EXIT
 
 # A failed online copy must never package a stale previous copy or a torn DB.
 rm -f /opt/npmplus/npmplus/database.backup.sqlite
@@ -2797,13 +2812,52 @@ if ! docker exec npmplus node -e "const d=require('better-sqlite3')('/data/npmpl
 fi
 
 files=(opt/npmplus)
-[[ ! -d /opt/crowdsec ]] || files+=(opt/crowdsec)
+snapshot_args=()
+if [[ -d /opt/crowdsec ]]; then
+	[[ -f /opt/crowdsec/data/crowdsec.db ]] || { log "backup FAILED (CrowdSec database missing)"; exit 1; }
+	image=$(docker inspect --format '{{.Image}}' npmplus)
+	[[ "$image" =~ ^sha256:[a-f0-9]{64}$ ]] || { log "backup FAILED (NPMplus image identity)"; exit 1; }
+	snapshot=$(mktemp -d "$BACKUP_DIR/.npmplus-backup-XXXXXX")
+	mkdir -p "$snapshot/opt/crowdsec/data"
+	database_owner=$(stat -c '%u:%g' /opt/crowdsec/data/crowdsec.db)
+	chown "$database_owner" "$snapshot/opt/crowdsec/data"
+	# Reuse the running image's SQLite driver with a read-only source mount. No
+	# protection service is stopped, no network or Docker socket is exposed.
+	if ! docker run --rm -i --pull never --network none --read-only --cap-drop ALL \
+		--security-opt no-new-privileges --user "$database_owner" --entrypoint node \
+		--mount "type=bind,src=/opt/crowdsec/data,dst=/source,readonly" \
+		--mount "type=bind,src=$snapshot/opt/crowdsec/data,dst=/snapshot" \
+		"$image" --input-type=commonjs - <<'NODE'
+const Database = require('better-sqlite3');
+async function snapshot() {
+    const source = new Database('/source/crowdsec.db', { readonly: true, fileMustExist: true });
+    try { await source.backup('/snapshot/crowdsec.backup.db'); }
+    finally { source.close(); }
+    const copy = new Database('/snapshot/crowdsec.backup.db', { fileMustExist: true });
+    try {
+        copy.pragma('journal_mode = DELETE');
+        if (copy.pragma('integrity_check', { simple: true }) !== 'ok') throw new Error('Invalid CrowdSec snapshot');
+    } finally { copy.close(); }
+}
+snapshot().catch((error) => { console.error(error); process.exitCode = 1; });
+NODE
+	then
+		log "backup FAILED (consistent CrowdSec database copy)"
+		exit 1
+	fi
+	[[ -s "$snapshot/opt/crowdsec/data/crowdsec.backup.db" ]] || { log "backup FAILED (CrowdSec snapshot missing)"; exit 1; }
+	files+=(opt/crowdsec)
+	snapshot_args=(-C "$snapshot" opt/crowdsec/data/crowdsec.backup.db)
+fi
 [[ -f /opt/anubis.yaml ]] && files+=(opt/anubis.yaml)
 ts=$(date +%F-%H%M%S)
 out="$BACKUP_DIR/npmplus-$ts.tar.gz"
-tar -czf "$out" -C / "${files[@]}" || { log "backup FAILED (tar)"; exit 1; }
-chmod 600 "$out"
-rm -f /opt/npmplus/npmplus/database.backup.sqlite
+[[ ! -e "$out" ]] || { log "backup FAILED (archive already exists; retry next second)"; exit 1; }
+archive_tmp=$(mktemp "$BACKUP_DIR/.npmplus-backup-XXXXXX")
+tar -czf "$archive_tmp" --exclude='opt/npmplus/npmplus/database.sqlite*' \
+	--exclude='opt/crowdsec/data/crowdsec.db*' -C / "${files[@]}" "${snapshot_args[@]}" || { log "backup FAILED (tar)"; exit 1; }
+chmod 600 "$archive_tmp"
+mv -- "$archive_tmp" "$out"
 log "backup ok: $out ($(du -h "$out" | cut -f1))"
 
 # roll the oldest off, keep the last KEEP

@@ -473,11 +473,20 @@ jobs:
           # database, certificates, and crowdsec state survive
           set -x
           test -x /usr/local/bin/npmplus-backup || { echo "backup helper missing"; exit 1; }
+          crowdsec_started="$(sudo docker inspect --format '{{.State.StartedAt}}' crowdsec)"
           sudo /usr/local/bin/npmplus-backup
+          test "$(sudo docker inspect --format '{{.State.StartedAt}}' crowdsec)" = "$crowdsec_started"
+          test "$(sudo docker inspect --format '{{.State.Running}}' crowdsec)" = true
           sudo tail -n 20 /var/log/npmplus-backup.log
           backup_file="$(sudo bash -c 'ls -1t /var/backups/npmplus/npmplus-*.tar.gz | head -1')"
           # the backup dir is root-only (0700) and the tars are 0600: check as root
           sudo test -s "$backup_file" || { echo "no backup archive produced"; sudo ls -la /var/backups/npmplus; exit 1; }
+          sudo tar -tzf "$backup_file" > /tmp/npmplus-backup-members.txt
+          grep -qx 'opt/crowdsec/data/crowdsec.backup.db' /tmp/npmplus-backup-members.txt
+          if grep -qE '^opt/crowdsec/data/crowdsec\.db($|-)|^opt/npmplus/npmplus/database\.sqlite($|-)' /tmp/npmplus-backup-members.txt; then
+            echo "backup contains live SQLite files instead of consistent snapshots" >&2
+            exit 1
+          fi
           before_hosts="$(sudo docker exec npmplus node -e "const d=require('better-sqlite3')('/data/npmplus/database.sqlite',{readonly:true});console.log(d.prepare('select count(*) c from proxy_host').get().c);d.close()")" \
             || { echo "cannot read the proxy host count before the restore"; exit 1; }
           test -s /opt/npmplus/compose.yaml
