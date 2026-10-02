@@ -174,9 +174,16 @@ docker() {
             return [row[0] for row in db.execute("select value from records")]
 
     def shell(self, code, **env):
+        # Validator paths describe the archive/container, not the disposable
+        # host filesystem. Keep that Python body byte-for-byte unchanged.
+        validator = re.search(r"<<'PYTHON'\n(import posixpath\n.*?)\nPYTHON", code, re.S)
+        if validator:
+            code = code.replace(validator.group(1), "ARCHIVE_VALIDATOR_BODY")
         # Rewrite only absolute host paths; archive members remain opt/...
         code = re.sub(r"(?<![\w}$])/(opt|var|run|etc)/", lambda match: str(self.root) + match.group(), code)
         code = code.replace("-C / ", f"-C '{self.root}' ")
+        if validator:
+            code = code.replace("ARCHIVE_VALIDATOR_BODY", validator.group(1))
         stub = r'''
 set -euo pipefail
 say() { printf '%s\n' "$*"; }
@@ -290,6 +297,28 @@ cp() {
         self.assertEqual(self.rows(), ["original"])
         self.assertEqual((self.data / "access/1").read_text(), "original-auth")
         self.assertIn("up -d", (self.root / "docker.calls").read_text())
+
+    def test_restore_accepts_absolute_crowdsec_hub_links_in_the_managed_conf_directory(self):
+        incoming = self.root / "incoming/opt/crowdsec/conf"
+        hub = incoming / "hub/collections/crowdsecurity"
+        enabled = incoming / "collections"
+        hub.mkdir(parents=True)
+        enabled.mkdir(parents=True)
+        (hub / "linux.yaml").write_text("collection fixture")
+        (enabled / "linux.yaml").symlink_to("/etc/crowdsec/hub/collections/crowdsecurity/linux.yaml")
+        with tarfile.open(self.archive, "w:gz", dereference=False) as archive:
+            archive.add(self.root / "incoming/opt/npmplus", arcname="opt/npmplus")
+            archive.add(incoming.parent, arcname="opt/crowdsec")
+        result = self.restore()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.rows(), ["restored"])
+
+    def test_missing_installation_is_reported_before_trying_to_inspect_an_image(self):
+        (self.root / "opt/npmplus/compose.yaml").unlink()
+        result = self.restore()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no installation found", result.stderr)
+        self.assertFalse((self.root / "docker.calls").exists())
 
     def test_snapshot_preserves_commits_only_present_in_wal(self):
         # Simulate an uncleanly stopped SQLite writer: committed pages remain

@@ -1370,6 +1370,10 @@ run_restore() (
 		echo "backup contains unexpected member paths - refusing to extract" >&2
 		return 1
 	fi
+	if [[ ! -s "$COMPOSE_FILE" ]]; then
+		echo "no installation found - run --install first, then --restore" >&2
+		return 1
+	fi
 	# NPMplus already ships Python for Certbot. Use the installed immutable
 	# image to inspect archive metadata without adding a host dependency.
 	restore_image=$(docker inspect --format '{{.Image}}' npmplus) || return 1
@@ -1405,8 +1409,9 @@ try:
             if member.issym():
                 target = member.linkname
                 # cscli may use absolute container paths for hub YAML links.
-                if target.startswith("/etc/crowdsec/hub/") and name.startswith("opt/crowdsec/config/"):
-                    target = "opt/crowdsec/config/" + target.removeprefix("/etc/crowdsec/")
+                config_root = next((root for root in ("opt/crowdsec/conf/", "opt/crowdsec/config/") if name.startswith(root)), None)
+                if target.startswith("/etc/crowdsec/hub/") and config_root:
+                    target = config_root + target.removeprefix("/etc/crowdsec/")
                 elif posixpath.isabs(target):
                     raise ValueError("archive contains an absolute symlink")
                 else:
@@ -1422,10 +1427,6 @@ PYTHON
 		return 1
 	fi
 
-	if [[ ! -s "$COMPOSE_FILE" ]]; then
-		echo "no installation found - run --install first, then --restore" >&2
-		return 1
-	fi
 	mapfile -t services < <(docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null)
 	((${#services[@]} > 0)) || { echo "cannot list the compose services" >&2; return 1; }
 
