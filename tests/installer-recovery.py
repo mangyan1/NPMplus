@@ -200,6 +200,14 @@ docker() {
       [[ "${FAIL_ONLINE_BACKUP:-0}" == 0 ]] || return 1
       command cp "$FIXTURE_ROOT/opt/npmplus/npmplus/database.sqlite" "$FIXTURE_ROOT/opt/npmplus/npmplus/database.backup.sqlite" ;;
     run*)
+      if [[ "$*" == *'dst=/backup.tar.gz,readonly'* ]]; then
+        local archive="" mount
+        for mount in "$@"; do
+          if [[ "$mount" == type=bind,src=*,dst=/backup.tar.gz,readonly ]]; then archive="${mount#type=bind,src=}"; archive="${archive%,dst=/backup.tar.gz,readonly}"; fi
+        done
+        python3 - "$archive"
+        return
+      fi
       [[ "${FAIL_CROWDSEC_BACKUP:-0}" == 0 ]] || return 1
       local snapshot="" arg
       for arg in "$@"; do
@@ -224,7 +232,7 @@ cp() {
     printf broken >"$FIXTURE_ROOT/opt/npmplus/npmplus/database.sqlite"; return 1
   fi
   # Quiescence must precede every pre-restore copy.
-  if [[ "$*" == *pre-restore-* && "$*" != *extract* && ! -f "$FIXTURE_ROOT/stopped" ]]; then return 1; fi
+  if [[ "$*" == *pre-restore-* && "$*" != *extract* && "$*" != *archive.tar.gz* && ! -f "$FIXTURE_ROOT/stopped" ]]; then return 1; fi
   command cp "$@"
 }
 '''
@@ -243,6 +251,38 @@ cp() {
         self.assertEqual((self.data / "tls/certificate").read_text(), "restored-cert")
         snapshot = next((self.root / "var/backups/npmplus").glob("pre-restore-*/data/npmplus/database.sqlite"))
         self.assertEqual(self.rows(snapshot), ["original"])
+
+    def test_restore_rejects_database_symlinks_before_stopping_or_chmod(self):
+        external = self.root / "external.sqlite"
+        self.database(external, "external")
+        external.chmod(0o644)
+        incoming = self.root / "incoming/opt/npmplus"
+        database = incoming / "npmplus/database.backup.sqlite"
+        database.unlink()
+        database.symlink_to(external)
+        with tarfile.open(self.archive, "w:gz", dereference=False) as archive:
+            archive.add(incoming, arcname="opt/npmplus")
+        result = self.restore()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.root / "stopped").exists())
+        self.assertEqual(external.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(self.rows(), ["original"])
+
+    def test_restore_preserves_relative_certbot_links_with_regular_archive_targets(self):
+        incoming = self.root / "incoming/opt/npmplus"
+        archive_dir = incoming / "tls/certbot/archive/example.test"
+        live_dir = incoming / "tls/certbot/live/example.test"
+        archive_dir.mkdir(parents=True)
+        live_dir.mkdir(parents=True)
+        (archive_dir / "fullchain1.pem").write_text("certificate fixture")
+        (live_dir / "fullchain.pem").symlink_to("../../archive/example.test/fullchain1.pem")
+        with tarfile.open(self.archive, "w:gz", dereference=False) as archive:
+            archive.add(incoming, arcname="opt/npmplus")
+        result = self.restore()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        restored = self.data / "tls/certbot/live/example.test/fullchain.pem"
+        self.assertTrue(restored.is_symlink())
+        self.assertEqual(restored.read_text(), "certificate fixture")
 
     def test_snapshot_failure_does_not_replace_the_original_state(self):
         result = self.restore(FAIL_SNAPSHOT="1")

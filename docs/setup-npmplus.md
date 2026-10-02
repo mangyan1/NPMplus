@@ -343,6 +343,8 @@ The restore replaces data only. The current machine's Compose configuration (ima
 
 Since setup script v1.55, restore acquires the same lock as backup and update, stops the stack before taking its recovery snapshot, and retains SQLite WAL/SHM files with the database. It restores access-list password files (`/data/access`) and custom HTML (`/data/html`) as well as certificates and generated nginx configuration. A failed snapshot leaves the original data in place; a failed restore attempts to recover the saved data and restart the stack. The root-only snapshot is retained for inspection if recovery itself fails.
 
+Setup script v1.63 validates a private copy of the archive before stopping services. Database files must be regular files; hard links, special files, duplicate paths, and links that escape the backup or point through another link are refused. Normal Certbot certificate links and CrowdSec hub links remain supported. Validation uses Python already shipped in the installed NPMplus image, with networking disabled.
+
 A full migration to a new machine is therefore:
 
 ```bash
