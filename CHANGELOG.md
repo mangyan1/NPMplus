@@ -4,6 +4,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Updated the backend transitive security pins to brace-expansion 5.0.12, fast-uri 3.1.8, and ip-address 10.7.2 after the production dependency audit identified four remaining moderate advisories. These releases meet the seven-day aging policy; the existing pins had prevented Dependabot from resolving the fixes.
+
 - Reconciled upstream develop through `e0acff4a` with a regular merge, adopting AWS-LC 5.11.0, the Dockerfile frontend update, and dependency releases that meet the seven-day aging policy. Preserved fork attribution, test scripts, Playwright, lodash, and the hardened Caddy source build. Newer dependency releases remain deferred.
 
 - Fixed the NPMplus runtime image findings by constraining vulnerable brace-expansion and fast-uri transitive releases to patched versions and pinning urllib3 2.8.0 alongside Certbot. Rebuilding refreshes Alpine's PCRE2 and Python packages. Latest stable pip still bundles vulnerable urllib3 2.7.0; two version-scoped packaging-tool exceptions expire October 4, with residual risk documented. Runtime Certbot DNS-plugin installation remains intact.
