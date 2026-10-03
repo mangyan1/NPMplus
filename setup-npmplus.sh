@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.65"
+SCRIPT_VERSION="1.66"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -1895,6 +1895,7 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 	[[ "${answer:-}" == "uninstall" ]] || { echo "aborted - nothing removed" >&2; exit 1; }
 	remove_strict_boot_protection
 	remove_cloudflare_origin_lock
+	remove_crs_control
 
 	if [[ -s "$COMPOSE_FILE" ]] && command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
 		say "stopping and removing containers"
@@ -2331,17 +2332,24 @@ crowdsec_crs_observation_configured() {
 }
 
 enable_crowdsec_crs_observation() {
+	local control="${1:-cli}"
 	local policy="$CROWDSEC_DIR/conf/appsec-configs/npmplus-crs-observe.yaml"
 	local acquisition="$CROWDSEC_DIR/conf/acquis.d/npmplus.yaml"
 	local bouncer_conf="$DATA_DIR/crowdsec/crowdsec.conf"
 	# Refuse to replace an operator-owned policy. Hub-managed files stay intact.
-	if [[ -e "$policy" ]] && ! grep -qx '# NPMPLUS_CRS_OBSERVE_VERSION=1' "$policy"; then
+	if [[ -e "$policy" || -L "$policy" ]] && ! grep -qx '# NPMPLUS_CRS_OBSERVE_VERSION=1' "$policy"; then
 		echo "CRS policy is operator-owned; review $policy before enabling observation" >&2
 		return 1
 	fi
 	# Install the rule package alone. The CRS collection also installs a scenario
 	# that can ban repeated detections, which is not this observation policy.
-	docker exec crowdsec cscli appsec-rules install crowdsecurity/crs
+	if [[ "$control" == "control" ]]; then
+		# Bound the process inside the container too: timing out a Docker client
+		# alone can leave its exec process writing after rollback has started.
+		docker exec crowdsec timeout -s KILL 60 cscli appsec-rules install crowdsecurity/crs
+	else
+		docker exec crowdsec cscli appsec-rules install crowdsecurity/crs
+	fi
 	mkdir -p "${policy%/*}"
 	write_root_file "$policy" 644 <<'EOF'
 # NPMPLUS_CRS_OBSERVE_VERSION=1
@@ -2386,13 +2394,375 @@ finally:
     if os.path.exists(temporary):
         os.unlink(temporary)
 PYTHON
-	docker exec crowdsec crowdsec -t -c /etc/crowdsec/config.yaml
+	if [[ "$control" == "control" ]]; then
+		docker exec crowdsec timeout -s KILL 30 crowdsec -t -c /etc/crowdsec/config.yaml
+	else
+		docker exec crowdsec crowdsec -t -c /etc/crowdsec/config.yaml
+	fi
+	if [[ "$control" == "control" ]]; then
+		# The web helper never reads Compose or executes scripts from /data.
+		docker restart crowdsec
+		return
+	fi
 	docker compose -f "$COMPOSE_FILE" restart crowdsec
 	# A non-secret installer choice, deliberately separate from observed live hits.
 	# The safe updater snapshots this file alongside the CrowdSec rules/database.
 	sed -i '/^# NPMPLUS_CRS_MODE=/d' "$bouncer_conf"
 	printf '\n# NPMPLUS_CRS_MODE=observe\n' >>"$bouncer_conf"
 	say "CRS observation configured; high-confidence in-band blocking remains enabled"
+}
+
+
+# A single-action Unix socket, deliberately outside the application's data mount.
+# Only the root-installed helper can alter CrowdSec's private configuration.
+remove_crs_control() {
+	systemctl disable --now npmplus-crs-control.socket npmplus-crs-control.service >/dev/null 2>&1 || true
+	rm -f /etc/systemd/system/npmplus-crs-control.socket /etc/systemd/system/npmplus-crs-control.service
+	rm -f /usr/local/lib/npmplus-crs-control.py /usr/local/lib/npmplus-crs-enable
+	rm -f /var/lib/npmplus/crs-control/state.json
+	rmdir /var/lib/npmplus/crs-control /run/npmplus-crs-control >/dev/null 2>&1 || true
+	systemctl daemon-reload >/dev/null 2>&1 || true
+}
+
+ensure_crs_control_mount() {
+	install -d -m 0755 /run/npmplus-crs-control
+	python3 - "$COMPOSE_FILE" <<'PYTHON'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+mount = '      - "/run/npmplus-crs-control:/run/npmplus-crs-control:ro"'
+if mount not in text.splitlines():
+    lines = text.splitlines()
+    start = lines.index('  npmplus:')
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith('  ') and not lines[i].startswith('   ') and not lines[i].startswith('  #')), len(lines))
+    position = next((i for i in range(start + 1, end) if lines[i] == '    volumes:'), None)
+    if position is None:
+        sys.exit('NPMplus volumes require review before installing CRS control')
+    lines.insert(position + 1, mount)
+    path.write_text('\n'.join(lines) + '\n')
+PYTHON
+}
+
+install_crs_control() {
+	grep -q 'container_name: crowdsec' "$COMPOSE_FILE" || return 0
+	ensure_crs_control_mount
+	install -d -m 0755 /usr/local/lib
+	install -d -m 0700 /var/lib/npmplus/crs-control
+	# Capture the same reviewed policy function as the CLI, in a root-only path.
+	# Never execute the installer/Compose files mounted into the web container.
+	{
+		printf '%s\n' '#!/bin/bash' 'set -euo pipefail' 'CROWDSEC_DIR=/opt/crowdsec' 'DATA_DIR=/opt/npmplus' 'say() { :; }'
+		declare -f write_root_file enable_crowdsec_crs_observation
+		printf '%s\n' 'enable_crowdsec_crs_observation control'
+	} | write_root_file /usr/local/lib/npmplus-crs-enable 0700
+	write_root_file /usr/local/lib/npmplus-crs-control.py 0700 <<'PYTHON'
+"""Single-action host control. Requests never supply commands, paths, or policy."""
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import socket
+import stat
+import struct
+import subprocess
+import tempfile
+import threading
+import time
+import traceback
+
+CONF = Path('/opt/crowdsec/conf')
+BOUNCER_DIR = Path('/opt/npmplus/crowdsec')
+STATE = Path('/var/lib/npmplus/crs-control/state.json')
+LOCK = Path('/run/lock/npmplus-maintenance.lock')
+ACTION = '/usr/local/lib/npmplus-crs-enable'
+DOCKER = '/usr/bin/docker'
+ALLOWED_STATES = {'idle', 'running', 'enabled', 'failed', 'rollback-failed'}
+
+
+def bouncer_fd():
+    # /opt/npmplus is a bind mount; reject symlinks and foreign hardlinks.
+    parent = os.open(str(BOUNCER_DIR.parent), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        directory = os.open(BOUNCER_DIR.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+    finally:
+        os.close(parent)
+    try:
+        fd = os.open('crowdsec.conf', os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    finally:
+        os.close(directory)
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 65536:
+        os.close(fd)
+        raise ValueError('invalid bouncer file')
+    return fd
+
+
+def read_bouncer(fd):
+    os.lseek(fd, 0, os.SEEK_SET)
+    return os.read(fd, 65537).decode('utf-8')
+
+
+def same_bouncer(fd, expected):
+    current = bouncer_fd()
+    try:
+        left, right = os.fstat(fd), os.fstat(current)
+        return (left.st_dev, left.st_ino) == (right.st_dev, right.st_ino) and read_bouncer(current) == expected
+    finally:
+        os.close(current)
+
+
+def managed():
+    if CONF.is_symlink() or not CONF.is_dir():
+        return False
+    if any(path.is_symlink() for path in [CONF / 'acquis.d', CONF / 'appsec-configs', CONF / 'acquis.d/npmplus.yaml', CONF / 'appsec-configs/npmplus-crs-observe.yaml']):
+        return False
+    text = (CONF / 'acquis.d/npmplus.yaml').read_text()
+    lists = list(re.finditer(r'(?m)^appsec_configs:\n((?:[ \t]+[^\n]*\n)+)', text))
+    if len(lists) != 1:
+        return False
+    items = re.findall(r'^  - ([\w/-]+)\s*$', lists[0].group(1), re.M)
+    policy = CONF / 'appsec-configs/npmplus-crs-observe.yaml'
+    return (len(items) == len(lists[0].group(1).splitlines())
+            and 'crowdsecurity/appsec-default' in items
+            and not set(items) - {'crowdsecurity/appsec-default', 'npmplus/crs-observe'}
+            and (not policy.exists() or '# NPMPLUS_CRS_OBSERVE_VERSION=1' in policy.read_text().splitlines()))
+
+
+def configured(text):
+    return ('# NPMPLUS_CRS_MODE=observe' in text.splitlines()
+            and '  - npmplus/crs-observe' in (CONF / 'acquis.d/npmplus.yaml').read_text().splitlines()
+            and (CONF / 'appsec-configs/npmplus-crs-observe.yaml').is_file())
+
+
+def command(*args):
+    # No shell, caller-controlled environment, output, or Compose input.
+    subprocess.run(args, check=True, timeout=150, stdout=subprocess.DEVNULL,
+                   env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
+
+
+def healthy():
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        result = subprocess.run([DOCKER, 'inspect', '--format', '{{.State.Health.Status}}', 'crowdsec'],
+                                check=True, timeout=10, capture_output=True, text=True)
+        if result.stdout.strip() == 'healthy':
+            return
+        time.sleep(2)
+    raise RuntimeError('CrowdSec health timeout')
+
+
+def restore_tree(source, target):
+    # Preserve the config directory inode bound into the running container.
+    for item in target.iterdir():
+        if item.is_dir() and not item.is_symlink():
+            shutil.rmtree(item)
+        else:
+            item.unlink()
+    command('/bin/cp', '-a', str(source) + '/.', str(target))
+
+
+class Control:
+    def __init__(self):
+        self.guard = threading.Lock()
+        self.worker = None
+        self.state = 'idle'
+        self.last_attempt = 0
+        try:
+            saved = json.loads(STATE.read_text())
+            self.last_attempt = int(saved['last_attempt'])
+            self.state = saved['state'] if saved['state'] in ALLOWED_STATES else 'failed'
+            if self.state == 'running':
+                self.state = 'failed'
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    def save(self):
+        fd, temporary = tempfile.mkstemp(dir=STATE.parent)
+        try:
+            with os.fdopen(fd, 'w') as output:
+                json.dump({'state': self.state, 'last_attempt': self.last_attempt}, output)
+            os.replace(temporary, STATE)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+    def status(self):
+        with self.guard:
+            eligible = False
+            enabled = False
+            try:
+                fd = bouncer_fd()
+                try:
+                    text = read_bouncer(fd)
+                finally:
+                    os.close(fd)
+                eligible = bool(re.search(r'^APPSEC_URL=\S+', text, re.M)) and managed()
+                enabled = eligible and configured(text)
+            except (OSError, ValueError):
+                pass
+            return {'version': 1, 'available': True, 'eligible': eligible, 'enabled': enabled,
+                    'state': self.state, 'retry_after': max(0, 300 - int(time.time() - self.last_attempt))}
+
+    def enable(self):
+        status = self.status()
+        with self.guard:
+            if self.state == 'running':
+                return {'accepted': False, 'reason': 'busy'}
+            if status['enabled']:
+                return {'accepted': True, 'state': 'enabled'}
+            if not status['eligible']:
+                return {'accepted': False, 'reason': 'unsupported'}
+            if time.time() - self.last_attempt < 300:
+                return {'accepted': False, 'reason': 'cooldown'}
+            self.state = 'running'
+            self.last_attempt = int(time.time())
+            self.save()
+            self.worker = threading.Thread(target=self.activate)
+            self.worker.start()
+            return {'accepted': True, 'state': 'running'}
+
+    def activate(self):
+        state = 'failed'
+        fd = None
+        try:
+            with LOCK.open('a') as maintenance:
+                fcntl.flock(maintenance, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fd = bouncer_fd()
+                original = read_bouncer(fd)
+                healthy()
+                if not managed() or not re.search(r'^APPSEC_URL=\S+', original, re.M):
+                    raise ValueError('configuration changed')
+                with tempfile.TemporaryDirectory(prefix='snapshot-', dir=STATE.parent) as snapshot:
+                    backup = Path(snapshot) / 'conf'
+                    command('/bin/cp', '-a', str(CONF), str(backup))
+                    marker_written = False
+                    try:
+                        command('/bin/bash', ACTION)
+                        healthy()
+                        updated = re.sub(r'^# NPMPLUS_CRS_MODE=.*\n?', '', original, flags=re.M)
+                        updated = updated.rstrip('\n') + '\n# NPMPLUS_CRS_MODE=observe\n'
+                        if not same_bouncer(fd, original):
+                            raise ValueError('bouncer changed during activation')
+                        marker_written = True
+                        os.lseek(fd, 0, os.SEEK_SET)
+                        os.write(fd, updated.encode('utf-8'))
+                        os.ftruncate(fd, len(updated.encode('utf-8')))
+                        os.fsync(fd)
+                        if not same_bouncer(fd, updated):
+                            raise ValueError('bouncer replaced during activation')
+                        state = 'enabled'
+                    except Exception:
+                        traceback.print_exc()
+                        try:
+                            restore_tree(backup, CONF)
+                            if marker_written and same_bouncer(fd, updated):
+                                os.lseek(fd, 0, os.SEEK_SET)
+                                os.write(fd, original.encode('utf-8'))
+                                os.ftruncate(fd, len(original.encode('utf-8')))
+                                os.fsync(fd)
+                            command(DOCKER, 'restart', 'crowdsec')
+                            healthy()
+                        except Exception:
+                            state = 'rollback-failed'
+                            traceback.print_exc()
+        except Exception:
+            traceback.print_exc()
+        finally:
+            if fd is not None:
+                os.close(fd)
+            with self.guard:
+                self.state = state
+                self.save()
+
+
+def respond(connection, control):
+    connection.settimeout(2)
+    uid = struct.unpack('3i', connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[1]
+    if uid not in {0, 1000}:
+        return
+    request = b''
+    while b'\n' not in request and len(request) < 16:
+        part = connection.recv(16 - len(request))
+        if not part:
+            return
+        request += part
+    if request == b'STATUS\n':
+        result = control.status()
+    elif request == b'ENABLE\n':
+        result = control.enable()
+    else:
+        result = {'accepted': False, 'reason': 'invalid'}
+    connection.sendall(json.dumps(result).encode('utf-8') + b'\n')
+
+
+def serve():
+    if int(os.environ.get('LISTEN_PID', '0')) != os.getpid() or os.environ.get('LISTEN_FDS') != '1':
+        raise RuntimeError('systemd socket activation required')
+    listener = socket.socket(fileno=3)
+    listener.settimeout(1)
+    stopped = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stopped.set())
+    signal.signal(signal.SIGINT, lambda *_: stopped.set())
+    control = Control()
+    while not stopped.is_set():
+        try:
+            connection, _ = listener.accept()
+        except socket.timeout:
+            continue
+        with connection:
+            try:
+                respond(connection, control)
+            except (OSError, ValueError):
+                pass
+    if control.worker:
+        control.worker.join()
+
+
+if __name__ == '__main__':
+    serve()
+
+PYTHON
+	write_root_file /etc/systemd/system/npmplus-crs-control.socket 0644 <<'EOF'
+[Unit]
+Description=NPMplus CRS observation control socket
+Before=docker.service
+
+[Socket]
+ListenStream=/run/npmplus-crs-control/control.sock
+SocketMode=0660
+SocketGroup=1000
+DirectoryMode=0755
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target
+EOF
+	write_root_file /etc/systemd/system/npmplus-crs-control.service 0644 <<'EOF'
+[Unit]
+Description=NPMplus single-action CRS observation helper
+Requires=npmplus-crs-control.socket
+After=docker.service
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/lib/npmplus-crs-control.py
+Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/crowdsec /opt/npmplus/crowdsec /var/lib/npmplus/crs-control /run/lock
+RestrictAddressFamilies=AF_UNIX
+TimeoutStopSec=600
+EOF
+	systemctl daemon-reload
+	systemctl enable --now npmplus-crs-control.socket
+	# Socket activation starts a fresh process after code replacement.
+	systemctl stop npmplus-crs-control.service
 }
 
 # The official Anubis image is non-root. A root-owned bind mount lets it read
@@ -2579,6 +2949,7 @@ seed_crowdsec_datafiles() { # seed_crowdsec_datafiles <image-ref>
 # the generated host tooling (safe-update, backup, key heal + their crons):
 # one definition, installed by both the interactive setup and --update
 install_host_tooling() {
+	install_crs_control
 	# Read-only packet observations, delivered through the existing data mount.
 	write_root_file /usr/local/bin/npmplus-collect-enforcement 755 <<'EOF'
 #!/bin/bash
@@ -2696,8 +3067,14 @@ revert() {
 		/var/lib/npmplus/cloudflare-origin-lock \
 		/var/lib/npmplus/cloudflare-ips-v4 \
 		/var/lib/npmplus/cloudflare-ips-v6
+	systemctl disable --now npmplus-crs-control.socket npmplus-crs-control.service >/dev/null 2>&1 || true
+	rm -f /etc/systemd/system/npmplus-crs-control.socket /etc/systemd/system/npmplus-crs-control.service \
+		/usr/local/lib/npmplus-crs-control.py /usr/local/lib/npmplus-crs-enable
 	[[ ! -s "$BACKUP/host-security.tar.gz" ]] || tar -xzf "$BACKUP/host-security.tar.gz" -C /
 	systemctl daemon-reload >/dev/null 2>&1 || true
+	if [[ -f /etc/systemd/system/npmplus-crs-control.socket ]]; then
+		systemctl enable --now npmplus-crs-control.socket >/dev/null || true
+	fi
 	if [[ -f /var/lib/npmplus/cloudflare-origin-lock ]]; then
 		systemctl enable --now npmplus-cloudflare-origin-lock.service >/dev/null || true
 	fi
@@ -2743,6 +3120,10 @@ for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal npmplus-collec
 	cp -a "/etc/cron.d/$f" "$BACKUP/cron-$f" 2>/dev/null || true
 done
 host_security_paths=(
+	etc/systemd/system/npmplus-crs-control.socket
+	etc/systemd/system/npmplus-crs-control.service
+	usr/local/lib/npmplus-crs-control.py
+	usr/local/lib/npmplus-crs-enable
 	etc/systemd/system/npmplus-public.service
 	etc/systemd/system/npmplus-cloudflare-origin-lock.service
 	etc/systemd/system/npmplus-boot-guard.service
@@ -3966,6 +4347,12 @@ $ENV_TZ
 EOF
 fi
 
+CRS_CONTROL_MOUNT=""
+if [[ "$USE_CROWDSEC" == "y" ]]; then
+	install -d -m 0755 /run/npmplus-crs-control
+	CRS_CONTROL_MOUNT='      - "/run/npmplus-crs-control:/run/npmplus-crs-control:ro"'
+fi
+
 cat >"$COMPOSE_FILE" <<EOF
 name: npmplus
 services:
@@ -3992,6 +4379,7 @@ $NPMPLUS_NETWORK_BLOCK
 $ADMIN_SECRET_MOUNT
     volumes:
       - "$DATA_DIR:/data"
+$CRS_CONTROL_MOUNT
 $HONEYPOT_LOG_MOUNT
     environment:
 $ENV_TZ

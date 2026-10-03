@@ -1,5 +1,6 @@
 import process from "node:process";
 import express from "express";
+import { rateLimit } from "express-rate-limit";
 import { canonicalIp, readReport } from "../internal/anubis-reporting.js";
 import internalAuditLog from "../internal/audit-log.js";
 import {
@@ -15,6 +16,7 @@ import {
 } from "../internal/crowdsec.js";
 import { readAttackerCatalog } from "../internal/crowdsec-attackers.js";
 import { scanAlertHistory } from "../internal/crowdsec-history.js";
+import crsControl from "../internal/crs-control.js";
 import { getHomeLocation } from "../internal/home-location.js";
 import { readTelemetry } from "../internal/security-telemetry.js";
 import { fetchWithTimeout, readBoundedText } from "../lib/bounded-fetch.js";
@@ -134,6 +136,37 @@ const requireAdmin = (res) => {
 		return false;
 	}
 };
+
+const crsEnableLimit = rateLimit({
+	windowMs: 5 * 60 * 1000,
+	limit: 5,
+	standardHeaders: "draft-8",
+	legacyHeaders: false,
+	skip: (_, res) => !requireAdmin(res),
+	handler: (_, res) => res.status(429).send({ error: { message: "crowdsec.crs.control-cooldown" } }),
+});
+
+router
+	.route("/crs")
+	.options((_, res) => res.sendStatus(204))
+	.all(jwtdecode())
+	.get(async (_, res) => {
+		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
+		res.set("Cache-Control", "no-store");
+		return res.status(200).send(await crsControl.status());
+	})
+	.post(crsEnableLimit, async (req, res) => {
+		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
+		if (!req.is("application/json") || req.body?.mode !== "observe" || Object.keys(req.body).length !== 1)
+			return res.status(400).send({ error: { message: "crowdsec.crs.control-invalid" } });
+		// Persist intent before asking the host to change its configuration.
+		await internalAuditLog.add(res.locals.access, {
+			action: "enable-requested",
+			object_type: "crowdsec-crs",
+			meta: { mode: "observe", status: "requested" },
+		});
+		return res.status(202).send(await crsControl.enable());
+	});
 
 const queryString = (value, maxLength = 256) =>
 	typeof value === "string" && value.length <= maxLength ? value.trim() : "";

@@ -171,6 +171,22 @@ export interface CrowdsecMetrics {
 	averageParsingMs?: number | null;
 }
 
+export interface CrowdsecCrsControl {
+	available: boolean;
+	eligible: boolean;
+	enabled: boolean;
+	state: "idle" | "running" | "enabled" | "failed" | "rollback-failed" | "unavailable";
+	retryAfter?: number;
+}
+
+export async function getCrowdsecCrsControl(signal?: AbortSignal): Promise<CrowdsecCrsControl> {
+	return await api.get({ url: "/crowdsec/crs" }, signal);
+}
+
+export async function enableCrowdsecCrs(): Promise<{ accepted: true; state: "running" | "enabled" }> {
+	return await api.post({ url: "/crowdsec/crs", data: { mode: "observe" } });
+}
+
 export async function createCrowdsecBan(data: CrowdsecBanInput): Promise<CrowdsecBanResult> {
 	return await api.post({ url: "/crowdsec/decisions", data });
 }

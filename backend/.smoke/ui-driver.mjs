@@ -433,6 +433,8 @@ const api = async (route) => {
 			windowHours: 24,
 			truncated: false,
 		});
+	if (apiPath === "/crowdsec/crs")
+		return respond({ available: true, eligible: true, enabled: true, state: "enabled", retryAfter: 0 });
 	if (apiPath === "/crowdsec/metrics")
 		return respond({
 			available: true,
