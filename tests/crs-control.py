@@ -31,6 +31,7 @@ class CrsControlTests(unittest.TestCase):
         self.acquisition.write_text('appsec_configs:\n  - crowdsecurity/appsec-default\nsource: appsec\n')
         self.bouncer = m.BOUNCER_DIR / 'crowdsec.conf'
         self.bouncer.write_text('APPSEC_URL=http://private:7422\nAPI_KEY=fixture-key\n')
+        self.health_check = m.healthy
         m.healthy = lambda: None
         self.calls = []
 
@@ -114,6 +115,25 @@ class CrsControlTests(unittest.TestCase):
         control = self.module.Control()
         self.assertEqual(control.enable(), {'accepted': False, 'reason': 'unsupported'})
         self.assertEqual(self.calls, [])
+
+    def test_lapi_health_alone_cannot_report_appsec_ready(self):
+        for listening in [False, True]:
+            calls = []
+            def run(args, **_):
+                calls.append(args)
+                if args[1] == 'inspect':
+                    return types.SimpleNamespace(stdout='healthy\n', returncode=0)
+                return types.SimpleNamespace(returncode=0 if listening else 1)
+            self.module.subprocess = types.SimpleNamespace(run=run, DEVNULL=subprocess.DEVNULL)
+            ticks = iter([0, 1, 121])
+            self.module.time = types.SimpleNamespace(monotonic=lambda: next(ticks), sleep=lambda _: None)
+            if listening:
+                self.health_check()
+            else:
+                with self.assertRaises(RuntimeError):
+                    self.health_check()
+            self.assertEqual(calls[1][1:4], ['exec', 'crowdsec', 'awk'])
+            self.assertIn(':1CFE$', calls[1][4])
 
     def test_other_maintenance_prevents_any_configuration_change(self):
         with self.module.LOCK.open('a') as locked:

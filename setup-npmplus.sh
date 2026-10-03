@@ -2551,7 +2551,12 @@ def healthy():
         result = subprocess.run([DOCKER, 'inspect', '--format', '{{.State.Health.Status}}', 'crowdsec'],
                                 check=True, timeout=10, capture_output=True, text=True)
         if result.stdout.strip() == 'healthy':
-            return
+            listener = subprocess.run([DOCKER, 'exec', 'crowdsec', 'awk',
+                                       '$2 ~ /:1CFE$/ && $4 == "0A" { found=1 } END { exit !found }',
+                                       '/proc/net/tcp', '/proc/net/tcp6'], timeout=10,
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if listener.returncode == 0:
+                return
         time.sleep(2)
     raise RuntimeError('CrowdSec health timeout')
 
