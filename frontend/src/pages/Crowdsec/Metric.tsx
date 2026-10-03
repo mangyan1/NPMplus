@@ -9,22 +9,33 @@ const Metric = ({
 	onClick,
 	tone = "azure",
 	description,
+	icon,
+	scope,
 }: {
 	label: ReactNode;
 	value: string | number;
 	onClick?: () => void;
 	tone?: string;
 	description?: ReactNode;
+	icon?: ReactNode;
+	scope?: ReactNode;
 }) => {
 	const content = (
 		<>
-			<div className={`card-status-start bg-${tone}`} />
 			<div className="card-body">
+				{(icon || scope) && (
+					<div className={styles.metricContext}>
+						<span className={`bg-${tone}-lt ${styles.metricIcon}`} aria-hidden="true">
+							{icon}
+						</span>
+						<span className={styles.metricScope}>{scope}</span>
+					</div>
+				)}
 				<div className="d-flex justify-content-between align-items-start gap-2">
-					<div className={`${styles.metricLabel} text-secondary text-uppercase small`}>{label}</div>
+					<div className={`${styles.metricLabel} text-secondary`}>{label}</div>
 					{onClick && <IconChevronRight size={16} className="text-secondary" aria-hidden="true" />}
 				</div>
-				<div className="h2 mb-0 mt-1">{typeof value === "number" ? intl.formatNumber(value) : value}</div>
+				<div className={styles.metricValue}>{typeof value === "number" ? intl.formatNumber(value) : value}</div>
 				<div className={`${styles.metricDescription} text-secondary small mt-2`}>{description}</div>
 				{onClick && (
 					<span className="visually-hidden">

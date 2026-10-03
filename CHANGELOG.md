@@ -4,6 +4,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Reorganize the CrowdSec overview around service health, a scoped security snapshot, and separate WAF request outcomes. Add service shortcuts and keyboard-accessible investigation filters, with compact phone summaries and clearer chart grouping.
+
 - Bump the nginx template version so upgrades automatically regenerate existing legacy Auto redirections with the corrected incoming scheme.
 
 - Setup script v1.64 restores uploaded avatars and downloaded Gravatar images with their database references. Destination-only user image caches are removed; failed restores recover the prior database and image files together.

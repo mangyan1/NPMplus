@@ -1,4 +1,4 @@
-import { IconChevronRight } from "@tabler/icons-react";
+import { IconChevronRight, IconShieldCheck } from "@tabler/icons-react";
 import type { useCrowdsecMetrics } from "src/hooks";
 import { intl, T } from "src/locale";
 import styles from "./Dashboard.module.css";
@@ -27,29 +27,34 @@ const AppsecSummary = ({ metrics, onOpen }: { metrics: ReturnType<typeof useCrow
 		? intl.formatMessage({ id: "crowdsec.appsec.traffic-summary" }, { requests, blocked, passed })
 		: intl.formatMessage({ id: "crowdsec.metrics-unavailable" });
 	return (
-		<button type="button" className={`${styles.metricCard} card card-sm w-100 text-start`} onClick={onOpen}>
-			<div className={`card-status-start bg-${status.tone}`} />
-			<div className="card-body">
-				<div className="d-flex justify-content-between align-items-start gap-2">
-					<div className={`${styles.metricLabel} text-secondary text-uppercase small`}>
-						<T id="crowdsec.appsec.blocked" />
+		<button type="button" className={`${styles.wafSummary} ${styles.metricCard} w-100 text-start`} onClick={onOpen}>
+			<div className={styles.wafIdentity}>
+				<span className={`bg-${status.tone}-lt ${styles.metricIcon}`} aria-hidden="true">
+					<IconShieldCheck size={22} />
+				</span>
+				<div>
+					<div className={styles.serviceName}>
+						<T id="crowdsec.overview.waf" />
 					</div>
-					<IconChevronRight size={16} className="text-secondary" aria-hidden="true" />
+					<div className="text-secondary small mt-1">
+						{data.appsecConfigured === false ? (
+							<T id="crowdsec.appsec.status-disabled" />
+						) : (
+							<T id={status.label} />
+						)}
+					</div>
 				</div>
-				<div className="h2 mb-0 mt-1">{trafficAvailable ? intl.formatNumber(blocked) : "—"}</div>
-				<div className={`${styles.metricDescription} text-secondary small mt-2`}>
-					{data.appsecConfigured === false ? (
-						<T id="crowdsec.appsec.status-disabled" />
-					) : (
-						<T id={status.label} />
-					)}
+			</div>
+			<div>
+				<div className={styles.metricValue}>{trafficAvailable ? intl.formatNumber(blocked) : "—"}</div>
+				<div className="small">
+					<T id="crowdsec.appsec.blocked" />
 				</div>
-				<div className="text-secondary small mt-2">
+				<div className="text-secondary small">
 					<T id="crowdsec.appsec.since-restart" />
 				</div>
-				<div className="text-secondary small mt-2">
-					<T id="crowdsec.appsec.decisions-help" />
-				</div>
+			</div>
+			<div className={styles.wafBreakdown}>
 				<div className={`${styles.wafTraffic} mt-3`} role="img" aria-label={summary}>
 					{trafficAvailable && requests > 0 ? (
 						<>
@@ -70,10 +75,14 @@ const AppsecSummary = ({ metrics, onOpen }: { metrics: ReturnType<typeof useCrow
 						<T id="crowdsec.appsec.blocked" />: {trafficAvailable ? intl.formatNumber(blocked) : "—"}
 					</span>
 				</div>
-				<span className="visually-hidden">
-					<T id="crowdsec.kpi.open" />
-				</span>
+				<p className="text-secondary small mb-0 mt-2">
+					<T id="crowdsec.overview.waf-hint" />
+				</p>
 			</div>
+			<span className={styles.sectionLink}>
+				<T id="crowdsec.overview.waf-details" />
+				<IconChevronRight size={16} aria-hidden="true" />
+			</span>
 		</button>
 	);
 };

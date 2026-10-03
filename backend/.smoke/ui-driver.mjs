@@ -572,6 +572,52 @@ check(
 	"overview is the default working view",
 	(await page.getByRole("tab", { name: "Overview", exact: true }).getAttribute("aria-selected")) === "true",
 );
+const serviceShortcuts = page.getByRole("region", { name: "Security service status" });
+check(
+	"four service shortcuts expose health separately from decision totals",
+	(await serviceShortcuts.getByRole("button").count()) === 4,
+);
+await serviceShortcuts.getByRole("button", { name: /Web application firewall/ }).click();
+check(
+	"WAF service shortcut opens request filtering details",
+	(await page.getByRole("tab", { name: "WAF", exact: true }).getAttribute("aria-selected")) === "true",
+);
+await page.getByRole("tab", { name: "Overview", exact: true }).click();
+await serviceShortcuts.getByRole("button", { name: /CrowdSec/ }).click();
+check(
+	"CrowdSec service shortcut opens system diagnostics",
+	(await page.getByRole("tab", { name: "System", exact: true }).getAttribute("aria-selected")) === "true",
+);
+await page.getByRole("tab", { name: "Overview", exact: true }).click();
+for (const name of [/Anubis/, /Honeypot/]) {
+	await serviceShortcuts.getByRole("button", { name }).click();
+	await page.getByRole("dialog").waitFor();
+	await page.getByRole("dialog").getByRole("button", { name: /close/i }).first().click();
+	await page.getByRole("dialog").waitFor({ state: "hidden" });
+}
+check(
+	"Anubis and honeypot service shortcuts open and close their detail dialog",
+	(await page.getByRole("dialog").count()) === 0,
+);
+const exploration = page.locator("details").filter({ hasText: "Explore detection details" });
+check("technical detection filters start collapsed", (await exploration.getAttribute("open")) === null);
+await exploration.locator("summary").focus();
+await exploration.locator("summary").press("Enter");
+check("detection filters disclose through keyboard navigation", (await exploration.getAttribute("open")) !== null);
+await exploration.getByRole("button", { name: /Example Telecommunications/ }).click();
+check(
+	"disclosed ASN filter opens activity with a field-scoped search",
+	(await page.locator("#crowdsec-history-search").inputValue()).startsWith("asn:Example Telecommunications"),
+);
+await page.getByRole("button", { name: "Clear filters", exact: true }).click();
+await page.getByRole("tab", { name: "Overview", exact: true }).click();
+await page.getByRole("button", { name: "View activity", exact: true }).click();
+check(
+	"overview activity shortcut opens the investigation tab",
+	(await page.getByRole("tab", { name: "Attack activity", exact: true }).getAttribute("aria-selected")) === "true",
+);
+await page.getByRole("tab", { name: "Overview", exact: true }).click();
+
 // the attacker list below is only reached by navigating to its tab now, so the
 // checks that follow cannot silently depend on it being the landing view again
 await page.getByRole("tab", { name: "Attackers", exact: true }).click();
@@ -1094,6 +1140,7 @@ await page.screenshot({ path: "backend/.smoke/ui-security-dashboard-waf-mobile.p
 await page.getByRole("tab", { name: "Overview" }).click();
 await page.screenshot({ path: "backend/.smoke/ui-security-dashboard-mobile.png", fullPage: true });
 await page.setViewportSize({ width: 320, height: 720 });
+await page.screenshot({ path: "backend/.smoke/ui-security-overview-320.png", fullPage: true, animations: "disabled" });
 check(
 	"security dashboard and tabs fit a 320px viewport",
 	await page.evaluate(() => {
@@ -1139,7 +1186,15 @@ check(
 );
 await page.setViewportSize({ width: 1280, height: 900 });
 await page.getByRole("button", { name: "Switch to Dark mode", exact: true }).click();
+await page.getByRole("tab", { name: "Overview", exact: true }).click();
+await page.screenshot({ path: "backend/.smoke/ui-security-overview-dark.png", fullPage: true, animations: "disabled" });
 await page.setViewportSize({ width: 320, height: 720 });
+await page.screenshot({
+	path: "backend/.smoke/ui-security-overview-dark-320.png",
+	fullPage: true,
+	animations: "disabled",
+});
+await page.getByRole("tab", { name: "Active bans", exact: true }).click();
 await page.waitForTimeout(250);
 await page.screenshot({ path: "backend/.smoke/ui-security-bans-dark-320.png", fullPage: true, animations: "disabled" });
 await page.setViewportSize({ width: 1280, height: 900 });
