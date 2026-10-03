@@ -34,6 +34,17 @@ const seed = async () => {
 	return list;
 };
 
+test("a blank password on create rejects before inserting the list or any credentials", async () => {
+	await assert.rejects(
+		internalAccessList.create(access, {
+			name: "Created",
+			items: [{ username: "user", password: "" }],
+		}),
+		(error) => error.status === 400,
+	);
+	assert.equal(await AccessList.query().where("name", "Created").first(), undefined);
+});
+
 test("a blank-password rename rejects before changing any access-list fields or credentials", async (t) => {
 	t.mock.method(internalNginx, "reload", async () => {});
 	t.mock.method(internalNginx, "test", async () => {});

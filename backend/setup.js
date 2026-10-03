@@ -263,6 +263,7 @@ const setupAio = async () => {
 			npmplus_crowdsec_appsec: false,
 			npmplus_proxy_request_buffering: true,
 			npmplus_proxy_response_buffering: true,
+			npmplus_upstream_compression: true,
 			certificate_id: "new",
 			ssl_forced: true,
 			hsts_enabled: true,
