@@ -1,4 +1,14 @@
-import { IconBell, IconBellOff, IconRefresh } from "@tabler/icons-react";
+import {
+	IconActivity,
+	IconBell,
+	IconBellOff,
+	IconBug,
+	IconChevronRight,
+	IconRefresh,
+	IconShield,
+	IconShieldCheck,
+	IconWorld,
+} from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { lazy, type KeyboardEvent as ReactKeyboardEvent, Suspense, useEffect, useState } from "react";
 import Alert from "react-bootstrap/Alert";
@@ -192,29 +202,19 @@ const CrowdsecDashboard = () => {
 
 	return (
 		<>
-			<div className="card mt-4 overflow-visible">
-				<div className="card-status-top bg-azure" />
+			<div className={`${styles.dashboard} card mt-4 overflow-visible`}>
 				<div className={`${styles.toolbar} sticky-top bg-body border-bottom`}>
 					<div className="card-header border-0">
 						<div className="row w-100 align-items-center g-2">
 							<div className="col-12 col-md">
-								<h2 className="card-title d-flex align-items-center gap-2">
+								<h2 className={`${styles.pageTitle} card-title d-flex align-items-center gap-2`}>
 									<AnimatedLogo size="compact" />
 									<T id="crowdsec.dashboard" />
 								</h2>
-								<div className="d-flex flex-wrap align-items-center gap-2 mt-1">
-									<span className={`badge bg-${crowdsecStatus.tone}-lt`}>
-										<T id={crowdsecStatus.label} />
-									</span>
-									<span className={`badge bg-${wafStatus.tone}-lt`}>
-										<T id={wafStatus.label} />
-									</span>
-									<span className={`badge bg-${serviceStatus.tone}-lt`}>
-										<T id={serviceStatus.label} />
-									</span>
-									<span className={`badge bg-${trapStatus.tone}-lt`}>
-										<T id={trapStatus.label} />
-									</span>
+								<p className={`${styles.pageDescription} text-secondary`}>
+									<T id="crowdsec.overview.description" />
+								</p>
+								<div className={`${styles.updatedAt} text-secondary small`}>
 									{Number.isFinite(lastUpdatedAt) && lastUpdatedAt > 0 && (
 										<span className="text-secondary small">
 											<T
@@ -272,6 +272,44 @@ const CrowdsecDashboard = () => {
 							</div>
 						</div>
 					</div>
+					<section
+						className={styles.serviceGrid}
+						aria-label={intl.formatMessage({ id: "crowdsec.overview.services" })}
+					>
+						{[
+							{
+								name: "CrowdSec",
+								icon: IconShield,
+								status: crowdsecStatus,
+								action: () => setTab("system"),
+							},
+							{
+								name: intl.formatMessage({ id: "crowdsec.overview.waf" }),
+								icon: IconShieldCheck,
+								status: wafStatus,
+								action: () => setTab("waf"),
+							},
+							{ name: "Anubis", icon: IconShield, status: serviceStatus, action: () => setKpi("anubis") },
+							{
+								name: intl.formatMessage({ id: "crowdsec.overview.honeypot" }),
+								icon: IconBug,
+								status: trapStatus,
+								action: () => setKpi("anubis"),
+							},
+						].map(({ name, icon: Icon, status, action }) => (
+							<button key={name} type="button" className={styles.serviceItem} onClick={action}>
+								<Icon size={20} className="text-secondary" aria-hidden="true" />
+								<span className={styles.serviceText}>
+									<span className={styles.serviceName}>{name}</span>
+									<span className={styles.serviceStatus}>
+										<span className={`bg-${status.tone} ${styles.statusDot}`} aria-hidden="true" />
+										<T id={status.label} />
+									</span>
+								</span>
+								<IconChevronRight size={16} className="text-secondary" aria-hidden="true" />
+							</button>
+						))}
+					</section>
 					<div className={`${styles.tabScroller} px-3`}>
 						<div
 							className={`${styles.tabs} nav nav-tabs card-header-tabs`}
@@ -346,9 +384,19 @@ const CrowdsecDashboard = () => {
 										<T id="crowdsec.insights.sampled" />
 									</Alert>
 								)}
-								<div className="row g-3 mb-4">
+								<div className={styles.sectionHeader}>
+									<h3>
+										<T id="crowdsec.overview.snapshot" />
+									</h3>
+									<span className="text-secondary small">
+										<T id="crowdsec.overview.snapshot-hint" />
+									</span>
+								</div>
+								<div className={`${styles.snapshotGrid} row g-3 mb-4`}>
 									<Metric
 										label={<T id="crowdsec.kpi.attacks" />}
+										icon={<IconActivity size={20} />}
+										scope={<T id="crowdsec.overview.window" data={{ hours: windowHours }} />}
 										value={
 											insights.data.sampled
 												? `${insights.data.alertCount}+`
@@ -359,16 +407,20 @@ const CrowdsecDashboard = () => {
 									/>
 									<Metric
 										label={<T id="crowdsec.kpi.local" />}
+										icon={<IconShieldCheck size={20} />}
+										scope={<T id="crowdsec.overview.active-now" />}
 										value={boundedCount(
 											insights.data.localActiveDecisions,
 											insights.data.localActiveDecisionsTruncated,
 										)}
-										tone="red"
+										tone="azure"
 										description={<T id="crowdsec.kpi.local-hint" />}
 										onClick={() => setKpi("local")}
 									/>
 									<Metric
 										label={<T id="crowdsec.kpi.community" />}
+										icon={<IconWorld size={20} />}
+										scope={<T id="crowdsec.overview.active-now" />}
 										value={metrics.data?.communityActiveDecisions ?? "—"}
 										tone="green"
 										description={
@@ -386,6 +438,8 @@ const CrowdsecDashboard = () => {
 									/>
 									<Metric
 										label={<T id="crowdsec.kpi.honeypot" />}
+										icon={<IconBug size={20} />}
+										scope={<T id="crowdsec.overview.active-now" />}
 										value={boundedCount(
 											anubis.data?.honeypot.activeCount,
 											anubis.data?.honeypot.truncated,
@@ -395,11 +449,27 @@ const CrowdsecDashboard = () => {
 										onClick={() => setKpi("anubis")}
 									/>
 								</div>
-								<div className="row g-4">
-									<div className="col-lg-4">
-										<h3>
-											<T id="crowdsec.attack-mix" />
-										</h3>
+								<div className={styles.wafOverview}>
+									<AppsecSummary metrics={metrics} onOpen={() => setTab("waf")} />
+								</div>
+								<div className={styles.overviewGrid}>
+									<section className={styles.overviewPanel} aria-labelledby="attack-mix-heading">
+										<div className={styles.sectionHeader}>
+											<h3 id="attack-mix-heading">
+												<T id="crowdsec.overview.detections" />
+											</h3>
+											<button
+												type="button"
+												className={styles.sectionLink}
+												onClick={() => setTab("activity")}
+											>
+												<T id="crowdsec.overview.view-activity" />
+												<IconChevronRight size={16} aria-hidden="true" />
+											</button>
+										</div>
+										<p className="text-secondary small">
+											<T id="crowdsec.overview.detections-hint" data={{ hours: windowHours }} />
+										</p>
 										<AttackMix
 											items={insights.data.topScenarios}
 											total={insights.data.alertCount}
@@ -408,17 +478,16 @@ const CrowdsecDashboard = () => {
 											onSelect={() => setKpi("attacks")}
 										/>
 										<ActivityStrip activity={insights.data.activity} windowHours={windowHours} />
-									</div>
-									<div className="col-lg-3">
-										<h3>
-											<T id="crowdsec.tabs.waf" />
-										</h3>
-										<AppsecSummary metrics={metrics} onOpen={() => setTab("waf")} />
-									</div>
-									<div className="col-lg-5">
-										<h3>
-											<T id="crowdsec.attack-map" />
-										</h3>
+									</section>
+									<section className={styles.overviewPanel} aria-labelledby="attack-map-heading">
+										<div className={styles.sectionHeader}>
+											<h3 id="attack-map-heading">
+												<T id="crowdsec.attack-map" />
+											</h3>
+										</div>
+										<p className="text-secondary small">
+											<T id="crowdsec.overview.origins-hint" />
+										</p>
 										{insights.data.locations.length ? (
 											<Suspense fallback={<TableSkeleton />}>
 												<AttackMap items={insights.data.locations} home={insights.data.home} />
@@ -428,58 +497,66 @@ const CrowdsecDashboard = () => {
 												<T id="crowdsec.location-empty" />
 											</div>
 										)}
-									</div>
+									</section>
 								</div>
-								<div className="row g-3 mt-1">
-									<div className="col-lg">
-										<div className="text-secondary small mb-2">
-											<T id="crowdsec.insights.scenarios" />
+								<details className={styles.exploreDetails}>
+									<summary>
+										<T id="crowdsec.overview.explore" />
+										<span className="text-secondary small">
+											<T id="crowdsec.overview.explore-hint" />
+										</span>
+									</summary>
+									<div className="row g-3 mt-1">
+										<div className="col-lg">
+											<div className="text-secondary small mb-2">
+												<T id="crowdsec.insights.scenarios" />
+											</div>
+											<QuickFilters
+												items={insights.data.topScenarios}
+												onSelect={(value) => quickFilter(setScenario, value)}
+											/>
 										</div>
-										<QuickFilters
-											items={insights.data.topScenarios}
-											onSelect={(value) => quickFilter(setScenario, value)}
-										/>
-									</div>
-									<div className="col-lg">
-										<div className="text-secondary small mb-2">
-											<T id="crowdsec.insights.countries" />
+										<div className="col-lg">
+											<div className="text-secondary small mb-2">
+												<T id="crowdsec.insights.countries" />
+											</div>
+											<QuickFilters
+												items={insights.data.topCountries}
+												onSelect={(value) => quickFilter(setCountry, value)}
+											/>
 										</div>
-										<QuickFilters
-											items={insights.data.topCountries}
-											onSelect={(value) => quickFilter(setCountry, value)}
-										/>
-									</div>
-									<div className="col-lg">
-										<div className="text-secondary small mb-2">
-											<T id="crowdsec.insights.asns" />
-										</div>
-										{/* the chips are labelled `AS64500` / `DIGITALOCEAN-ASN`, but the
+										<div className="col-lg">
+											<div className="text-secondary small mb-2">
+												<T id="crowdsec.insights.asns" />
+											</div>
+											{/* the chips are labelled `AS64500` / `DIGITALOCEAN-ASN`, but the
 										    free-text search matches as_name and as_number separately, so
 										    the chip must go through the documented asn: field token */}
-										<QuickFilters
-											items={insights.data.topAsns}
-											onSelect={(value) => quickFilter(setSearch, `asn:${value}`)}
-										/>
-									</div>
-									<div className="col-lg">
-										<div className="text-secondary small mb-2">
-											<T id="crowdsec.insights.ips" />
+											<QuickFilters
+												items={insights.data.topAsns}
+												onSelect={(value) => quickFilter(setSearch, `asn:${value}`)}
+											/>
 										</div>
-										<QuickFilters
-											items={insights.data.topIps}
-											onSelect={(value) => quickFilter(setSearch, value)}
-										/>
-									</div>
-									<div className="col-lg">
-										<div className="text-secondary small mb-2">
-											<T id="crowdsec.insights.targets" />
+										<div className="col-lg">
+											<div className="text-secondary small mb-2">
+												<T id="crowdsec.insights.ips" />
+											</div>
+											<QuickFilters
+												items={insights.data.topIps}
+												onSelect={(value) => quickFilter(setSearch, value)}
+											/>
 										</div>
-										<QuickFilters
-											items={insights.data.topTargets}
-											onSelect={(value) => quickFilter(setTarget, value)}
-										/>
+										<div className="col-lg">
+											<div className="text-secondary small mb-2">
+												<T id="crowdsec.insights.targets" />
+											</div>
+											<QuickFilters
+												items={insights.data.topTargets}
+												onSelect={(value) => quickFilter(setTarget, value)}
+											/>
+										</div>
 									</div>
-								</div>
+								</details>
 							</>
 						))}
 					{tab === "attackers" && (
