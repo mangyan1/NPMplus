@@ -205,6 +205,7 @@ class CrsControlTests(unittest.TestCase):
         self.assertIn('/run/npmplus-crs-control:/run/npmplus-crs-control:ro', SOURCE)
         self.assertIn('etc/systemd/system/npmplus-crs-control.socket', SOURCE[SOURCE.index('host_security_paths=('):])
         self.assertIn('\tremove_crs_control\n', SOURCE)
+        self.assertLess(SOURCE.index('remove_crs_control() {'), SOURCE.index('\tremove_crs_control\n'))
         function = re.search(r'^enable_crowdsec_crs_observation\(\).*?^}\n', SOURCE, re.M | re.S).group()
         branch = function[function.index('if [[ "$control" == "control"') : function.index('# A non-secret installer choice')]
         self.assertIn('docker restart crowdsec\n\t\treturn', branch)
@@ -212,6 +213,32 @@ class CrsControlTests(unittest.TestCase):
 
         self.assertIn('timeout -s KILL 60 cscli appsec-rules install crowdsecurity/crs', branch)
         self.assertIn('timeout -s KILL 30 crowdsec -t', branch)
+
+    def test_uninstall_dispatch_has_cleanup_loaded_and_removes_only_owned_files(self):
+        prefix = SOURCE.split('if [[ "${1:-}" == "--uninstall" ]]; then', 1)[0]
+        # Evaluate only definitions and argument parsing, with no uninstall body.
+        prefix = re.sub(r'^\[\[ \$EUID.*$', '', prefix, flags=re.M)
+        result = subprocess.run(['bash', '-c', prefix + '\ndeclare -F remove_crs_control\n', 'fixture', '--uninstall', '--no-backup'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        cleanup = re.search(r'^remove_crs_control\(\).*?^}\n', SOURCE, re.M | re.S).group()
+        paths = ['/etc/systemd/system', '/usr/local/lib', '/var/lib/npmplus/crs-control', '/run/npmplus-crs-control']
+        for index, path in enumerate(paths):
+            directory = self.root / ('cleanup-' + str(index))
+            directory.mkdir()
+            cleanup = cleanup.replace(path, str(directory))
+        units = self.root / 'cleanup-0'
+        tools = self.root / 'cleanup-1'
+        for path in [units / 'npmplus-crs-control.socket', units / 'npmplus-crs-control.service', tools / 'npmplus-crs-control.py', tools / 'npmplus-crs-enable', self.root / 'cleanup-2/state.json']:
+            path.write_text('owned fixture')
+        unrelated = units / 'operator-owned.service'
+        unrelated.write_text('keep')
+        result = subprocess.run(['bash', '-c', 'set -euo pipefail\nsystemctl() { :; }\n' + cleanup + '\nremove_crs_control\n'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(unrelated.read_text(), 'keep')
+        self.assertEqual(sorted(path.name for path in units.iterdir()), ['operator-owned.service'])
+        self.assertEqual(list(tools.iterdir()), [])
+        self.assertFalse((self.root / 'cleanup-2').exists())
+        self.assertFalse((self.root / 'cleanup-3').exists())
 
 
 if __name__ == '__main__':

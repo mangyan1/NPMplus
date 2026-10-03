@@ -117,6 +117,15 @@ write_root_file() { # write_root_file target mode < content
 	mv -f -- "$tmp" "$target"
 }
 
+remove_crs_control() {
+	systemctl disable --now npmplus-crs-control.socket npmplus-crs-control.service >/dev/null 2>&1 || true
+	rm -f /etc/systemd/system/npmplus-crs-control.socket /etc/systemd/system/npmplus-crs-control.service
+	rm -f /usr/local/lib/npmplus-crs-control.py /usr/local/lib/npmplus-crs-enable
+	rm -f /var/lib/npmplus/crs-control/state.json
+	rmdir /var/lib/npmplus/crs-control /run/npmplus-crs-control >/dev/null 2>&1 || true
+	systemctl daemon-reload >/dev/null 2>&1 || true
+}
+
 remove_admin_lan_proxy() {
 	command -v systemctl >/dev/null || return 0
 	systemctl disable --now npmplus-admin-lan.socket npmplus-admin-lan.service >/dev/null 2>&1 || true
@@ -2415,15 +2424,6 @@ PYTHON
 
 # A single-action Unix socket, deliberately outside the application's data mount.
 # Only the root-installed helper can alter CrowdSec's private configuration.
-remove_crs_control() {
-	systemctl disable --now npmplus-crs-control.socket npmplus-crs-control.service >/dev/null 2>&1 || true
-	rm -f /etc/systemd/system/npmplus-crs-control.socket /etc/systemd/system/npmplus-crs-control.service
-	rm -f /usr/local/lib/npmplus-crs-control.py /usr/local/lib/npmplus-crs-enable
-	rm -f /var/lib/npmplus/crs-control/state.json
-	rmdir /var/lib/npmplus/crs-control /run/npmplus-crs-control >/dev/null 2>&1 || true
-	systemctl daemon-reload >/dev/null 2>&1 || true
-}
-
 ensure_crs_control_mount() {
 	install -d -m 0755 /run/npmplus-crs-control
 	python3 - "$COMPOSE_FILE" <<'PYTHON'
