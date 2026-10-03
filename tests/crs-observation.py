@@ -8,6 +8,7 @@ import unittest
 
 SOURCE = (Path(__file__).resolve().parents[1] / "setup-npmplus.sh").read_text()
 FUNCTION = re.search(r"^enable_crowdsec_crs_observation\(\).*?^}\n", SOURCE, re.M | re.S).group()
+CONFIGURED = re.search(r"^crowdsec_crs_observation_configured\(\).*?^}\n", SOURCE, re.M | re.S).group()
 
 
 class CrsObservationTests(unittest.TestCase):
@@ -71,6 +72,19 @@ COMPOSE_FILE="$DATA_DIR/compose.yaml"
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("npmplus/crs-observe", self.acquisition.read_text())
         self.assertNotIn("NPMPLUS_CRS_MODE", self.bouncer.read_text())
+
+    def test_reconfiguration_keeps_an_existing_observation_choice(self):
+        self.assertEqual(self.enable().returncode, 0)
+        fragment = re.search(r'\tsay "writing crowdsec acquisition config"\n(.*?)>"\$CROWDSEC_DIR/conf/acquis.d/npmplus.yaml"', SOURCE, re.S).group()
+        code = 'set -euo pipefail\nsay() { :; }\nCROWDSEC_DIR="$FIXTURE_ROOT"\nDATA_DIR="$FIXTURE_ROOT/data"\nUSE_APPSEC=y\n' + CONFIGURED + fragment + '\n'
+        result = subprocess.run(["bash", "-c", code], env=dict(os.environ, FIXTURE_ROOT=str(self.root)), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("  - npmplus/crs-observe", self.acquisition.read_text())
+        self.assertIn("  - crowdsecurity/appsec-default", self.acquisition.read_text())
+        self.bouncer.write_text("APPSEC_FAILURE_ACTION=deny\n")
+        result = subprocess.run(["bash", "-c", code], env=dict(os.environ, FIXTURE_ROOT=str(self.root)), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("  - npmplus/crs-observe", self.acquisition.read_text())
 
     def test_safe_update_snapshots_and_restores_the_bouncer_choice(self):
         wrapper = re.search(r"write_root_file /usr/local/bin/npmplus-safe-update \d+ <<'EOF'\n(.*?)\nEOF", SOURCE, re.S).group(1)

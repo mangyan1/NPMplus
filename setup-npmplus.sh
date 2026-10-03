@@ -2323,6 +2323,13 @@ EOF
 	say "CrowdSec AppSec enabled (default high-confidence rules)"
 }
 
+crowdsec_crs_observation_configured() {
+	[[ -s "$CROWDSEC_DIR/conf/appsec-configs/npmplus-crs-observe.yaml" ]] &&
+		grep -qx '# NPMPLUS_CRS_OBSERVE_VERSION=1' "$CROWDSEC_DIR/conf/appsec-configs/npmplus-crs-observe.yaml" &&
+		grep -qx '# NPMPLUS_CRS_MODE=observe' "$DATA_DIR/crowdsec/crowdsec.conf" 2>/dev/null &&
+		grep -qx '  - npmplus/crs-observe' "$CROWDSEC_DIR/conf/acquis.d/npmplus.yaml" 2>/dev/null
+}
+
 enable_crowdsec_crs_observation() {
 	local policy="$CROWDSEC_DIR/conf/appsec-configs/npmplus-crs-observe.yaml"
 	local acquisition="$CROWDSEC_DIR/conf/acquis.d/npmplus.yaml"
@@ -4028,6 +4035,11 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 	mkdir -p "$CROWDSEC_DIR/conf/acquis.d" "$CROWDSEC_DIR/conf/bouncers"
 
 	say "writing crowdsec acquisition config"
+	# Capture the prior choice before redirecting over the acquisition file.
+	USE_CRS_OBSERVATION="n"
+	if [[ "$USE_APPSEC" == "y" ]] && crowdsec_crs_observation_configured; then
+		USE_CRS_OBSERVATION="y"
+	fi
 	{
 		echo "filenames:"
 		echo "  - /opt/npmplus/nginx/logs/*.log"
@@ -4038,6 +4050,7 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 			echo "listen_addr: 0.0.0.0:7422"
 			echo "appsec_configs:"
 			echo "  - crowdsecurity/appsec-default"
+			[[ "$USE_CRS_OBSERVATION" != "y" ]] || echo "  - npmplus/crs-observe"
 			echo "name: appsec"
 			echo "source: appsec"
 			echo "labels:"
@@ -4104,6 +4117,8 @@ EOF
 				sed -i "s|^APPSEC_URL=.*|APPSEC_URL=http://$CROWDSEC_SERVICE_HOST:7422|" "$CONF"
 			fi
 		fi
+		# A reconfiguration that removes the policy must not advertise the old mode.
+		[[ "$USE_CRS_OBSERVATION" == "y" ]] || sed -i '/^# NPMPLUS_CRS_MODE=/d' "$CONF"
 	fi
 
 	# dedicated read-only bouncer for the admin UI's live ban page; the backend
