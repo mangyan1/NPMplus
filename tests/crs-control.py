@@ -215,7 +215,7 @@ class CrsControlTests(unittest.TestCase):
         self.assertIn('timeout -s KILL 30 crowdsec -t', branch)
 
     def test_uninstall_dispatch_has_cleanup_loaded_and_removes_only_owned_files(self):
-        prefix = SOURCE.split('if [[ "${1:-}" == "--uninstall" ]]; then', 1)[0]
+        prefix = SOURCE.split('# --uninstall is deliberately handled before dependency installation', 1)[0]
         # Evaluate only definitions and argument parsing, with no uninstall body.
         prefix = re.sub(r'^\[\[ \$EUID.*$', '', prefix, flags=re.M)
         result = subprocess.run(['bash', '-c', prefix + '\ndeclare -F remove_crs_control\n', 'fixture', '--uninstall', '--no-backup'], capture_output=True, text=True)
