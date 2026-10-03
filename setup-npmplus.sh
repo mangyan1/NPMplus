@@ -3865,6 +3865,8 @@ if [[ "${1:-}" == "--update" ]]; then
 	# failing command and line so an aborted update is never silent. When it
 	# runs as the wrapper's child, the wrapper's revert and failed-*.txt
 	# diagnostics take over from here.
+	# Invoked by the ERR trap below.
+	# shellcheck disable=SC2329
 	on_update_abort() {
 		local rc=$? line=${BASH_LINENO[0]} cmd="$BASH_COMMAND"
 		printf 'update ABORTED: %s failed with exit %s (script line %s)\n' "$cmd" "$rc" "$line" >&2
