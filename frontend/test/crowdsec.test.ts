@@ -184,6 +184,15 @@ test("every telemetry status the API can report has an English label", () => {
 		assert.ok(messages[`crowdsec.telemetry.${status}`], `crowdsec.telemetry.${status} has no English label`);
 });
 
+test("every CRS control affordance has an English label", () => {
+	// CrsControl builds its label ids from the intent, so an unlabelled
+	// affordance renders the raw id.
+	const file = new URL("../translations/ui/en.json", import.meta.url);
+	const messages = JSON.parse(readFileSync(file, "utf8")) as Record<string, string>;
+	for (const key of ["control-disable", "control-disable-confirm", "control-disabling"])
+		assert.ok(messages[`crowdsec.crs.${key}`], `crowdsec.crs.${key} has no English label`);
+});
+
 test("a spike outranks an ongoing ban count", () => {
 	const both = notificationPlan([{ type: "active-bans" }, { type: "attack-spike" }], false, () => false);
 	assert.equal(both.announce, "attack-spike");

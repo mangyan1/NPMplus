@@ -137,7 +137,8 @@ const requireAdmin = (res) => {
 	}
 };
 
-const crsEnableLimit = rateLimit({
+// One shared bucket for both mutating verbs: five attempts per window.
+const crsControlLimit = rateLimit({
 	windowMs: 5 * 60 * 1000,
 	limit: 5,
 	standardHeaders: "draft-8",
@@ -155,7 +156,7 @@ router
 		res.set("Cache-Control", "no-store");
 		return res.status(200).send(await crsControl.status());
 	})
-	.post(crsEnableLimit, async (req, res) => {
+	.post(crsControlLimit, async (req, res) => {
 		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
 		if (!req.is("application/json") || req.body?.mode !== "observe" || Object.keys(req.body).length !== 1)
 			return res.status(400).send({ error: { message: "crowdsec.crs.control-invalid" } });
@@ -166,6 +167,16 @@ router
 			meta: { mode: "observe", status: "requested" },
 		});
 		return res.status(202).send(await crsControl.enable());
+	})
+	.delete(crsControlLimit, async (req, res) => {
+		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
+		// Persist intent before asking the host to change its configuration.
+		await internalAuditLog.add(res.locals.access, {
+			action: "disable-requested",
+			object_type: "crowdsec-crs",
+			meta: { status: "requested" },
+		});
+		return res.status(202).send(await crsControl.disable());
 	});
 
 const queryString = (value, maxLength = 256) =>

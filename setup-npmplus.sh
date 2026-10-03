@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.68"
+SCRIPT_VERSION="1.69"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -121,8 +121,9 @@ remove_crs_control() {
 	systemctl disable --now npmplus-crs-control.socket npmplus-crs-control.service >/dev/null 2>&1 || true
 	rm -f /etc/systemd/system/npmplus-crs-control.socket /etc/systemd/system/npmplus-crs-control.service
 	rm -f /usr/local/lib/npmplus-crs-control.py /usr/local/lib/npmplus-crs-enable
-	rm -f /var/lib/npmplus/crs-control/state.json
-	rmdir /var/lib/npmplus/crs-control /run/npmplus-crs-control >/dev/null 2>&1 || true
+	# state.json, the pre-change snapshot, and the 0700 directory are all ours
+	rm -rf /var/lib/npmplus/crs-control
+	rmdir /run/npmplus-crs-control >/dev/null 2>&1 || true
 	systemctl daemon-reload >/dev/null 2>&1 || true
 }
 
@@ -2483,6 +2484,7 @@ BOUNCER_DIR = Path('/opt/npmplus/crowdsec')
 STATE = Path('/var/lib/npmplus/crs-control/state.json')
 LOCK = Path('/run/lock/npmplus-maintenance.lock')
 ACTION = '/usr/local/lib/npmplus-crs-enable'
+SNAPSHOT = Path('/var/lib/npmplus/crs-control/snapshot')
 DOCKER = '/usr/bin/docker'
 ALLOWED_STATES = {'idle', 'running', 'enabled', 'failed', 'rollback-failed'}
 
@@ -2574,6 +2576,72 @@ def restore_tree(source, target):
     command('/bin/cp', '-a', str(source) + '/.', str(target))
 
 
+def take_snapshot(original):
+    # Keep the pre-change state after the run instead of discarding it: it is
+    # the known-good instance an operator restores from when even the
+    # automatic rollback fails.
+    if SNAPSHOT.is_symlink():
+        raise ValueError('invalid snapshot directory')
+    if not SNAPSHOT.exists():
+        SNAPSHOT.mkdir(mode=0o700)
+    elif not SNAPSHOT.is_dir():
+        SNAPSHOT.unlink()
+        SNAPSHOT.mkdir(mode=0o700)
+    previous = SNAPSHOT / 'conf'
+    if previous.is_symlink() or (previous.exists() and not previous.is_dir()):
+        previous.unlink()
+    elif previous.is_dir():
+        shutil.rmtree(previous)
+    command('/bin/cp', '-a', str(CONF), str(SNAPSHOT))
+    fd, temporary = tempfile.mkstemp(dir=SNAPSHOT)
+    try:
+        with os.fdopen(fd, 'w') as output:
+            output.write(original)
+        os.replace(temporary, SNAPSHOT / 'crowdsec.conf')
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def remove_observation_acquisition():
+    # Inverse of the installer's acquisition edit. Custom layouts are refused,
+    # never rewritten.
+    path = CONF / 'acquis.d/npmplus.yaml'
+    text = path.read_text()
+    lists = list(re.finditer(r'(?m)^appsec_configs:\n((?:[ \t]+[^\n]*\n)+)', text))
+    if len(lists) != 1:
+        raise ValueError('configuration changed')
+    items = re.findall(r'^  - ([\w/-]+)\s*$', lists[0].group(1), re.M)
+    if (len(items) != len(lists[0].group(1).splitlines())
+            or 'npmplus/crs-observe' not in items
+            or set(items) - {'crowdsecurity/appsec-default', 'npmplus/crs-observe'}):
+        raise ValueError('configuration changed')
+    fd, temporary = tempfile.mkstemp(dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as output:
+            output.write(text[:lists[0].start()] + 'appsec_configs:\n  - crowdsecurity/appsec-default\n' + text[lists[0].end():])
+        os.chmod(temporary, path.stat().st_mode & 0o777)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def recover(fd, original, changed, changed_text):
+    # Undo a failed mutation: restore the snapshot taken before any change,
+    # revert our bouncer edit while it is still ours, and prove CrowdSec is
+    # healthy again. A failure here leaves rollback-failed with the snapshot
+    # still on disk for manual recovery.
+    restore_tree(SNAPSHOT / 'conf', CONF)
+    if changed and same_bouncer(fd, changed_text):
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.write(fd, original.encode('utf-8'))
+        os.ftruncate(fd, len(original.encode('utf-8')))
+        os.fsync(fd)
+    command(DOCKER, 'restart', 'crowdsec')
+    healthy()
+
+
 class Control:
     def __init__(self):
         self.guard = threading.Lock()
@@ -2645,39 +2713,97 @@ class Control:
                 healthy()
                 if not managed() or not re.search(r'^APPSEC_URL=\S+', original, re.M):
                     raise ValueError('configuration changed')
-                with tempfile.TemporaryDirectory(prefix='snapshot-', dir=STATE.parent) as snapshot:
-                    backup = Path(snapshot) / 'conf'
-                    command('/bin/cp', '-a', str(CONF), str(backup))
-                    marker_written = False
+                take_snapshot(original)
+                marker_written = False
+                try:
+                    command('/bin/bash', ACTION)
+                    healthy()
+                    updated = re.sub(r'^# NPMPLUS_CRS_MODE=.*\n?', '', original, flags=re.M)
+                    updated = updated.rstrip('\n') + '\n# NPMPLUS_CRS_MODE=observe\n'
+                    if not same_bouncer(fd, original):
+                        raise ValueError('bouncer changed during activation')
+                    marker_written = True
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    os.write(fd, updated.encode('utf-8'))
+                    os.ftruncate(fd, len(updated.encode('utf-8')))
+                    os.fsync(fd)
+                    if not same_bouncer(fd, updated):
+                        raise ValueError('bouncer replaced during activation')
+                    state = 'enabled'
+                except Exception:
+                    traceback.print_exc()
                     try:
-                        command('/bin/bash', ACTION)
-                        healthy()
-                        updated = re.sub(r'^# NPMPLUS_CRS_MODE=.*\n?', '', original, flags=re.M)
-                        updated = updated.rstrip('\n') + '\n# NPMPLUS_CRS_MODE=observe\n'
-                        if not same_bouncer(fd, original):
-                            raise ValueError('bouncer changed during activation')
-                        marker_written = True
-                        os.lseek(fd, 0, os.SEEK_SET)
-                        os.write(fd, updated.encode('utf-8'))
-                        os.ftruncate(fd, len(updated.encode('utf-8')))
-                        os.fsync(fd)
-                        if not same_bouncer(fd, updated):
-                            raise ValueError('bouncer replaced during activation')
-                        state = 'enabled'
+                        recover(fd, original, marker_written, updated if marker_written else None)
                     except Exception:
+                        state = 'rollback-failed'
                         traceback.print_exc()
-                        try:
-                            restore_tree(backup, CONF)
-                            if marker_written and same_bouncer(fd, updated):
-                                os.lseek(fd, 0, os.SEEK_SET)
-                                os.write(fd, original.encode('utf-8'))
-                                os.ftruncate(fd, len(original.encode('utf-8')))
-                                os.fsync(fd)
-                            command(DOCKER, 'restart', 'crowdsec')
-                            healthy()
-                        except Exception:
-                            state = 'rollback-failed'
-                            traceback.print_exc()
+        except Exception:
+            traceback.print_exc()
+        finally:
+            if fd is not None:
+                os.close(fd)
+            with self.guard:
+                self.state = state
+                self.save()
+
+    def disable(self):
+        status = self.status()
+        with self.guard:
+            if self.state == 'running':
+                return {'accepted': False, 'reason': 'busy'}
+            if not status['eligible']:
+                return {'accepted': False, 'reason': 'unsupported'}
+            if not status['enabled']:
+                return {'accepted': True, 'state': 'idle'}
+            if time.time() - self.last_attempt < 300:
+                return {'accepted': False, 'reason': 'cooldown'}
+            self.state = 'running'
+            self.last_attempt = int(time.time())
+            self.save()
+            self.worker = threading.Thread(target=self.deactivate)
+            self.worker.start()
+            return {'accepted': True, 'state': 'running'}
+
+    def deactivate(self):
+        state = 'failed'
+        fd = None
+        try:
+            with LOCK.open('a') as maintenance:
+                fcntl.flock(maintenance, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fd = bouncer_fd()
+                original = read_bouncer(fd)
+                healthy()
+                if not managed() or not configured(original):
+                    raise ValueError('configuration changed')
+                take_snapshot(original)
+                marker_written = False
+                try:
+                    policy = CONF / 'appsec-configs/npmplus-crs-observe.yaml'
+                    if policy.is_file():
+                        policy.unlink()
+                    remove_observation_acquisition()
+                    command(DOCKER, 'exec', 'crowdsec', 'timeout', '-s', 'KILL', '30',
+                            'crowdsec', '-t', '-c', '/etc/crowdsec/config.yaml')
+                    updated = re.sub(r'^# NPMPLUS_CRS_MODE=.*\n?', '', original, flags=re.M)
+                    if not same_bouncer(fd, original):
+                        raise ValueError('bouncer changed during deactivation')
+                    marker_written = True
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    os.write(fd, updated.encode('utf-8'))
+                    os.ftruncate(fd, len(updated.encode('utf-8')))
+                    os.fsync(fd)
+                    if not same_bouncer(fd, updated):
+                        raise ValueError('bouncer replaced during deactivation')
+                    command(DOCKER, 'restart', 'crowdsec')
+                    healthy()
+                    state = 'idle'
+                except Exception:
+                    traceback.print_exc()
+                    try:
+                        recover(fd, original, marker_written, updated if marker_written else None)
+                    except Exception:
+                        state = 'rollback-failed'
+                        traceback.print_exc()
         except Exception:
             traceback.print_exc()
         finally:
@@ -2703,6 +2829,8 @@ def respond(connection, control):
         result = control.status()
     elif request == b'ENABLE\n':
         result = control.enable()
+    elif request == b'DISABLE\n':
+        result = control.disable()
     else:
         result = {'accepted': False, 'reason': 'invalid'}
     connection.sendall(json.dumps(result).encode('utf-8') + b'\n')

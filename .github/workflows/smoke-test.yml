@@ -471,6 +471,60 @@ jobs:
           sudo test -s /var/lib/npmplus/cloudflare-ips-v4
           sudo test -s /var/lib/npmplus/cloudflare-ips-v6
 
+      - name: crs observation disable round trip (socket daemon)
+        run: |
+          set -x
+          # The dashboard disable path against the real socket-activated daemon.
+          # The CLI --enable-crs path above never touches the daemon, so its
+          # cooldown counter is fresh here.
+          query() {
+            sudo python3 - "$1" <<'PY'
+          import socket
+          import sys
+          verb = sys.argv[1].encode()
+          client = socket.socket(socket.AF_UNIX)
+          client.settimeout(15)
+          client.connect('/run/npmplus-crs-control/control.sock')
+          client.sendall(verb + b'\n')
+          reply = b''
+          while b'\n' not in reply:
+              part = client.recv(4096)
+              if not part:
+                  break
+              reply += part
+          print(reply.decode())
+          PY
+          }
+          echo "status before: $(query STATUS)"
+          reply="$(query DISABLE)"
+          echo "disable reply: $reply"
+          grep -q '"accepted": true' <<<"$reply"
+          for _ in $(seq 1 90); do
+            state="$(query STATUS)"
+            grep -q '"state": "idle"' <<<"$state" && break
+            sleep 2
+          done
+          grep -q '"state": "idle"' <<<"$state"
+          grep -q '"enabled": false' <<<"$state"
+          # policy and acquisition edits are reverted; hub rules stay installed
+          sudo test ! -e /opt/crowdsec/conf/appsec-configs/npmplus-crs-observe.yaml
+          sudo grep -qx '  - crowdsecurity/appsec-default' /opt/crowdsec/conf/acquis.d/npmplus.yaml
+          if sudo grep -q 'npmplus/crs-observe' /opt/crowdsec/conf/acquis.d/npmplus.yaml; then
+            echo '::error::acquisition still references the observation policy' >&2
+            exit 1
+          fi
+          if sudo grep -q '^# NPMPLUS_CRS_MODE=' /opt/npmplus/crowdsec/crowdsec.conf; then
+            echo '::error::bouncer still carries the observation mode marker' >&2
+            exit 1
+          fi
+          sudo grep -q '^APPSEC_URL=http://crowdsec:7422$' /opt/npmplus/crowdsec/crowdsec.conf
+          sudo docker exec crowdsec cscli appsec-rules inspect crowdsecurity/crs >/dev/null
+          sudo docker inspect --format '{{.State.Health.Status}}' crowdsec | grep -qx healthy
+          # the pre-change snapshot survives the run for manual recovery
+          sudo test -f /var/lib/npmplus/crs-control/snapshot/crowdsec.conf
+          sudo grep -q '# NPMPLUS_CRS_MODE=observe' /var/lib/npmplus/crs-control/snapshot/crowdsec.conf
+          sudo test -f /var/lib/npmplus/crs-control/snapshot/conf/acquis.d/npmplus.yaml
+
       - name: backup restore round trip works (migration path)
         if: matrix.name == 'defaults'
         run: |

@@ -35,6 +35,15 @@ export const createCrsControl = (socketPath = "/run/npmplus-crs-control/control.
 				if (!body.endsWith("\n")) finish(true);
 			});
 		});
+	// One shared path for both mutating verbs: fixed verb, bounded reply, the
+	// same reason mapping.
+	const request = async (verb, okStates) => {
+		const data = await exchange(verb);
+		if (data?.accepted === true && okStates.includes(data.state)) return { accepted: true, state: data.state };
+		if (data?.accepted === false && REASONS.has(data.reason))
+			throw publicError(`crowdsec.crs.control-${data.reason}`, data.reason === "cooldown" ? 429 : 409);
+		throw publicError("crowdsec.crs.control-unavailable", 503);
+	};
 	return {
 		status: async () => {
 			const data = await exchange("STATUS").catch(() => null);
@@ -54,14 +63,8 @@ export const createCrsControl = (socketPath = "/run/npmplus-crs-control/control.
 				retry_after: Number.isSafeInteger(data.retry_after) ? Math.min(300, Math.max(0, data.retry_after)) : 0,
 			};
 		},
-		enable: async () => {
-			const data = await exchange("ENABLE");
-			if (data?.accepted === true && ["running", "enabled"].includes(data.state))
-				return { accepted: true, state: data.state };
-			if (data?.accepted === false && REASONS.has(data.reason))
-				throw publicError(`crowdsec.crs.control-${data.reason}`, data.reason === "cooldown" ? 429 : 409);
-			throw publicError("crowdsec.crs.control-unavailable", 503);
-		},
+		enable: async () => request("ENABLE", ["running", "enabled"]),
+		disable: async () => request("DISABLE", ["running", "idle"]),
 	};
 };
 

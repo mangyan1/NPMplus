@@ -54,6 +54,16 @@ test("CRS control activation cannot forward caller arguments", async (t) => {
 	assert.deepEqual(verbs, ["ENABLE\n"]);
 });
 
+test("CRS control deactivation uses its fixed verb and bounded states", async (t) => {
+	const { client, verbs } = await fixture(t, '{"accepted":true,"state":"running","output":"not-public"}\n');
+	assert.deepEqual(await client.disable(), { accepted: true, state: "running" });
+	assert.deepEqual(verbs, ["DISABLE\n"]);
+	const idle = await fixture(t, '{"accepted":true,"state":"idle"}\n');
+	assert.deepEqual(await idle.client.disable(), { accepted: true, state: "idle" });
+	const refused = await fixture(t, '{"accepted":false,"reason":"unsupported"}\n');
+	await assert.rejects(refused.client.disable(), { status: 409, message: "crowdsec.crs.control-unsupported" });
+});
+
 test("CRS control rejects oversized, partial and malformed responses", async (t) => {
 	for (const reply of ["x".repeat(1025), '{"available":true}', "invalid\n", '{"accepted":true,"state":"shell"}\n']) {
 		await t.test(reply.slice(0, 30), async (sub) => {
