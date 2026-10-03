@@ -4,6 +4,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Added installer v1.65 `--update --enable-crs` for transactional CRS observation beside existing high-confidence AppSec blocking. The WAF dashboard separates installer configuration, observed CRS matches, and in-band warnings; match counts stay distinct from blocked requests. Hub-managed policies and ordinary-update choices remain intact. Safe-update wrapper v6 also snapshots and restores the bouncer configuration.
+
 - Reorganize the CrowdSec overview around service health, a scoped security snapshot, and separate WAF request outcomes. Add service shortcuts and keyboard-accessible investigation filters, with compact phone summaries and clearer chart grouping.
 
 - Bump the nginx template version so upgrades automatically regenerate existing legacy Auto redirections with the corrected incoming scheme.

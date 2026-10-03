@@ -78,3 +78,13 @@ export const appsecTrafficAvailable = (metrics?: CrowdsecMetrics) =>
 			typeof metrics.appsecBlocked === "number" &&
 			typeof metrics.appsecPassed === "number",
 	);
+
+export const crsStatus = (metrics: CrowdsecMetrics, stale = false): StatusPresentation => {
+	if (stale) return { label: "crowdsec.status.stale", tone: "orange" };
+	if (metrics.appsecConfigured === false) return { label: "crowdsec.appsec.status-disabled", tone: "secondary" };
+	if (!metrics.available) return { label: "crowdsec.metrics-unavailable", tone: "orange" };
+	if ((metrics.crsInbandHits ?? 0) > 0) return { label: "crowdsec.crs.status-inband", tone: "orange" };
+	if ((metrics.crsObservationHits ?? 0) > 0) return { label: "crowdsec.crs.status-observed", tone: "orange" };
+	if (metrics.crsInstallerMode === "observe") return { label: "crowdsec.crs.status-configured", tone: "orange" };
+	return { label: "crowdsec.crs.status-unknown", tone: "secondary" };
+};

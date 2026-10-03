@@ -3,6 +3,7 @@ import Alert from "react-bootstrap/Alert";
 import type { useCrowdsecMetrics } from "src/hooks";
 import { intl, T } from "src/locale";
 import { RuleDetails } from "./AttackDetails";
+import CrsMonitoring from "./CrsMonitoring";
 import styles from "./Dashboard.module.css";
 import { MetricsSkeleton } from "./LoadingSkeleton";
 import Metric from "./Metric";
@@ -71,6 +72,8 @@ const WafMonitoring = ({ metrics }: { metrics: ReturnType<typeof useCrowdsecMetr
 					<T id={metrics.data.error || "crowdsec.metrics-unavailable"} />
 				</Alert>
 			)}
+
+			<CrsMonitoring data={metrics.data} stale={metrics.isRefetchError} />
 
 			<div className="row g-3">
 				<Metric

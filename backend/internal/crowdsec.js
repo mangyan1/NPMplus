@@ -18,6 +18,7 @@ const LAPI_URL = process.env.CROWDSEC_LAPI_URL || "http://127.0.0.1:8080";
 const LAPI_MACHINE_ID = process.env.CROWDSEC_LAPI_MACHINE_ID || "npmplus-ui";
 const LAPI_MACHINE_KEY_FILE = process.env.CROWDSEC_LAPI_MACHINE_KEY_FILE || "/data/crowdsec/lapi-ui-machine.key";
 const CROWDSEC_BOUNCER_CONFIG_FILE = process.env.CROWDSEC_BOUNCER_CONFIG_FILE || "/data/crowdsec/crowdsec.conf";
+const CRS_OBSERVE_MARKER = /^# NPMPLUS_CRS_MODE=observe\r?$/m;
 const MACHINE_TOKEN_TTL_MS = 30 * 1000;
 // crowdsec's lapi validates the client user agent against the registered
 // machine (a bare "node" agent is rejected as "bad user agent"), so every
@@ -59,6 +60,8 @@ export const readAppsecConfiguration = async () => {
 		const unreadableBody = setting("APPSEC_DROP_UNREADABLE_BODY");
 		return {
 			appsec_configured: Boolean(url),
+			// This marker describes the installer's choice, not live rule loading.
+			crs_installer_mode: CRS_OBSERVE_MARKER.test(text) ? "observe" : null,
 			appsec_failure_action: ["deny", "passthrough"].includes(failureAction) ? failureAction : null,
 			appsec_drop_unreadable_body: ["true", "false"].includes(unreadableBody) ? unreadableBody === "true" : null,
 		};
@@ -66,6 +69,7 @@ export const readAppsecConfiguration = async () => {
 		debug(logger, `CrowdSec bouncer config unavailable for AppSec status: ${err}`);
 		return {
 			appsec_configured: null,
+			crs_installer_mode: null,
 			appsec_failure_action: null,
 			appsec_drop_unreadable_body: null,
 		};

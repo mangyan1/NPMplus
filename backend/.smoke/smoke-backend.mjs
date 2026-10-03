@@ -39,7 +39,7 @@ await writeFile(KEY_FILE, "smoke-bouncer-key-1234567890abcdef");
 await writeFile(MACHINE_FILE, "smoke-machine-password-123456");
 await writeFile(
 	BOUNCER_CONFIG_FILE,
-	"APPSEC_URL=http://crowdsec:7422\nAPPSEC_FAILURE_ACTION=passthrough\nAPPSEC_DROP_UNREADABLE_BODY=false\n",
+	"APPSEC_URL=http://crowdsec:7422\nAPPSEC_FAILURE_ACTION=passthrough\nAPPSEC_DROP_UNREADABLE_BODY=false\n# NPMPLUS_CRS_MODE=observe\n",
 );
 
 const fakeLapi = await import("./fake-lapi.mjs");
@@ -380,6 +380,10 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 			metricsBody.appsec_failure_action === "passthrough" &&
 			metricsBody.appsec_drop_unreadable_body === false &&
 			metricsBody.appsec_metrics_present === true &&
+			metricsBody.crs_installer_mode === "observe" &&
+			metricsBody.crs_observation_hits === 5 &&
+			metricsBody.crs_inband_hits === 2 &&
+			metricsBody.crs_rules.length === 1 &&
 			metricsBody.appsec_blocked === 3 &&
 			metricsBody.appsec_passed === 9 &&
 			metricsBody.appsec_block_rate === 0.25 &&

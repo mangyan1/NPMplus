@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.64"
+SCRIPT_VERSION="1.65"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -1721,6 +1721,7 @@ Options:
   --install                 install or reconfigure NPMplus
   --update                  safely update with snapshot and rollback
   --update --enable-appsec  enable AppSec during a safe update
+  --update --enable-crs     enable AppSec and CRS observation during a safe update
   --update --enable-anubis-catchall
                             make anubis challenge everything its policy does not
                             match on the next policy refresh (breaks non-browser
@@ -1845,6 +1846,7 @@ esac
 # Operators can opt in explicitly without rebuilding the stack interactively;
 # flags are carried through the transactional safe-update wrapper via env.
 ENABLE_APPSEC_ON_UPDATE="${NPMPLUS_ENABLE_APPSEC_ON_UPDATE:-false}"
+ENABLE_CRS_ON_UPDATE="${NPMPLUS_ENABLE_CRS_ON_UPDATE:-false}"
 ENABLE_ANUBIS_CATCHALL_ON_UPDATE="${NPMPLUS_ENABLE_ANUBIS_CATCHALL_ON_UPDATE:-false}"
 ENABLE_STRICT_BOOT_ON_UPDATE="${NPMPLUS_ENABLE_STRICT_BOOT_ON_UPDATE:-false}"
 ENABLE_CF_ORIGIN_LOCK_ON_UPDATE="${NPMPLUS_ENABLE_CF_ORIGIN_LOCK_ON_UPDATE:-false}"
@@ -1852,6 +1854,7 @@ if [[ "${1:-}" == "--update" ]]; then
 	for update_option in "${@:2}"; do
 		case "$update_option" in
 			--enable-appsec) ENABLE_APPSEC_ON_UPDATE="true" ;;
+			--enable-crs) ENABLE_CRS_ON_UPDATE="true"; ENABLE_APPSEC_ON_UPDATE="true" ;;
 			--enable-anubis-catchall) ENABLE_ANUBIS_CATCHALL_ON_UPDATE="true" ;;
 			--enable-strict-boot) ENABLE_STRICT_BOOT_ON_UPDATE="true" ;;
 			--enable-cloudflare-origin-lock) ENABLE_CF_ORIGIN_LOCK_ON_UPDATE="true" ;;
@@ -2320,6 +2323,78 @@ EOF
 	say "CrowdSec AppSec enabled (default high-confidence rules)"
 }
 
+crowdsec_crs_observation_configured() {
+	[[ -s "$CROWDSEC_DIR/conf/appsec-configs/npmplus-crs-observe.yaml" ]] &&
+		grep -qx '# NPMPLUS_CRS_OBSERVE_VERSION=1' "$CROWDSEC_DIR/conf/appsec-configs/npmplus-crs-observe.yaml" &&
+		grep -qx '# NPMPLUS_CRS_MODE=observe' "$DATA_DIR/crowdsec/crowdsec.conf" 2>/dev/null &&
+		grep -qx '  - npmplus/crs-observe' "$CROWDSEC_DIR/conf/acquis.d/npmplus.yaml" 2>/dev/null
+}
+
+enable_crowdsec_crs_observation() {
+	local policy="$CROWDSEC_DIR/conf/appsec-configs/npmplus-crs-observe.yaml"
+	local acquisition="$CROWDSEC_DIR/conf/acquis.d/npmplus.yaml"
+	local bouncer_conf="$DATA_DIR/crowdsec/crowdsec.conf"
+	# Refuse to replace an operator-owned policy. Hub-managed files stay intact.
+	if [[ -e "$policy" ]] && ! grep -qx '# NPMPLUS_CRS_OBSERVE_VERSION=1' "$policy"; then
+		echo "CRS policy is operator-owned; review $policy before enabling observation" >&2
+		return 1
+	fi
+	# Install the rule package alone. The CRS collection also installs a scenario
+	# that can ban repeated detections, which is not this observation policy.
+	docker exec crowdsec cscli appsec-rules install crowdsecurity/crs
+	mkdir -p "${policy%/*}"
+	write_root_file "$policy" 644 <<'EOF'
+# NPMPLUS_CRS_OBSERVE_VERSION=1
+name: npmplus/crs-observe
+default_remediation: ban
+outofband_rules:
+  - crowdsecurity/crs
+on_match:
+  - filter: 'IsOutBand == true && any(evt.Appsec.MatchedRules, { int(#.id) >= 900000 && int(#.id) < 1000000 })'
+    apply:
+      - SetRemediation("allow")
+      # Keep native alerts, but do not feed CRS matches into ban scenarios.
+      - CancelEvent()
+      - SendAlert()
+EOF
+	# Handle only our simple, installer-managed list. Refuse custom layouts instead
+	# of silently changing their policy. Append once and retain the blocking config.
+	python3 - "$acquisition" <<'PYTHON'
+import os
+from pathlib import Path
+import re
+import sys
+import tempfile
+
+path = Path(sys.argv[1])
+text = path.read_text()
+lists = list(re.finditer(r"(?m)^appsec_configs:\n((?:[ \t]+[^\n]*\n)+)", text))
+if len(lists) != 1:
+    sys.exit("CRS observation requires one installer-managed AppSec configuration list")
+match = lists[0]
+items = re.findall(r"^  - ([\w/-]+)\s*$", match.group(1), re.M)
+if len(items) != len(match.group(1).splitlines()) or set(items) - {"crowdsecurity/appsec-default", "npmplus/crs-observe"} or "crowdsecurity/appsec-default" not in items:
+    sys.exit("custom AppSec configuration detected; review its policy before enabling CRS")
+replacement = "appsec_configs:\n  - crowdsecurity/appsec-default\n  - npmplus/crs-observe\n"
+fd, temporary = tempfile.mkstemp(dir=path.parent)
+try:
+    with os.fdopen(fd, "w") as output:
+        output.write(text[:match.start()] + replacement + text[match.end():])
+    os.chmod(temporary, path.stat().st_mode & 0o777)
+    os.replace(temporary, path)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+PYTHON
+	docker exec crowdsec crowdsec -t -c /etc/crowdsec/config.yaml
+	docker compose -f "$COMPOSE_FILE" restart crowdsec
+	# A non-secret installer choice, deliberately separate from observed live hits.
+	# The safe updater snapshots this file alongside the CrowdSec rules/database.
+	sed -i '/^# NPMPLUS_CRS_MODE=/d' "$bouncer_conf"
+	printf '\n# NPMPLUS_CRS_MODE=observe\n' >>"$bouncer_conf"
+	say "CRS observation configured; high-confidence in-band blocking remains enabled"
+}
+
 # The official Anubis image is non-root. A root-owned bind mount lets it read
 # the policy but makes the bbolt database and honeypot log unwritable, which
 # sends the container into a restart loop. Discover the numeric image user so
@@ -2549,7 +2624,7 @@ if [[ -s "$DATA_DIR/setup-npmplus.sh" ]]; then
 	chmod 700 "$DATA_DIR/setup-npmplus.sh"
 	write_root_file /usr/local/bin/npmplus-safe-update 700 <<'EOF'
 #!/bin/bash
-# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=5
+# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=6
 # monthly npmplus update with a safety net: snapshots the running state,
 # runs the update, health-checks it, and reverts to the snapshot on failure
 set -euo pipefail
@@ -2577,6 +2652,9 @@ revert() {
 		npmplus-boot-guard.service >/dev/null 2>&1 || true
 	docker compose -f "$COMPOSE_FILE" down >/dev/null 2>&1 || true
 	cp -a "$BACKUP/compose.yaml" "$COMPOSE_FILE"
+	if [[ -s "$BACKUP/crowdsec-bouncer.conf" ]]; then
+		cp -a "$BACKUP/crowdsec-bouncer.conf" /opt/npmplus/crowdsec/crowdsec.conf
+	fi
 	if [[ -s "$BACKUP/anubis.yaml" ]]; then
 		cp -a "$BACKUP/anubis.yaml" /opt/anubis.yaml
 	else
@@ -2656,6 +2734,7 @@ revert() {
 mkdir -p "$BACKUP"
 chmod 700 "$BACKUP"
 cp -a "$COMPOSE_FILE" "$BACKUP/compose.yaml"
+cp -a /opt/npmplus/crowdsec/crowdsec.conf "$BACKUP/crowdsec-bouncer.conf" 2>/dev/null || rm -f "$BACKUP/crowdsec-bouncer.conf"
 cp -a /opt/anubis.yaml "$BACKUP/anubis.yaml" 2>/dev/null || rm -f "$BACKUP/anubis.yaml"
 cp -a "$SETUP" "$BACKUP/setup-npmplus.sh"
 for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal npmplus-collect-enforcement npmplus-collect-anubis; do
@@ -3337,7 +3416,7 @@ if [[ "${1:-}" == "--update" ]]; then
 	# only installations carrying both the NPMplus Compose service and our config
 	# signature; the marker also records that uninstall may remove this package.
 	adopt_legacy_installer_firewall_bouncer
-	if [[ "$ENABLE_APPSEC_ON_UPDATE" == "true" ]] && ! grep -q "container_name: crowdsec" "$COMPOSE_FILE"; then
+	if [[ "$ENABLE_APPSEC_ON_UPDATE" == "true" || "$ENABLE_CRS_ON_UPDATE" == "true" ]] && ! grep -q "container_name: crowdsec" "$COMPOSE_FILE"; then
 		echo "cannot enable AppSec because this installation has no CrowdSec service" >&2
 		exit 1
 	fi
@@ -3385,7 +3464,7 @@ if [[ "${1:-}" == "--update" ]]; then
 		# overwrite themselves in place during a nested tooling refresh. Replace
 		# them before delegation; this also repairs a missing execute bit.
 		if [[ ! -x /usr/local/bin/npmplus-safe-update ]] || \
-			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=5' /usr/local/bin/npmplus-safe-update; then
+			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=6' /usr/local/bin/npmplus-safe-update; then
 			install_host_tooling
 		fi
 		# Repair the v1.6 root-owned Anubis bind mount before the wrapper checks
@@ -3453,6 +3532,7 @@ if [[ "${1:-}" == "--update" ]]; then
 		candidate=$(readlink -f "$0")
 		chmod 700 "$candidate"
 		NPMPLUS_ENABLE_APPSEC_ON_UPDATE="$ENABLE_APPSEC_ON_UPDATE" \
+			NPMPLUS_ENABLE_CRS_ON_UPDATE="$ENABLE_CRS_ON_UPDATE" \
 			NPMPLUS_ENABLE_STRICT_BOOT_ON_UPDATE="$ENABLE_STRICT_BOOT_ON_UPDATE" \
 			NPMPLUS_ENABLE_CF_ORIGIN_LOCK_ON_UPDATE="$ENABLE_CF_ORIGIN_LOCK_ON_UPDATE" \
 			NPMPLUS_SETUP_CANDIDATE="$candidate" exec /usr/local/bin/npmplus-safe-update
@@ -3467,7 +3547,10 @@ if [[ "${1:-}" == "--update" ]]; then
 		set_compose_service_image crowdsec "$CROWDSEC_IMAGE"
 		ensure_crowdsec_metrics_port
 		normalize_crowdsec_appsec_acquisition
-		[[ "$ENABLE_APPSEC_ON_UPDATE" != "true" ]] || enable_crowdsec_appsec
+		if [[ "$ENABLE_APPSEC_ON_UPDATE" == "true" || "$ENABLE_CRS_ON_UPDATE" == "true" ]]; then
+			enable_crowdsec_appsec
+		fi
+		[[ "$ENABLE_CRS_ON_UPDATE" != "true" ]] || enable_crowdsec_crs_observation
 	fi
 	if grep -q "container_name: npmplus-caddy" "$COMPOSE_FILE"; then
 		CADDY_IMAGE=$(pin_image "$CADDY_IMAGE_CHANNEL")
@@ -3952,6 +4035,11 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 	mkdir -p "$CROWDSEC_DIR/conf/acquis.d" "$CROWDSEC_DIR/conf/bouncers"
 
 	say "writing crowdsec acquisition config"
+	# Capture the prior choice before redirecting over the acquisition file.
+	USE_CRS_OBSERVATION="n"
+	if [[ "$USE_APPSEC" == "y" ]] && crowdsec_crs_observation_configured; then
+		USE_CRS_OBSERVATION="y"
+	fi
 	{
 		echo "filenames:"
 		echo "  - /opt/npmplus/nginx/logs/*.log"
@@ -3962,6 +4050,7 @@ if [[ "$USE_CROWDSEC" == "y" ]]; then
 			echo "listen_addr: 0.0.0.0:7422"
 			echo "appsec_configs:"
 			echo "  - crowdsecurity/appsec-default"
+			[[ "$USE_CRS_OBSERVATION" != "y" ]] || echo "  - npmplus/crs-observe"
 			echo "name: appsec"
 			echo "source: appsec"
 			echo "labels:"
@@ -4028,6 +4117,8 @@ EOF
 				sed -i "s|^APPSEC_URL=.*|APPSEC_URL=http://$CROWDSEC_SERVICE_HOST:7422|" "$CONF"
 			fi
 		fi
+		# A reconfiguration that removes the policy must not advertise the old mode.
+		[[ "$USE_CRS_OBSERVATION" == "y" ]] || sed -i '/^# NPMPLUS_CRS_MODE=/d' "$CONF"
 	fi
 
 	# dedicated read-only bouncer for the admin UI's live ban page; the backend

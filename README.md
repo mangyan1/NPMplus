@@ -1,6 +1,6 @@
 # NPMplus Security Fork — maintained by mangyan1
 
-NPMplus gives you a web dashboard for publishing services securely through Nginx. This security-focused fork is maintained by [mangyan1](https://github.com/mangyan1) and adds a guided server installer, CrowdSec protection, automatic backups, safe updates with rollback, and additional security fixes.
+NPMplus provides a web dashboard for publishing services through Nginx. Maintained by [mangyan1](https://github.com/mangyan1), this fork adds guided installation, CrowdSec protection, backups, safe updates with rollback, and security fixes.
 
 It is based on [ZoeyVid/NPMplus](https://github.com/ZoeyVid/NPMplus) and the original [Nginx Proxy Manager](https://github.com/NginxProxyManager/nginx-proxy-manager). [Project website](https://mangyan1.github.io/NPMplus/)
 
@@ -26,6 +26,8 @@ sudo bash setup-npmplus.sh
 Review the script before running it on a production host. Select **Install NPMplus**, then answer the questions; if you are unsure, press Enter to accept the displayed default. The recommended defaults enable CrowdSec, CrowdSec AppSec, the firewall bouncer, and Anubis. Anubis's global catch-all challenge defaults off so APIs, licensing servers, webhooks, monitors, and other non-browser clients keep working, and AppSec can be turned off per proxy host if an application has a confirmed compatibility problem.
 
 Develop installer v1.62 uses fork-maintained [CrowdSec](security-images/crowdsec/README.md) and [Anubis](security-images/anubis/README.md) builds, tested and scanned on both architectures. It pins images and matching Anubis policies. Existing RC installers retain their original behavior; the build guides explain maintenance responsibilities.
+
+Optional [CRS observation](ADVANCED.md) appears in **CrowdSec → WAF**.
 
 For the easiest first login, provide an administrator email and password when the installer asks. The password is handled as a temporary secret and is not saved in `compose.yaml`.
 

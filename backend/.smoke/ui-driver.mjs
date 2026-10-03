@@ -437,6 +437,13 @@ const api = async (route) => {
 		return respond({
 			available: true,
 			appsecConfigured,
+			crsInstallerMode: "observe",
+			crsObservationHits: 5,
+			crsInbandHits: 0,
+			crsRules: [
+				{ name: "942100", count: 3 },
+				{ name: "941100", count: 2 },
+			],
 			appsecFailureAction: "passthrough",
 			appsecDropUnreadableBody: false,
 			appsecMetricsPresent: appsecConfigured,
@@ -1006,6 +1013,17 @@ check(
 	"WAF traffic visualization has an accessible summary",
 	(await page.getByRole("img", { name: /AppSec inspected 12 requests/i }).count()) === 1,
 );
+const crsPanel = page.getByRole("region", { name: "OWASP CRS observations" });
+check(
+	"CRS dashboard shows observation scope and readable rule families",
+	(await crsPanel.innerText()).includes("SQL injection pattern") &&
+		(await crsPanel.innerText()).includes("not unique requests"),
+);
+check(
+	"CRS observations are separate from blocked requests",
+	(await crsPanel.getByText("5", { exact: true }).count()) === 1 &&
+		(await crsPanel.getByText("Matches observed", { exact: true }).count()) === 1,
+);
 await page.screenshot({ path: "backend/.smoke/ui-security-dashboard-waf.png", fullPage: true });
 
 appsecConfigured = false;
@@ -1016,6 +1034,10 @@ check(
 	"WAF tab distinguishes globally disabled AppSec",
 	/appsec disabled/i.test(disabledWafText) && disabledWafText.includes("--update --enable-appsec"),
 	disabledWafText.slice(0, 300),
+);
+check(
+	"disabled AppSec does not present historical CRS counters as live",
+	!(await page.getByRole("region", { name: "OWASP CRS observations" }).innerText()).includes("SQL injection pattern"),
 );
 appsecConfigured = true;
 await page.reload({ waitUntil: "networkidle" });

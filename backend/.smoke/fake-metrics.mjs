@@ -6,6 +6,9 @@ cs_parser_hits_total{source="nginx"} 10
 cs_parser_hits_ok_total{source="nginx"} 9
 cs_appsec_reqs_total 12
 cs_appsec_block_total 3
+cs_appsec_rule_hits{rule_name="942100",type="outofband"} 5
+cs_appsec_rule_hits{rule_name="901340",type="outofband"} 99
+cs_appsec_rule_hits{rule_name="941100",type="inband"} 2
 cs_lapi_bouncer_requests_total{bouncer="npmplus"} 20
 cs_lapi_decisions_ok_total 12
 cs_lapi_machine_requests_total{machine="npmplus-ui"} 8
