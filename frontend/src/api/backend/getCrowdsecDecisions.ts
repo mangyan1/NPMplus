@@ -187,6 +187,10 @@ export async function enableCrowdsecCrs(): Promise<{ accepted: true; state: "run
 	return await api.post({ url: "/crowdsec/crs", data: { mode: "observe" } });
 }
 
+export async function disableCrowdsecCrs(): Promise<{ accepted: true; state: "running" | "idle" }> {
+	return await api.del({ url: "/crowdsec/crs" });
+}
+
 export async function createCrowdsecBan(data: CrowdsecBanInput): Promise<CrowdsecBanResult> {
 	return await api.post({ url: "/crowdsec/decisions", data });
 }

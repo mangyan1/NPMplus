@@ -25,6 +25,7 @@ class CrsControlTests(unittest.TestCase):
         m.BOUNCER_DIR = self.root / 'npmplus/crowdsec'
         m.STATE = self.root / 'state/state.json'
         m.LOCK = self.root / 'maintenance.lock'
+        m.SNAPSHOT = self.root / 'state/snapshot'
         for directory in [m.CONF / 'acquis.d', m.BOUNCER_DIR, m.STATE.parent]:
             directory.mkdir(parents=True)
         self.acquisition = m.CONF / 'acquis.d/npmplus.yaml'
@@ -61,6 +62,11 @@ class CrsControlTests(unittest.TestCase):
         self.assertIn('API_KEY=fixture-key', self.bouncer.read_text())
         self.assertEqual(self.bouncer.read_text().count('# NPMPLUS_CRS_MODE=observe'), 1)
         self.assertNotIn('compose', str(self.calls))
+        # the pre-change state persists after the run as the known-good instance
+        snapshot_bouncer = (self.module.SNAPSHOT / 'crowdsec.conf').read_text()
+        self.assertIn('API_KEY=fixture-key', snapshot_bouncer)
+        self.assertNotIn('NPMPLUS_CRS_MODE', snapshot_bouncer)
+        self.assertNotIn('npmplus/crs-observe', (self.module.SNAPSHOT / 'conf/acquis.d/npmplus.yaml').read_text())
 
     def test_failure_restores_config_and_inode_and_preserves_cooldown_after_restart(self):
         original = self.acquisition.read_bytes()
@@ -96,6 +102,84 @@ class CrsControlTests(unittest.TestCase):
         control.enable()
         control.worker.join(10)
         self.assertEqual(control.status()['state'], 'rollback-failed')
+
+    def test_disable_restores_the_pre_observation_state_and_keeps_a_snapshot(self):
+        control = self.module.Control()
+        control.enable()
+        control.worker.join(10)
+        self.assertTrue(control.status()['enabled'])
+        control.last_attempt = 0
+        self.assertEqual(control.disable(), {'accepted': True, 'state': 'running'})
+        control.worker.join(10)
+        status = control.status()
+        self.assertFalse(status['enabled'])
+        self.assertTrue(status['eligible'])
+        self.assertEqual(status['state'], 'idle')
+        self.assertEqual(self.acquisition.read_text(), 'appsec_configs:\n  - crowdsecurity/appsec-default\nsource: appsec\n')
+        self.assertFalse((self.module.CONF / 'appsec-configs/npmplus-crs-observe.yaml').exists())
+        text = self.bouncer.read_text()
+        self.assertNotIn('NPMPLUS_CRS_MODE', text)
+        self.assertIn('API_KEY=fixture-key', text)
+        # the pre-change snapshot survives the run for manual recovery
+        self.assertIn('npmplus/crs-observe', (self.module.SNAPSHOT / 'conf/acquis.d/npmplus.yaml').read_text())
+        self.assertIn('# NPMPLUS_CRS_MODE=observe', (self.module.SNAPSHOT / 'crowdsec.conf').read_text())
+        # disabling again is an accepted no-op, not a new attempt
+        before = list(self.calls)
+        self.assertEqual(control.disable(), {'accepted': True, 'state': 'idle'})
+        self.assertEqual(before, self.calls)
+
+    def test_disable_is_a_no_op_when_not_enabled_and_refuses_unsupported_states(self):
+        control = self.module.Control()
+        self.assertEqual(control.disable(), {'accepted': True, 'state': 'idle'})
+        self.assertIsNone(control.worker)
+        self.assertEqual(self.calls, [])
+        self.acquisition.write_text('appsec_configs:\n  - operator/custom\n')
+        self.assertEqual(control.disable(), {'accepted': False, 'reason': 'unsupported'})
+        self.assertEqual(self.calls, [])
+
+    def test_failed_disable_restores_the_enabled_state_and_keeps_the_cooldown(self):
+        control = self.module.Control()
+        control.enable()
+        control.worker.join(10)
+        control.last_attempt = 0
+        original_command = self.module.command
+        def failed(*args):
+            if args[0] == self.module.DOCKER and args[1] == 'exec':
+                raise RuntimeError('fixture config test failure')
+            return original_command(*args)
+        self.module.command = failed
+        self.assertEqual(control.disable(), {'accepted': True, 'state': 'running'})
+        control.worker.join(10)
+        status = control.status()
+        self.assertEqual(status['state'], 'failed')
+        self.assertTrue(status['enabled'])
+        self.assertTrue((self.module.CONF / 'appsec-configs/npmplus-crs-observe.yaml').is_file())
+        self.assertIn('npmplus/crs-observe', self.acquisition.read_text())
+        self.assertIn('# NPMPLUS_CRS_MODE=observe', self.bouncer.read_text())
+        self.assertIn((self.module.DOCKER, 'restart', 'crowdsec'), self.calls)
+        self.assertEqual(control.disable(), {'accepted': False, 'reason': 'cooldown'})
+
+    def test_snapshot_survives_a_failed_recovery(self):
+        control = self.module.Control()
+        control.enable()
+        control.worker.join(10)
+        control.last_attempt = 0
+        original_command = self.module.command
+        def failed(*args):
+            if args[0] == self.module.DOCKER and args[1] == 'restart':
+                raise RuntimeError('fixture restart failure')
+            if args[0] == '/bin/cp' and args[3] == str(self.module.CONF):
+                raise RuntimeError('fixture restore failure')
+            return original_command(*args)
+        self.module.command = failed
+        control.disable()
+        control.worker.join(10)
+        self.assertEqual(control.status()['state'], 'rollback-failed')
+        # the bouncer edit could not be reverted either: the snapshot is what
+        # an operator restores from
+        self.assertNotIn('NPMPLUS_CRS_MODE', self.bouncer.read_text())
+        self.assertIn('npmplus/crs-observe', (self.module.SNAPSHOT / 'conf/acquis.d/npmplus.yaml').read_text())
+        self.assertIn('# NPMPLUS_CRS_MODE=observe', (self.module.SNAPSHOT / 'crowdsec.conf').read_text())
 
     def test_custom_and_disabled_appsec_are_refused_without_starting_work(self):
         control = self.module.Control()
@@ -193,6 +277,9 @@ class CrsControlTests(unittest.TestCase):
         self.assertIn(b'"available": true', status.reply)
         self.assertNotIn(b'fixture-key', status.reply)
         self.assertNotIn(b'/opt', status.reply)
+        disable = Connection(b'DISABLE\n')
+        self.module.respond(disable, control)
+        self.assertIn(b'"accepted": true', disable.reply)
         self.assertEqual(self.calls, [])
 
     def test_bouncer_symlinks_hardlinks_and_special_files_are_rejected(self):
@@ -220,6 +307,9 @@ class CrsControlTests(unittest.TestCase):
         install = re.search(r'^install_crs_control\(\).*?^}\n', SOURCE, re.M | re.S).group()
         self.assertIn('declare -f write_root_file enable_crowdsec_crs_observation', install)
         self.assertIn('enable_crowdsec_crs_observation control', install)
+        self.assertIn("elif request == b'DISABLE\\n'", HELPER)
+        self.assertIn("SNAPSHOT = Path('/var/lib/npmplus/crs-control/snapshot')", HELPER)
+        self.assertIn("'crowdsec', '-t', '-c', '/etc/crowdsec/config.yaml'", HELPER)
         self.assertIn('NoNewPrivileges=true', install)
         self.assertIn('RestrictAddressFamilies=AF_UNIX', install)
         self.assertIn('/run/npmplus-crs-control:/run/npmplus-crs-control:ro', SOURCE)
@@ -241,6 +331,7 @@ class CrsControlTests(unittest.TestCase):
         result = subprocess.run(['bash', '-c', prefix + '\ndeclare -F remove_crs_control\n', 'fixture', '--uninstall', '--no-backup'], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         cleanup = re.search(r'^remove_crs_control\(\).*?^}\n', SOURCE, re.M | re.S).group()
+        self.assertIn('rm -rf /var/lib/npmplus/crs-control', cleanup)
         paths = ['/etc/systemd/system', '/usr/local/lib', '/var/lib/npmplus/crs-control', '/run/npmplus-crs-control']
         for index, path in enumerate(paths):
             directory = self.root / ('cleanup-' + str(index))

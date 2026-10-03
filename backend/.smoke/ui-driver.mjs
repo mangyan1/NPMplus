@@ -1026,6 +1026,10 @@ check(
 	(await crsPanel.getByText("5", { exact: true }).count()) === 1 &&
 		(await crsPanel.getByText("Matches observed", { exact: true }).count()) === 1,
 );
+check(
+	"CRS control offers the disable action while observation is enabled",
+	(await page.getByRole("button", { name: "Disable CRS observation" }).count()) === 1,
+);
 await page.screenshot({ path: "backend/.smoke/ui-security-dashboard-waf.png", fullPage: true });
 
 appsecConfigured = false;
