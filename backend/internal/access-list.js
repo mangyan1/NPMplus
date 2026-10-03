@@ -25,6 +25,12 @@ const internalAccessList = {
 	 */
 	create: async (access, data) => {
 		access.can("access_lists:manage");
+		if ((data.items || []).some((item) => !item.password)) {
+			throw Object.assign(new errs.ValidationError("A password is required for new access-list users"), {
+				message_i18n: "error.access.password-required",
+			});
+		}
+
 		const row = await accessListModel.query().insertAndFetch({
 			name: data.name,
 			satisfy_any: data.satisfy_any,

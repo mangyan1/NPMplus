@@ -63,9 +63,7 @@ const useSetProxyHost = () => {
 			}));
 			return () => queryClient.setQueryData(["proxy-host", values.id], previousObject);
 		},
-		onError: (_, __, rollback) => {
-			if (typeof rollback === "function") rollback();
-		},
+		onError: (_, __, rollback) => rollback?.(),
 		onSuccess: async ({ id }) => {
 			await Promise.all([
 				queryClient.invalidateQueries({ queryKey: ["proxy-host", id] }),

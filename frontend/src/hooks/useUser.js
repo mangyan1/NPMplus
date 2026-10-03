@@ -47,9 +47,7 @@ const useSetUser = () => {
 			}));
 			return () => queryClient.setQueryData(["user", values.id], previousObject);
 		},
-		onError: (_, __, rollback) => {
-			if (typeof rollback === "function") rollback();
-		},
+		onError: (_, __, rollback) => rollback?.(),
 		onSuccess: async ({ id }) => {
 			await Promise.all([
 				queryClient.invalidateQueries({ queryKey: ["user", id] }),

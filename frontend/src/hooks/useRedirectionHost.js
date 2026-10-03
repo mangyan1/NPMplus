@@ -18,7 +18,7 @@ const fetchRedirectionHost = (id) => {
 			npmplusMtlsCertificateId: 0,
 			npmplusMtlsVerifyClientOptional: false,
 			npmplusHttp3Support: false,
-			forwardScheme: "auto",
+			forwardScheme: "$scheme",
 			forwardHttpCode: 301,
 			enabled: true,
 			hstsEnabled: false,
@@ -52,9 +52,7 @@ const useSetRedirectionHost = () => {
 			}));
 			return () => queryClient.setQueryData(["redirection-host", values.id], previousObject);
 		},
-		onError: (_, __, rollback) => {
-			if (typeof rollback === "function") rollback();
-		},
+		onError: (_, __, rollback) => rollback?.(),
 		onSuccess: async ({ id }) => {
 			await Promise.all([
 				queryClient.invalidateQueries({ queryKey: ["redirection-host", id] }),
