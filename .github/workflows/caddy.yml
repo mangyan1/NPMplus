@@ -7,14 +7,12 @@ on:
       - .github/workflows/caddy.yml
       - caddy/Dockerfile
       - caddy/Caddyfile
-      - caddy/cel-go-0.29.patch
       - caddy/source-check.sh
   pull_request:
     paths:
       - .github/workflows/caddy.yml
       - caddy/Dockerfile
       - caddy/Caddyfile
-      - caddy/cel-go-0.29.patch
       - caddy/source-check.sh
   workflow_dispatch:
 permissions:
