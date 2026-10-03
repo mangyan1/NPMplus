@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.66"
+SCRIPT_VERSION="1.67"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -2134,7 +2134,10 @@ finalize_admin_bootstrap() {
 
 pin_image() { # mutable channel -> immutable local platform repo digest
 	local channel="$1" repository short_repository docker_repository candidate digest=""
-	docker pull "$channel" >/dev/null
+	docker pull "$channel" >/dev/null || {
+		echo "could not pull $channel" >&2
+		return 1
+	}
 	repository=${channel%:*}
 	short_repository=${repository#docker.io/}
 	docker_repository=${short_repository#library/}
@@ -3000,7 +3003,7 @@ if [[ -s "$DATA_DIR/setup-npmplus.sh" ]]; then
 	chmod 700 "$DATA_DIR/setup-npmplus.sh"
 	write_root_file /usr/local/bin/npmplus-safe-update 700 <<'EOF'
 #!/bin/bash
-# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=6
+# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=7
 # monthly npmplus update with a safety net: snapshots the running state,
 # runs the update, health-checks it, and reverts to the snapshot on failure
 set -euo pipefail
@@ -3240,6 +3243,18 @@ trap - EXIT
 
 log "running update"
 if [[ -n "$CANDIDATE" && "$CANDIDATE" != "$SETUP" ]]; then
+	# An older candidate pins older image channels over a database already
+	# migrated by newer code; the app then crash-loops at startup until the
+	# health check reverts. Refuse it while the stack is still healthy.
+	candidate_version=$(sed -n 's/^SCRIPT_VERSION="\([^"]*\)".*/\1/p' "$CANDIDATE" 2>/dev/null | head -1) || true
+	installed_version=$(sed -n 's/^SCRIPT_VERSION="\([^"]*\)".*/\1/p' "$SETUP" 2>/dev/null | head -1) || true
+	if [[ -n "$candidate_version" && -n "$installed_version" && "$candidate_version" != "$installed_version" ]] &&
+		[[ "$(printf '%s\n%s\n' "$candidate_version" "$installed_version" | sort -V | tail -1)" == "$installed_version" ]] &&
+		[[ "${NPMPLUS_FORCE_DOWNGRADE:-false}" != "true" ]]; then
+		log "candidate script v$candidate_version is older than the installed v$installed_version - refusing the downgrade"
+		echo "the running stack is untouched; set NPMPLUS_FORCE_DOWNGRADE=true to override" >&2
+		exit 1
+	fi
 	cp -a "$CANDIDATE" "$SETUP" || revert
 	chmod 700 "$SETUP" || revert
 fi
@@ -3850,7 +3865,7 @@ if [[ "${1:-}" == "--update" ]]; then
 		# overwrite themselves in place during a nested tooling refresh. Replace
 		# them before delegation; this also repairs a missing execute bit.
 		if [[ ! -x /usr/local/bin/npmplus-safe-update ]] || \
-			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=6' /usr/local/bin/npmplus-safe-update; then
+			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=7' /usr/local/bin/npmplus-safe-update; then
 			install_host_tooling
 		fi
 		# Repair the v1.6 root-owned Anubis bind mount before the wrapper checks

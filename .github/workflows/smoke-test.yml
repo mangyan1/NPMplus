@@ -363,7 +363,7 @@ jobs:
           # failure: Docker preserved an empty resolver file in the existing
           # host-networked container. The downloaded current script must repair
           # all three before entering the transactional update.
-          sudo sed -i 's/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=6/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=3/' /usr/local/bin/npmplus-safe-update
+          sudo sed -i 's/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=7/NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=3/' /usr/local/bin/npmplus-safe-update
           sudo chmod 0644 /opt/npmplus/setup-npmplus.sh
           for _ in $(seq 1 30); do
             health="$(sudo docker inspect --format '{{.State.Health.Status}}' npmplus)"
@@ -434,7 +434,7 @@ jobs:
           fi
           rm -f "$update_log"
           sudo test -x /opt/npmplus/setup-npmplus.sh
-          sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=6' /usr/local/bin/npmplus-safe-update
+          sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=7' /usr/local/bin/npmplus-safe-update
           sudo test -f /var/backups/npmplus-last-good/override.yaml
           test "$(stat -c '%u:%g' /opt/anubis-data)" = '1000:1000'
           sudo test -f /opt/anubis-data/anubis/honeypot.addrs
