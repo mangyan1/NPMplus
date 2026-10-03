@@ -472,6 +472,9 @@ jobs:
           sudo test -s /var/lib/npmplus/cloudflare-ips-v6
 
       - name: crs observation disable round trip (socket daemon)
+        # only the defaults matrix runs the --enable-crs update step above, so
+        # only there does the daemon have an observation to disable
+        if: matrix.name == 'defaults'
         run: |
           set -x
           # The dashboard disable path against the real socket-activated daemon.
