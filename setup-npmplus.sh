@@ -3849,6 +3849,18 @@ if [[ "${1:-}" == "--update" ]]; then
 		echo "no existing install at $COMPOSE_FILE - run without --update first" >&2
 		exit 1
 	fi
+	# A release script older than the installed one would rewrite the
+	# safe-update wrapper and pin older image channels over a database
+	# already migrated by newer code; refuse it while the stack is still
+	# healthy, before any tooling or wrapper refresh runs.
+	installed_version=$(sed -n 's/^SCRIPT_VERSION="\([^"]*\)".*/\1/p' "$DATA_DIR/setup-npmplus.sh" 2>/dev/null | head -1) || true
+	if [[ -n "$installed_version" && "$installed_version" != "$SCRIPT_VERSION" ]] &&
+		[[ "$(printf '%s\n%s\n' "$SCRIPT_VERSION" "$installed_version" | sort -V | tail -1)" == "$installed_version" ]] &&
+		[[ "${NPMPLUS_FORCE_DOWNGRADE:-false}" != "true" ]]; then
+		echo "this setup script v$SCRIPT_VERSION is older than the installed v$installed_version - refusing the downgrade" >&2
+		echo "the running stack is untouched; re-download the current script, or set NPMPLUS_FORCE_DOWNGRADE=true to override" >&2
+		exit 1
+	fi
 	# this unattended path aborts on any unguarded failing command; name the
 	# failing command and line so an aborted update is never silent. When it
 	# runs as the wrapper's child, the wrapper's revert and failed-*.txt
