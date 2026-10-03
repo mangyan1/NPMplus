@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.67"
+SCRIPT_VERSION="1.68"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -3003,7 +3003,7 @@ if [[ -s "$DATA_DIR/setup-npmplus.sh" ]]; then
 	chmod 700 "$DATA_DIR/setup-npmplus.sh"
 	write_root_file /usr/local/bin/npmplus-safe-update 700 <<'EOF'
 #!/bin/bash
-# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=7
+# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=8
 # monthly npmplus update with a safety net: snapshots the running state,
 # runs the update, health-checks it, and reverts to the snapshot on failure
 set -euo pipefail
@@ -3018,6 +3018,26 @@ log() { echo "$(date '+%F %T') $*"; }
 # Updates, backups and manual maintenance must not race over sqlite/config files.
 exec 9>/run/lock/npmplus-maintenance.lock
 flock -n 9 || { log "another NPMplus maintenance job is already running"; exit 1; }
+
+# set -e aborts on any unguarded failing command, but only the update dispatch
+# below carries a revert guard; every other phase would otherwise die silently
+# with the stack left half-maintained and no trace of why. Catch those deaths,
+# leave diagnostics, and end the run the way the phase requires.
+update_deployed=false
+on_wrapper_error() {
+	local rc=$? line=${BASH_LINENO[0]} cmd="$BASH_COMMAND"
+	trap - ERR
+	log "update ABORTED: $cmd failed with exit $rc (wrapper line $line)"
+	docker compose -f "$COMPOSE_FILE" ps -a >"$BACKUP/aborted-ps.txt" 2>&1 || true
+	docker compose -f "$COMPOSE_FILE" logs --no-color --tail 200 >"$BACKUP/aborted-logs.txt" 2>&1 || true
+	if [[ "$update_deployed" == "true" ]]; then
+		log "the update was already deployed - reverting"
+		revert
+	else
+		log "the running stack was not updated - no revert needed; diagnostics are in $BACKUP/aborted-{ps,logs}.txt"
+	fi
+}
+trap on_wrapper_error ERR
 
 revert() {
 	log "health check FAILED - reverting to the last good state"
@@ -3196,7 +3216,23 @@ fi
 rm -f "$BACKUP/database.sqlite"
 if [[ -f /opt/npmplus/npmplus/database.sqlite ]]; then
 	rm -f /opt/npmplus/npmplus/database.pre-update.sqlite
-	docker exec npmplus node -e "const d=require('better-sqlite3')('/data/npmplus/database.sqlite',{readonly:true});d.backup('/data/npmplus/database.pre-update.sqlite').then(()=>d.close())"
+	# a docker exec can transiently lose a race against a container being
+	# stopped or recreated by another actor; retry before treating it as a
+	# real failure. A stack whose rollback database cannot be created is
+	# never updated.
+	db_backup_done=false
+	for _ in 1 2 3; do
+		if docker exec npmplus node -e "const d=require('better-sqlite3')('/data/npmplus/database.sqlite',{readonly:true});d.backup('/data/npmplus/database.pre-update.sqlite').then(()=>d.close())"; then
+			db_backup_done=true
+			break
+		fi
+		log "rollback database snapshot exec failed - retrying"
+		sleep 5
+	done
+	if [[ "$db_backup_done" != "true" ]]; then
+		log "cannot snapshot the rollback database - aborting before the update"
+		exit 1
+	fi
 	cp -a /opt/npmplus/npmplus/database.pre-update.sqlite "$BACKUP/database.sqlite"
 	chmod 600 "$BACKUP/database.sqlite"
 	rm -f /opt/npmplus/npmplus/database.pre-update.sqlite
@@ -3259,6 +3295,7 @@ if [[ -n "$CANDIDATE" && "$CANDIDATE" != "$SETUP" ]]; then
 	chmod 700 "$SETUP" || revert
 fi
 NPMPLUS_SAFE_UPDATE_ACTIVE=true "$SETUP" --update || revert
+update_deployed=true
 
 # crowdsec hub: refresh the detection signatures (parsers/scenarios/collections);
 # a container image update alone never touches them and they live outside the image
@@ -3812,6 +3849,29 @@ if [[ "${1:-}" == "--update" ]]; then
 		echo "no existing install at $COMPOSE_FILE - run without --update first" >&2
 		exit 1
 	fi
+	# A release script older than the installed one would rewrite the
+	# safe-update wrapper and pin older image channels over a database
+	# already migrated by newer code; refuse it while the stack is still
+	# healthy, before any tooling or wrapper refresh runs.
+	installed_version=$(sed -n 's/^SCRIPT_VERSION="\([^"]*\)".*/\1/p' "$DATA_DIR/setup-npmplus.sh" 2>/dev/null | head -1) || true
+	if [[ -n "$installed_version" && "$installed_version" != "$SCRIPT_VERSION" ]] &&
+		[[ "$(printf '%s\n%s\n' "$SCRIPT_VERSION" "$installed_version" | sort -V | tail -1)" == "$installed_version" ]] &&
+		[[ "${NPMPLUS_FORCE_DOWNGRADE:-false}" != "true" ]]; then
+		echo "this setup script v$SCRIPT_VERSION is older than the installed v$installed_version - refusing the downgrade" >&2
+		echo "the running stack is untouched; re-download the current script, or set NPMPLUS_FORCE_DOWNGRADE=true to override" >&2
+		exit 1
+	fi
+	# this unattended path aborts on any unguarded failing command; name the
+	# failing command and line so an aborted update is never silent. When it
+	# runs as the wrapper's child, the wrapper's revert and failed-*.txt
+	# diagnostics take over from here.
+	# Invoked by the ERR trap below.
+	# shellcheck disable=SC2329
+	on_update_abort() {
+		local rc=$? line=${BASH_LINENO[0]} cmd="$BASH_COMMAND"
+		printf 'update ABORTED: %s failed with exit %s (script line %s)\n' "$cmd" "$rc" "$line" >&2
+	}
+	trap on_update_abort ERR
 	# RC-era retries could leave the package and our generated configuration in
 	# place without the ownership marker when the binary already existed. Adopt
 	# only installations carrying both the NPMplus Compose service and our config
@@ -3865,7 +3925,7 @@ if [[ "${1:-}" == "--update" ]]; then
 		# overwrite themselves in place during a nested tooling refresh. Replace
 		# them before delegation; this also repairs a missing execute bit.
 		if [[ ! -x /usr/local/bin/npmplus-safe-update ]] || \
-			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=7' /usr/local/bin/npmplus-safe-update; then
+			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=8' /usr/local/bin/npmplus-safe-update; then
 			install_host_tooling
 		fi
 		# Repair the v1.6 root-owned Anubis bind mount before the wrapper checks
