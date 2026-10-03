@@ -11,6 +11,8 @@ import crypto from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { after, test } from "node:test";
+import internalAuditLog from "../internal/audit-log.js";
+import crsControl from "../internal/crs-control.js";
 
 // the container image creates these before the app boots; the nginx config
 // generation and access-list handling expect them to exist
@@ -708,6 +710,74 @@ test("proxy host without a tcp destination clears the reachability probe state",
 // CrowdSec routes: no LAPI is wired in the test environment, so these pin the
 // permission wall and the input-validation guards that fire before the LAPI
 // is ever contacted
+test("CRS control requires admin, fixed observation input, same origin and a prior audit", async () => {
+	const originalStatus = crsControl.status;
+	const originalEnable = crsControl.enable;
+	const originalAudit = internalAuditLog.add;
+	let calls = 0;
+	crsControl.status = async () => ({ available: true, eligible: true, enabled: false, state: "idle" });
+	crsControl.enable = async () => {
+		calls += 1;
+		return { accepted: true, state: "running" };
+	};
+	try {
+		for (const cookie of [undefined, peonCookie]) {
+			assert.equal((await api("GET", "/api/crowdsec/crs", { cookie })).status, 403);
+			assert.equal((await api("POST", "/api/crowdsec/crs", { cookie, body: { mode: "observe" } })).status, 403);
+		}
+		const invalidMac = crypto
+			.createHmac("sha256", "api-test-cookie-secret")
+			.update("invalid")
+			.digest("base64")
+			.replace(/[=]+$/, "");
+		assert.equal(
+			(
+				await api("POST", "/api/crowdsec/crs", {
+					cookie: `__Host-Http-token=s:invalid.${invalidMac}`,
+					body: { mode: "observe" },
+				})
+			).status,
+			401,
+		);
+		for (const body of [{ mode: "block" }, { mode: "observe", command: "unused" }, {}])
+			assert.equal((await api("POST", "/api/crowdsec/crs", { cookie: adminCookie, body })).status, 400);
+		assert.equal(
+			(
+				await api("POST", "/api/crowdsec/crs", {
+					cookie: adminCookie,
+					body: { mode: "observe" },
+					headers: { origin: "https://attacker.example" },
+				})
+			).status,
+			403,
+		);
+		assert.equal(calls, 0);
+		const accepted = await api("POST", "/api/crowdsec/crs", { cookie: adminCookie, body: { mode: "observe" } });
+		assert.equal(accepted.status, 202);
+		assert.equal(calls, 1);
+		const logs = await api("GET", "/api/audit-log", { cookie: adminCookie });
+		assert.ok(
+			logs.body.some((entry) => entry.object_type === "crowdsec-crs" && entry.action === "enable-requested"),
+		);
+		internalAuditLog.add = async () => {
+			throw new Error("fixture audit failure");
+		};
+		assert.equal(
+			(await api("POST", "/api/crowdsec/crs", { cookie: adminCookie, body: { mode: "observe" } })).status,
+			500,
+		);
+		assert.equal(calls, 1);
+		assert.equal(
+			(await api("POST", "/api/crowdsec/crs", { cookie: adminCookie, body: { mode: "observe" } })).status,
+			429,
+		);
+	} finally {
+		crsControl.status = originalStatus;
+		crsControl.enable = originalEnable;
+		internalAuditLog.add = originalAudit;
+	}
+});
+
 test("peon is refused on crowdsec routes", async () => {
 	const res = await api("GET", "/api/crowdsec/decisions", { cookie: peonCookie });
 	assert.equal(res.status, 403);

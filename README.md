@@ -27,7 +27,7 @@ Review the script before running it on a production host. Select **Install NPMpl
 
 Develop installer v1.62 uses fork-maintained [CrowdSec](security-images/crowdsec/README.md) and [Anubis](security-images/anubis/README.md) builds, tested and scanned on both architectures. It pins images and matching Anubis policies. Existing RC installers retain their original behavior; the build guides explain maintenance responsibilities.
 
-Optional [CRS observation](ADVANCED.md) appears in **CrowdSec → WAF**.
+Enable and monitor [CRS](ADVANCED.md) in **CrowdSec → WAF**.
 
 For the easiest first login, provide an administrator email and password when the installer asks. The password is handled as a temporary secret and is not saved in `compose.yaml`.
 

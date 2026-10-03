@@ -1,6 +1,7 @@
 import Alert from "react-bootstrap/Alert";
 import type { CrowdsecMetrics } from "src/api/backend";
 import { intl, T } from "src/locale";
+import CrsControl from "./CrsControl";
 import { crsStatus } from "./shared";
 
 const CrsMonitoring = ({ data, stale }: { data: CrowdsecMetrics; stale: boolean }) => {
@@ -20,13 +21,10 @@ const CrsMonitoring = ({ data, stale }: { data: CrowdsecMetrics; stale: boolean 
 				<p className="text-secondary">
 					<T id="crowdsec.crs.description" />
 				</p>
-				{data.crsInstallerMode === "observe" ? (
+				<CrsControl configured={!stale && data.crsInstallerMode === "observe"} />
+				{data.crsInstallerMode === "observe" && (
 					<p className="text-secondary">
 						<T id="crowdsec.crs.configured-help" />
-					</p>
-				) : (
-					<p className="text-secondary">
-						<T id="crowdsec.crs.enable-help" /> <code>--update --enable-crs</code>
 					</p>
 				)}
 				{reported && (data.crsInbandHits ?? 0) > 0 && (

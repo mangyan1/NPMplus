@@ -34,6 +34,7 @@ jobs:
           pnpm test
           python3 ../tests/installer-recovery.py
           python3 ../tests/crs-observation.py
+          python3 ../tests/crs-control.py
           python3 ../tests/heal-migration.py
       - name: security invariants
         run: node tests/security-invariants.mjs
