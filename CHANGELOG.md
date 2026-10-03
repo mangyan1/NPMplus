@@ -4,6 +4,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Bump the nginx template version so upgrades automatically regenerate existing legacy Auto redirections with the corrected incoming scheme.
+
 - Setup script v1.64 restores uploaded avatars and downloaded Gravatar images with their database references. Destination-only user image caches are removed; failed restores recover the prior database and image files together.
 - Default redirection forms to the supported "keep" scheme and normalize older Auto values when editing. Render the incoming request scheme for existing Auto hosts, instead of returning an unusable `auto://` destination. Explicit HTTP/HTTPS schemes and optional path preservation remain supported.
 - Preserve explicit catch-all-only access-list rules on proxy hosts and custom locations, including `deny all`.
