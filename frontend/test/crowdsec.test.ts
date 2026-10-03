@@ -6,7 +6,13 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { CrowdsecDecision, CrowdsecMetrics } from "../src/api/backend/getCrowdsecDecisions.ts";
 import { midTruncate, presentScenarioId, scenarioCategory, scenarioLabel } from "../src/pages/Crowdsec/scenarios.ts";
-import { appsecStatus, appsecTrafficAvailable, boundedCount, notificationPlan } from "../src/pages/Crowdsec/shared.ts";
+import {
+	appsecStatus,
+	appsecTrafficAvailable,
+	boundedCount,
+	crsStatus,
+	notificationPlan,
+} from "../src/pages/Crowdsec/shared.ts";
 import { attackMixSegments, decisionTarget } from "../src/pages/Crowdsec/utils.ts";
 
 const decision = (id: number, value: string, scenario = "http-probing"): CrowdsecDecision => ({
@@ -21,6 +27,20 @@ const decision = (id: number, value: string, scenario = "http-probing"): Crowdse
 	createdAt: "",
 	until: "",
 	simulated: false,
+});
+
+test("CRS status distinguishes installer configuration, observations, blocking and stale data", () => {
+	const metrics: CrowdsecMetrics = { available: true, appsecConfigured: true, crsInstallerMode: "observe" };
+	assert.equal(crsStatus(metrics).label, "crowdsec.crs.status-configured");
+	assert.equal(crsStatus({ ...metrics, crsInstallerMode: null }).label, "crowdsec.crs.status-unknown");
+	assert.equal(crsStatus({ ...metrics, crsObservationHits: 2 }).label, "crowdsec.crs.status-observed");
+	assert.equal(
+		crsStatus({ ...metrics, crsObservationHits: 2, crsInbandHits: 1 }).label,
+		"crowdsec.crs.status-inband",
+	);
+	assert.equal(crsStatus({ ...metrics, appsecConfigured: false }).label, "crowdsec.appsec.status-disabled");
+	assert.equal(crsStatus({ ...metrics, available: false }).label, "crowdsec.metrics-unavailable");
+	assert.equal(crsStatus(metrics, true).label, "crowdsec.status.stale");
 });
 
 test("attack mix segments group scenarios by attack type and add a residual other slice", () => {

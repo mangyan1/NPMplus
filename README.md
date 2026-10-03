@@ -27,6 +27,8 @@ Review the script before running it on a production host. Select **Install NPMpl
 
 Develop installer v1.62 uses fork-maintained [CrowdSec](security-images/crowdsec/README.md) and [Anubis](security-images/anubis/README.md) builds, tested and scanned on both architectures. It pins images and matching Anubis policies. Existing RC installers retain their original behavior; the build guides explain maintenance responsibilities.
 
+Develop installer v1.65 adds optional **OWASP CRS observation** with `sudo bash setup-npmplus.sh --update --enable-crs`. It records common attack patterns in **CrowdSec → WAF** while existing high-confidence rules keep blocking. See the [AppSec and CRS guidance](ADVANCED.md) before enabling it; ordinary updates preserve your choice.
+
 For the easiest first login, provide an administrator email and password when the installer asks. The password is handled as a temporary secret and is not saved in `compose.yaml`.
 
 Do not run this over an existing manual Nginx Proxy Manager deployment. Read the [compatibility and migration notes](ADVANCED.md#compatibility-to-upstream) and take a backup first; migrating back to the original project is not supported.

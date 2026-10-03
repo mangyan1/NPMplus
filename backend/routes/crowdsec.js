@@ -28,6 +28,7 @@ import {
 	parsePrometheusText,
 	summarizeAppsecRules,
 	summarizeCrowdsecMetrics,
+	summarizeCrsRules,
 	validateManualBan,
 } from "../lib/crowdsec-contract.js";
 import jwtdecode from "../lib/express/jwt-decode.js";
@@ -888,6 +889,7 @@ router
 				...appsecConfiguration,
 				...summarizeCrowdsecMetrics(samples),
 				appsec_rules: summarizeAppsecRules(samples),
+				...summarizeCrsRules(samples),
 			});
 		} catch (err) {
 			debug(logger, `CrowdSec metrics unavailable: ${err}`);

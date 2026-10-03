@@ -10,6 +10,7 @@ import {
 	parsePrometheusText,
 	summarizeAppsecRules,
 	summarizeCrowdsecMetrics,
+	summarizeCrsRules,
 	validateManualBan,
 } from "../lib/crowdsec-contract.js";
 
@@ -309,6 +310,46 @@ cs_parser_hits_total{source="nginx"} 10
 
 test("appsec rule summary is empty without rule hits", () => {
 	assert.deepEqual(summarizeAppsecRules(parsePrometheusText("cs_appsec_reqs_total 12")), []);
+});
+
+test("the other-rules list does not duplicate CRS observations or diagnostics", () => {
+	assert.deepEqual(
+		summarizeAppsecRules(
+			parsePrometheusText(`
+cs_appsec_rule_hits{rule_name="942100",type="outofband"} 20
+cs_appsec_rule_hits{rule_name="901340",type="outofband"} 99
+cs_appsec_rule_hits{rule_name="941100",type="inband"} 2
+cs_appsec_rule_hits{rule_name="crowdsecurity/vpatch-test",type="inband"} 3
+`),
+		),
+		[
+			{ name: "crowdsecurity/vpatch-test", count: 3 },
+			{ name: "941100", count: 2 },
+		],
+	);
+});
+
+test("CRS observations remain separate from in-band matches and unrelated rules", () => {
+	const summary = summarizeCrsRules(
+		parsePrometheusText(`
+cs_appsec_rule_hits{rule_name="942100",type="outofband",source="one"} 3
+cs_appsec_rule_hits{rule_name="942100",type="outofband",source="two"} 2
+cs_appsec_rule_hits{rule_name="941100",type="inband"} 7
+cs_appsec_rule_hits{rule_name="crowdsecurity/vpatch-test",type="outofband"} 10
+cs_appsec_rule_hits{rule_name="942100",type="unknown"} 9
+cs_appsec_rule_hits{rule_name="942100",type="outofband"} -4
+cs_appsec_rule_hits{rule_name="901340",type="outofband"} 20
+cs_appsec_rule_hits{rule_name="949110",type="outofband"} 20
+cs_appsec_rule_hits{rule_name="980170",type="outofband"} 20
+cs_appsec_reqs_total{rule_name="942100",type="outofband"} 99
+`),
+	);
+	assert.deepEqual(summary, {
+		crs_observation_hits: 5,
+		crs_inband_hits: 7,
+		crs_rules: [{ name: "942100", count: 5 }],
+	});
+	assert.deepEqual(summarizeCrsRules([]), { crs_observation_hits: 0, crs_inband_hits: 0, crs_rules: [] });
 });
 
 test("CrowdSec payload validation rejects malformed upstream responses", () => {

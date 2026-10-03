@@ -350,20 +350,51 @@ const coordinate = (value, limit) => {
 	return number !== null && Math.abs(number) <= limit ? number : null;
 };
 
-// per-rule AppSec trigger counts, aggregated across labels and ranked;
-// Feeds the WAF tab's triggered-rule breakdown, including out-of-band rules.
+const CRS_NATIVE_ID = /^9\d{5}$/;
+// CRS observations have their own panel; keep other rule matches here, including
+// custom CRS in-band matches. Do not duplicate out-of-band CRS bookkeeping.
 const summarizeAppsecRules = (samples, limit = 10) => {
 	const counts = new Map();
 	for (const sample of samples) {
 		if (sample.name !== "cs_appsec_rule_hits") continue;
 		const rule = optionalString(sample.labels?.rule_name);
 		if (!rule) continue;
+		if (sample.labels?.type === "outofband" && CRS_NATIVE_ID.test(rule)) continue;
 		counts.set(rule, (counts.get(rule) ?? 0) + sample.value);
 	}
 	return [...counts.entries()]
 		.map(([name, count]) => ({ name, count }))
 		.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
 		.slice(0, limit);
+};
+
+// Keep the two evaluation bands separate: an out-of-band match is not a
+// blocked request. Count attack-pattern rules, not CRS bookkeeping.
+// Initialization, anomaly-score evaluation and correlation rules are diagnostics,
+// not additional attack-pattern detections (901xxx, 949xxx, 959xxx, 980xxx).
+const CRS_RULE_ID = /^9(?:[1-3]\d|4[0-8]|5[0-8])\d{3}$/;
+const summarizeCrsRules = (samples) => {
+	const counts = { inband: new Map(), outofband: new Map() };
+	for (const sample of samples) {
+		const band = sample.labels?.type;
+		const rule = sample.labels?.rule_name;
+		if (
+			sample.name !== "cs_appsec_rule_hits" ||
+			!["inband", "outofband"].includes(band) ||
+			!CRS_RULE_ID.test(rule ?? "") ||
+			!Number.isFinite(sample.value) ||
+			sample.value < 0
+		)
+			continue;
+		counts[band].set(rule, (counts[band].get(rule) ?? 0) + sample.value);
+	}
+	const rows = (band) => [...counts[band]].map(([name, count]) => ({ name, count }));
+	const observations = rows("outofband");
+	return {
+		crs_observation_hits: observations.reduce((total, row) => total + row.count, 0),
+		crs_inband_hits: rows("inband").reduce((total, row) => total + row.count, 0),
+		crs_rules: observations.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, 10),
+	};
 };
 
 export {
@@ -377,5 +408,6 @@ export {
 	parsePrometheusText,
 	summarizeAppsecRules,
 	summarizeCrowdsecMetrics,
+	summarizeCrsRules,
 	validateManualBan,
 };

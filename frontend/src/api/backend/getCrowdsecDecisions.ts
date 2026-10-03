@@ -143,6 +143,10 @@ export interface CrowdsecMetrics {
 	available: boolean;
 	error?: string;
 	appsecConfigured?: boolean | null;
+	crsInstallerMode?: "observe" | null;
+	crsObservationHits?: number;
+	crsInbandHits?: number;
+	crsRules?: { name: string; count: number }[];
 	appsecFailureAction?: "deny" | "passthrough" | null;
 	appsecDropUnreadableBody?: boolean | null;
 	appsecMetricsPresent?: boolean;
