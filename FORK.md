@@ -75,6 +75,13 @@ a populated pre-migration fork database, verifies ordered ACLs and inherited
 Anubis coverage after upgrade, and checks the pre-upgrade SQLite snapshot. Its
 coverage assertion was first observed failing on the unadapted query.
 
+The fork's fresh-session helper remains asynchronous: MFA enrollment and backup
+code regeneration must await it before setting the replacement cookie. The HTTP
+regression reproduced enrollment's 500 response before restoring both awaits.
+ACL form validation continues to accept explicit `deny all` policies; the browser
+regression first timed out waiting for a save request under upstream's empty-policy
+check, then verified the exact deny-all payload after the correction.
+
 Certificate renewal and downloads remain under the owner's existing restriction:
 do not import upstream's certificate restructuring without deliberate replacement
 pins. The UI continues to offer downloads only for Certbot certificates. Custom

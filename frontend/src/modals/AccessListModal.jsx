@@ -23,7 +23,13 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 
 	const validate = (values) => {
 		// either Auths or Clients must be defined
-		if (values.items.length === 0 && values.clients.every((c) => c.address.trim().toLowerCase() === "all")) {
+		if (
+			values.items.length === 0 &&
+			values.clients.every((c) => {
+				const address = c.address.trim().toLowerCase();
+				return !address || (c.directive === "allow" && address === "all");
+			})
+		) {
 			return intl.formatMessage({ id: "error.access.at-least-one" });
 		}
 

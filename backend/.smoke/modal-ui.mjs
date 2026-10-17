@@ -137,6 +137,10 @@ try {
 		redirection_hosts: [],
 		dead_hosts: [],
 		streams: [],
+		mtls_proxy_hosts: [],
+		mtls_redirection_hosts: [],
+		mtls_dead_hosts: [],
+		mtls_streams: [],
 	};
 	let renewalRequests = 0;
 	await page.route(certificateRoutes, async (route) => {
