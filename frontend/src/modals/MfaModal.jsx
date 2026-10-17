@@ -31,7 +31,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 			setBackupCodesRemaining(status.backupCodesRemaining);
 			setStep("status");
 		} catch (err) {
-			setError(err.message || "Failed to load MFA status");
+			setError(err.message);
 			setStep("status");
 		}
 	}, [id]);
@@ -48,7 +48,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 			setSetupData(data);
 			setStep("setup");
 		} catch (err) {
-			setError(err.message || "Failed to start TOTP setup");
+			setError(err.message);
 		}
 		setIsSubmitting(false);
 	};
@@ -57,7 +57,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 		setError(null);
 		setIsSubmitting(true);
 		try {
-			const result = await enableTotp(id, values.code);
+			const result = await enableTotp(id, values);
 			if (result.backupCodes) {
 				setBackupCodes(result.backupCodes);
 				setStep("backup");
@@ -65,7 +65,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 				await loadStatus();
 			}
 		} catch (err) {
-			setError(err.message || "Failed to enable TOTP");
+			setError(err.message);
 		}
 		setIsSubmitting(false);
 	};
@@ -74,11 +74,11 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 		setError(null);
 		setIsSubmitting(true);
 		try {
-			await disableTotp(id, values.code);
+			await disableTotp(id, values);
 			setIsEnabled(false);
 			setStep("status");
 		} catch (err) {
-			setError(err.message || "Failed to disable TOTP");
+			setError(err.message);
 		}
 		setIsSubmitting(false);
 	};
@@ -87,11 +87,11 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 		setError(null);
 		setIsSubmitting(true);
 		try {
-			const result = await regenerateBackupCodes(id, values.code);
+			const result = await regenerateBackupCodes(id, values);
 			setBackupCodes(result.backupCodes);
 			setStep("backup");
 		} catch (err) {
-			setError(err.message || "Failed to regenerate backup codes");
+			setError(err.message);
 		}
 		setIsSubmitting(false);
 	};
@@ -149,7 +149,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 			);
 		}
 
-		if (step === "setup" && setupData) {
+		if (step === "setup") {
 			return (
 				<div className="py-2">
 					<Alert variant="warning">
@@ -411,7 +411,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 				</Modal.Title>
 			</Modal.Header>
 			<Modal.Body>
-				<Alert variant="danger" show={Boolean(error)} onClose={() => setError(null)} dismissible>
+				<Alert variant="danger" show={error} onClose={() => setError(null)} dismissible>
 					{error}
 				</Alert>
 				{renderContent()}

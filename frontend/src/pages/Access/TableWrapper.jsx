@@ -16,7 +16,7 @@ export default function TableWrapper() {
 
 	useEffect(() => {
 		// this can happen if someone deletes the last item while searching
-		if (search !== "" && !data) {
+		if (search !== "" && !data?.length) {
 			setSearch("");
 		}
 	});
@@ -34,7 +34,7 @@ export default function TableWrapper() {
 	}
 
 	let filtered = null;
-	if (search && data) {
+	if (search) {
 		filtered = data?.filter((item) => item.name.toLowerCase().includes(search));
 	}
 
@@ -86,7 +86,7 @@ export default function TableWrapper() {
 				<Table
 					data={filtered ?? data ?? []}
 					isFetching={isFetching}
-					isFiltered={Boolean(filtered)}
+					isFiltered={search}
 					onEdit={(id) => showAccessListModal(id)}
 					onDelete={(id) => {
 						const accessList = data?.find((item) => item.id === id);

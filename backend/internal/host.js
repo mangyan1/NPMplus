@@ -45,6 +45,13 @@ const internalHost = {
 			combinedData.hsts_subdomains = false;
 		}
 
+		combinedData.npmplus_mtls_bypass_auth_request &&=
+			combinedData.npmplus_mtls_certificate_id > 0 &&
+			combinedData.npmplus_mtls_verify_client_optional === true &&
+			[combinedData, ...(combinedData.locations ?? [])].some(
+				({ npmplus_auth_request = "none" }) => npmplus_auth_request !== "none",
+			);
+
 		return combinedData;
 	},
 
@@ -56,69 +63,24 @@ const internalHost = {
 	 * @param   {Integer}  [ignore_id]     Must be supplied if type was also supplied
 	 * @returns {Promise}
 	 */
-	isHostnameTaken: async (hostname, ignore_type, ignore_id) => {
-		const promises = [
-			proxyHostModel
-				.query()
-				.where("is_deleted", 0)
-				.andWhere("enabled", 1)
-				.andWhere(castJsonIfNeed("domain_names"), "like", `%${hostname}%`),
-			redirectionHostModel
-				.query()
-				.where("is_deleted", 0)
-				.andWhere("enabled", 1)
-				.andWhere(castJsonIfNeed("domain_names"), "like", `%${hostname}%`),
-			deadHostModel
-				.query()
-				.where("is_deleted", 0)
-				.andWhere("enabled", 1)
-				.andWhere(castJsonIfNeed("domain_names"), "like", `%${hostname}%`),
-		];
-
-		const promises_results = await Promise.all(promises);
-		let is_taken = false;
-
-		// Proxy Hosts
-		if (
-			promises_results[0] &&
-			checkHostnameRecordsTaken(
-				hostname,
-				promises_results[0],
-				ignore_type === "proxy" && ignore_id ? ignore_id : 0,
+	isHostnameTaken: async (hostname, ignore_type, ignore_id) => ({
+		hostname,
+		is_taken: (
+			await Promise.all(
+				Object.entries({ proxy: proxyHostModel, redirection: redirectionHostModel, dead: deadHostModel }).map(
+					async ([type, model]) =>
+						checkHostnameRecordsTaken(
+							hostname,
+							await model
+								.query()
+								.where("enabled", 1)
+								.andWhere(castJsonIfNeed("domain_names"), "like", `%${hostname}%`),
+							ignore_type === type && ignore_id ? ignore_id : 0,
+						),
+				),
 			)
-		) {
-			is_taken = true;
-		}
-
-		// Redirection Hosts
-		if (
-			promises_results[1] &&
-			checkHostnameRecordsTaken(
-				hostname,
-				promises_results[1],
-				ignore_type === "redirection" && ignore_id ? ignore_id : 0,
-			)
-		) {
-			is_taken = true;
-		}
-
-		// Dead Hosts
-		if (
-			promises_results[2] &&
-			checkHostnameRecordsTaken(
-				hostname,
-				promises_results[2],
-				ignore_type === "dead" && ignore_id ? ignore_id : 0,
-			)
-		) {
-			is_taken = true;
-		}
-
-		return {
-			hostname,
-			is_taken,
-		};
-	},
+		).includes(true),
+	}),
 };
 
 export default internalHost;

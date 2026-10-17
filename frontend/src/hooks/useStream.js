@@ -8,6 +8,9 @@ const fetchStream = (id) => {
 			createdOn: "",
 			modifiedOn: "",
 			ownerUserId: 0,
+			incomingPort: "",
+			forwardingHost: "",
+			forwardingPort: "",
 			tcpForwarding: true,
 			udpForwarding: false,
 			npmplusProxyProtocolForwarding: 0,
@@ -24,12 +27,11 @@ const fetchStream = (id) => {
 	return getStream(id);
 };
 
-const useStream = (id, options = {}) => {
+const useStream = (id) => {
 	return useQuery({
 		queryKey: ["stream", id],
 		queryFn: () => fetchStream(id),
 		staleTime: 60 * 1000, // 1 minute
-		...options,
 	});
 };
 

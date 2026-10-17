@@ -10,17 +10,17 @@ const showEventDetailsModal = (id) => {
 };
 
 const EventDetailsModal = EasyModal.create(({ id, visible, remove }) => {
-	const { data, isLoading, error } = useAuditLog(id);
+	const { data, isPending, error } = useAuditLog(id);
 
 	return (
 		<Modal show={visible} onHide={remove}>
-			{!isLoading && error && (
+			{error && (
 				<Alert variant="danger" className="m-3">
-					{error?.message || "Unknown error"}
+					{error?.message}
 				</Alert>
 			)}
-			{isLoading && <Loading noLogo />}
-			{!isLoading && data && (
+			{isPending && <Loading noLogo />}
+			{data && (
 				<>
 					<Modal.Header closeButton>
 						<Modal.Title>
@@ -30,7 +30,7 @@ const EventDetailsModal = EasyModal.create(({ id, visible, remove }) => {
 					<Modal.Body>
 						<div className="row">
 							<div className="col-md-2">
-								<GravatarFormatter url={data.user?.avatar || ""} />
+								<GravatarFormatter url={data.user?.avatar} />
 							</div>
 							<div className="col-md-10">
 								<EventFormatter row={data} />

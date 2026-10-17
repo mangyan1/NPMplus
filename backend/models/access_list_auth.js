@@ -26,17 +26,9 @@ class AccessListAuth extends Model {
 		return thisJson;
 	}
 
-	static get name() {
-		return "AccessListAuth";
-	}
+	static tableName = "access_list_auth";
 
-	static get tableName() {
-		return "access_list_auth";
-	}
-
-	static get jsonAttributes() {
-		return ["meta"];
-	}
+	static jsonAttributes = ["meta"];
 
 	static get relationMappings() {
 		return {
@@ -46,9 +38,6 @@ class AccessListAuth extends Model {
 				join: {
 					from: "access_list_auth.access_list_id",
 					to: "access_list.id",
-				},
-				modify: (qb) => {
-					qb.where("access_list.is_deleted", 0);
 				},
 			},
 		};

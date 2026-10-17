@@ -65,6 +65,20 @@ sudo /opt/npmplus/setup-npmplus.sh
 Download the new versioned installer and checksum first when moving to a newer release. Rolling `develop` users should similarly download the latest raw script before maintenance. The explicit `sudo bash setup-npmplus.sh --update` form remains available for automation.
 
 
+### October 16 develop upgrade
+
+The next develop update moves custom proxy-host locations and their ordered access
+lists into database tables and removes previously soft-deleted records. Active
+proxy destinations, access-list selections, and Anubis inheritance are preserved.
+Use the safe updater so the database and files are snapshotted before migration.
+These migrations cannot be undone by selecting an older container image: restore
+the matching pre-update snapshot together with its image when rolling back.
+
+This update also includes the security image refresh and regenerates existing
+nginx configurations. It does not create a new release or change the pinned RC9
+installer. Certificate DNS-plugin installation and existing renewal behavior stay
+under the fork's reviewed pipeline.
+
 ### September 12 develop upgrade
 
 The security fixes, richer attack evidence, and upstream Argon2id integration landed

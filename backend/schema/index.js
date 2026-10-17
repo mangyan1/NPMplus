@@ -1,9 +1,4 @@
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import $RefParser from "@apidevtools/json-schema-ref-parser";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 let compiledSchema = null;
 
@@ -12,11 +7,9 @@ let compiledSchema = null;
  * and returns the memory cached value
  */
 const getCompiledSchema = async () => {
-	if (compiledSchema === null) {
-		compiledSchema = await $RefParser.dereference(`${__dirname}/swagger.json`, {
-			mutateInputSchema: false,
-		});
-	}
+	compiledSchema ??= await $RefParser.dereference(`${import.meta.dirname}/swagger.json`, {
+		mutateInputSchema: false,
+	});
 	return compiledSchema;
 };
 
@@ -28,19 +21,7 @@ const getCompiledSchema = async () => {
  * @param {string} method
  * @returns string|null
  */
-const getValidationSchema = (path, method) => {
-	if (
-		compiledSchema !== null &&
-		typeof compiledSchema.paths[path] !== "undefined" &&
-		typeof compiledSchema.paths[path][method] !== "undefined" &&
-		typeof compiledSchema.paths[path][method].requestBody !== "undefined" &&
-		typeof compiledSchema.paths[path][method].requestBody.content !== "undefined" &&
-		typeof compiledSchema.paths[path][method].requestBody.content["application/json"] !== "undefined" &&
-		typeof compiledSchema.paths[path][method].requestBody.content["application/json"].schema !== "undefined"
-	) {
-		return compiledSchema.paths[path][method].requestBody.content["application/json"].schema;
-	}
-	return null;
-};
+const getValidationSchema = (path, method) =>
+	compiledSchema?.paths[path]?.[method]?.requestBody?.content?.["application/json"]?.schema ?? null;
 
 export { getCompiledSchema, getValidationSchema };

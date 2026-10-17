@@ -85,8 +85,26 @@ try {
 	assert.equal(await dialog.getByRole("button", { name: "Save", exact: true }).isEnabled(), true);
 	await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
 	await dialog.waitFor({ state: "hidden" });
+	fixture.items = [];
+	fixture.clients = [{ directive: "deny", address: "all" }];
+	await page.reload({ waitUntil: "networkidle" });
+	await row.locator("button.dropdown-toggle").click();
+	await row.getByRole("button", { name: "Edit", exact: true }).click();
+	const denyAllSave = page.waitForResponse(
+		(response) =>
+			response.request().method() === "PUT" && response.url().includes("/api/nginx/access-lists/900001"),
+	);
+	await dialog.getByRole("button", { name: "Save", exact: true }).click();
+	const denyAllResponse = await denyAllSave;
+	assert.equal(denyAllResponse.status(), 400, "deny-all policy must reach the API");
+	assert.deepEqual(denyAllResponse.request().postDataJSON().clients, [{ directive: "deny", address: "all" }]);
+	await dialog.getByText(message, { exact: true }).waitFor();
+	await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+	await dialog.waitFor({ state: "hidden" });
 	assert.deepEqual(errors, [], "rejected creates must not raise a rollback TypeError");
-	console.log("PASS access-list browser validation, masked credentials, and rejected-create recovery");
+	console.log(
+		"PASS access-list browser validation, masked credentials, deny-all policy and rejected-create recovery",
+	);
 } finally {
 	await browser.close();
 }

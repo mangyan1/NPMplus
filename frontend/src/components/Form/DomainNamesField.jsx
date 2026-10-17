@@ -8,9 +8,8 @@ export function DomainNamesField({
 	name = "domainNames",
 	label = "domain-names",
 	id = "domainNames",
-	maxDomains,
-	isWildcardPermitted = false,
-	dnsProviderWildcardSupported = false,
+	isWildcardPermitted,
+	dnsProviderWildcardSupported,
 	onChange,
 }) {
 	const { setFieldValue } = useFormikContext();
@@ -22,9 +21,6 @@ export function DomainNamesField({
 	};
 
 	const helperTexts = [];
-	if (maxDomains) {
-		helperTexts.push(<T id="domain-names.max" data={{ count: maxDomains }} />);
-	}
 	if (!isWildcardPermitted) {
 		helperTexts.push(<T id="domain-names.wildcards-not-permitted" />);
 	} else if (!dnsProviderWildcardSupported) {
@@ -32,7 +28,7 @@ export function DomainNamesField({
 	}
 
 	return (
-		<Field name={name} validate={validateDomains(isWildcardPermitted && dnsProviderWildcardSupported, maxDomains)}>
+		<Field name={name} validate={validateDomains(isWildcardPermitted && dnsProviderWildcardSupported)}>
 			{({ field, form }) => (
 				<div className="mb-3">
 					<label className="form-label" htmlFor={id}>

@@ -6,13 +6,12 @@ const uiFiles = import.meta.glob("../../translations/ui/*.json", {
 	import: "default",
 });
 
-const localeOptions = ["en", ...Object.keys(localeList).filter((locale) => locale !== "en")];
+const localeOptions = ["en", ...Object.keys(localeList).filter((locale) => locale !== "en" && !localeList[locale].rtl)];
 
 const storedLocale = window.localStorage.getItem("locale");
 const currentLocale = localeOptions.includes(storedLocale) ? storedLocale : "en";
 
 document.documentElement.lang = currentLocale;
-if (localeList[currentLocale].rtl) document.dir = "rtl";
 
 const intl = createIntl({
 	locale: currentLocale,

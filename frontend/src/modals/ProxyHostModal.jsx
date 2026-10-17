@@ -16,22 +16,25 @@ import {
 	SSLCertificateField,
 	SSLOptionsFields,
 } from "src/components";
-import { useDirectorySuggestions, useProxyHost, useProxyHosts, useSetProxyHost, useUser } from "src/hooks";
+import { useDirectorySuggestions, useProxyHost, useProxyHosts, useSetProxyHost } from "src/hooks";
 import { intl, T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
 import { MANAGE, PROXY_HOSTS } from "src/modules/Permissions";
 import { showTabOfInvalid, validateNumber, validateUpstreamUrl } from "src/modules/Validations";
 import { showObjectSuccess } from "src/notifications";
 
-const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove }) => {
-	const { data: currentUser, isLoading: userIsLoading, error: userError } = useUser("me");
-	const { data, isLoading, error } = useProxyHost(id);
+const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
+	const { data, isPending, error } = useProxyHost(id);
 	const { data: allProxyHosts } = useProxyHosts();
 	const suggestions = useDirectorySuggestions(allProxyHosts);
 	const { mutate: setProxyHost } = useSetProxyHost();
 	const [errorMsg, setErrorMsg] = useState(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [advVisible, setAdvVisible] = useState(false);
+	const initialLocations = data?.locations.map(({ accessLists, ...location }) => ({
+		...location,
+		npmplusAccessListIds: accessLists.map((accessList) => accessList.id),
+	}));
 
 	const onSubmit = (values, { setSubmitting }) => {
 		if (isSubmitting) return;
@@ -40,24 +43,17 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 
 		// Set the unrestricted acls here (remove any data in their acl lists)
 		const globalType = values.npmplusAccessListType;
-		let globalAclIds = values.npmplusAccessListIds || [];
+		let globalAclIds = values.npmplusAccessListIds;
 		if (globalType === "public") {
 			globalAclIds = [];
 		}
-		const locations = (values.locations || []).map((loc) => {
-			const newLoc = { ...loc };
-			if (loc.npmplusAccessListType === "global" || loc.npmplusAccessListType === "public") {
-				newLoc.npmplusAccessListIds = [];
-			}
-			return newLoc;
-		});
 
-		const { ...payload } = {
+		const payload = {
 			id: id === "new" || isClone ? undefined : id,
 			...values,
 			npmplusAccessListIds: globalAclIds,
-			locations,
-			forwardPort: values.forwardPort || null,
+			forwardPort: values.forwardPort || 0,
+			locations: values.locations.map((location) => ({ ...location, forwardPort: location.forwardPort || 0 })),
 		};
 
 		setProxyHost(payload, {
@@ -87,45 +83,46 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 
 	return (
 		<Modal show={visible} onHide={remove}>
-			{!isLoading && (error || userError) && (
+			{error && (
 				<Alert variant="danger" className="m-3">
-					{error?.message || userError?.message || "Unknown error"}
+					{error?.message}
 				</Alert>
 			)}
-			{isLoading || (userIsLoading && <Loading noLogo />)}
-			{!isLoading && !userIsLoading && data && currentUser && (
+			{isPending && <Loading noLogo />}
+			{data && (
 				<Formik
 					initialValues={{
 						// Details tab
-						domainNames: data?.domainNames || [],
-						forwardScheme: data?.forwardScheme || "http",
-						forwardHost: data?.forwardHost || "",
-						forwardPort: data?.forwardPort || undefined,
-						npmplusAccessListIds: data?.npmplusAccessListIds || [],
-						npmplusAccessListType: data?.npmplusAccessListType || "public",
+						domainNames: data?.domainNames,
+						forwardScheme: data?.forwardScheme,
+						forwardHost: data?.forwardHost,
+						forwardPort: data?.forwardPort || "",
+						npmplusAccessListIds: data?.accessLists.map((accessList) => accessList.id),
+						npmplusAccessListType: data?.npmplusAccessListType,
 						// Locations tab
-						locations: data?.locations || [],
+						locations: initialLocations,
 						// SSL tab
-						certificateId: data?.certificateId || 0,
-						sslForced: data?.sslForced || false,
-						npmplusHttp3Support: data?.npmplusHttp3Support || false,
-						hstsEnabled: data?.hstsEnabled || false,
-						hstsSubdomains: data?.hstsSubdomains || false,
+						certificateId: data?.certificateId,
+						sslForced: data?.sslForced,
+						npmplusHttp3Support: data?.npmplusHttp3Support,
+						hstsEnabled: data?.hstsEnabled,
+						hstsSubdomains: data?.hstsSubdomains,
 						// Advanced tab
-						advancedConfig: data?.advancedConfig || "",
-						npmplusLocationConfig: data?.npmplusLocationConfig || "",
-						npmplusDirectory: data?.npmplusDirectory || "",
-						npmplusMtlsCertificateId: data?.npmplusMtlsCertificateId || 0,
-						npmplusMtlsVerifyClientOptional: data?.npmplusMtlsVerifyClientOptional || false,
-						npmplusNoindex: data?.npmplusNoindex || false,
-						npmplusCrowdsecAppsec: data?.npmplusCrowdsecAppsec || false,
-						npmplusProxyResponseBuffering: data?.npmplusProxyResponseBuffering || false,
-						npmplusProxyRequestBuffering: data?.npmplusProxyRequestBuffering || false,
-						npmplusUpstreamCompression: data?.npmplusUpstreamCompression || false,
-						npmplusFancyindex: data?.npmplusFancyindex || false,
-						npmplusXFrameOptions: data?.npmplusXFrameOptions || "SAMEORIGIN",
-						npmplusAuthRequest: data?.npmplusAuthRequest || "none",
-						npmplusAuthRequestUpstream: data?.npmplusAuthRequestUpstream || "",
+						advancedConfig: data?.advancedConfig,
+						npmplusLocationConfig: data?.npmplusLocationConfig,
+						npmplusDirectory: data?.npmplusDirectory,
+						npmplusMtlsCertificateId: data?.npmplusMtlsCertificateId,
+						npmplusMtlsVerifyClientOptional: data?.npmplusMtlsVerifyClientOptional,
+						npmplusMtlsBypassAuthRequest: data?.npmplusMtlsBypassAuthRequest,
+						npmplusNoindex: data?.npmplusNoindex,
+						npmplusCrowdsecAppsec: data?.npmplusCrowdsecAppsec,
+						npmplusProxyResponseBuffering: data?.npmplusProxyResponseBuffering,
+						npmplusProxyRequestBuffering: data?.npmplusProxyRequestBuffering,
+						npmplusUpstreamCompression: data?.npmplusUpstreamCompression,
+						npmplusFancyindex: data?.npmplusFancyindex,
+						npmplusXFrameOptions: data?.npmplusXFrameOptions,
+						npmplusAuthRequest: data?.npmplusAuthRequest,
+						npmplusAuthRequestUpstream: data?.npmplusAuthRequestUpstream,
 					}}
 					onSubmit={onSubmit}
 				>
@@ -140,12 +137,7 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 								</Modal.Title>
 							</Modal.Header>
 							<Modal.Body className="p-0">
-								<Alert
-									variant="danger"
-									show={Boolean(errorMsg)}
-									onClose={() => setErrorMsg(null)}
-									dismissible
-								>
+								<Alert variant="danger" show={errorMsg} onClose={() => setErrorMsg(null)} dismissible>
 									{errorMsg}
 								</Alert>
 								<div className="card m-0 border-0">
@@ -271,19 +263,12 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 																	<input
 																		id="forwardHost"
 																		type="text"
-																		className={`form-control ${form.errors.forwardHost && form.touched.forwardHost ? "is-invalid" : ""}`}
+																		className="form-control"
 																		placeholder="example.com"
+																		required={form.values.forwardScheme !== "empty"}
+																		pattern="\S{0,255}"
 																		{...field}
 																	/>
-
-																	{form.errors.forwardHost ? (
-																		<div className="invalid-feedback">
-																			{form.errors.forwardHost &&
-																			form.touched.forwardHost
-																				? form.errors.forwardHost
-																				: null}
-																		</div>
-																	) : null}
 																</div>
 															)}
 														</Field>
@@ -299,7 +284,7 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 																		id="forwardPort"
 																		type="text"
 																		inputMode="numeric"
-																		pattern="[0-9]*"
+																		pattern="[1-9][0-9]*"
 																		className={`form-control ${form.errors.forwardPort && form.touched.forwardPort ? "is-invalid" : ""}`}
 																		placeholder="eg: 8081"
 																		{...field}
@@ -307,8 +292,7 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 
 																	{form.errors.forwardPort ? (
 																		<div className="invalid-feedback">
-																			{form.errors.forwardPort &&
-																			form.touched.forwardPort
+																			{form.touched.forwardPort
 																				? form.errors.forwardPort
 																				: null}
 																		</div>
@@ -591,12 +575,21 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 																</span>
 																<span className="col-12 col-sm-auto">
 																	<Field name="npmplusAuthRequest">
-																		{({ field }) => (
+																		{({ field, form }) => (
 																			<select
 																				id="npmplusAuthRequest"
 																				className="form-select"
 																				required
 																				{...field}
+																				onChange={(e) => {
+																					field.onChange(e);
+																					if (e.target.value === "none") {
+																						form.setFieldValue(
+																							"npmplusAuthRequestUpstream",
+																							"",
+																						);
+																					}
+																				}}
 																			>
 																				<option value="none">None</option>
 																				<option value="anubis">Anubis</option>
@@ -645,16 +638,15 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 																						type="text"
 																						className={`form-control ${form.errors.npmplusAuthRequestUpstream && form.touched.npmplusAuthRequestUpstream ? "is-invalid" : ""}`}
 																						placeholder="keep empty to reuse env value"
-																						pattern="^https?://([^/:]+|\[[a-fA-F0-9:]+\]):[0-9]+$"
+																						maxLength={255}
+																						pattern="^https?://(([^\s\/:]+|\[[a-fA-F0-9:]+\]):[0-9]+|cu_[^\s\/:]+)$"
 																						{...field}
 																					/>
 
 																					{form.errors
 																						.npmplusAuthRequestUpstream ? (
 																						<div className="invalid-feedback">
-																							{form.errors
-																								.npmplusAuthRequestUpstream &&
-																							form.touched
+																							{form.touched
 																								.npmplusAuthRequestUpstream
 																								? form.errors
 																										.npmplusAuthRequestUpstream
@@ -675,10 +667,13 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 														<T id="proxy-host.global-access-lists" />
 													</h4>
 													<AccessFields
-														initialAccessListType={data?.npmplusAccessListType || "public"}
-														initialAccessListIds={data?.npmplusAccessListIds || []}
+														initialAccessListType={data?.npmplusAccessListType}
+														initialAccessListIds={data?.accessLists.map(
+															(accessList) => accessList.id,
+														)}
 														name="npmplusAccessListIds"
 														typeFieldName="npmplusAccessListType"
+														authRequest={values.npmplusAuthRequest}
 													/>
 												</div>
 												<Field name="npmplusLocationConfig">
@@ -702,7 +697,7 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 												</Field>
 											</div>
 											<div className="tab-pane" id="tab-locations" role="tabpanel">
-												<LocationsFields initialValues={data?.locations || []} />
+												<LocationsFields initialValues={initialLocations} />
 											</div>
 											<div className="tab-pane" id="tab-ssl" role="tabpanel">
 												<SSLCertificateField
@@ -711,7 +706,7 @@ const ProxyHostModal = EasyModal.create(({ id, isClone = false, visible, remove 
 													allowNew
 												/>
 
-												<SSLOptionsFields color="bg-lime" />
+												<SSLOptionsFields color="bg-lime" forProxy />
 											</div>
 											<div className="tab-pane" id="tab-advanced" role="tabpanel">
 												<NginxConfigField />

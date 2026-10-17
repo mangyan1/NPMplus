@@ -155,7 +155,8 @@ const hostCoverage = async (page = 1) => {
 	const query = ProxyHost.query().where("is_deleted", 0).where("enabled", 1);
 	const count = await query.clone().resultSize();
 	const hosts = await query
-		.select("id", "domain_names", "npmplus_auth_request", "npmplus_auth_request_upstream", "locations")
+		.select("id", "domain_names", "npmplus_auth_request", "npmplus_auth_request_upstream")
+		.withGraphFetched("locations")
 		.orderBy("id")
 		.limit(25)
 		.offset((page - 1) * 25);

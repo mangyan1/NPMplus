@@ -49,11 +49,16 @@ export default function Table({
 	const columnHelper = createColumnHelper();
 	const columns = useMemo(
 		() => [
-			columnHelper.accessor((row) => row.owner.name, {
+			columnHelper.accessor((row) => row.owner?.name, {
 				id: "owner",
 				cell: (info) => {
 					const value = info.row.original.owner;
-					return <GravatarFormatter url={value ? value.avatar : ""} name={value ? value.name : ""} />;
+					return (
+						<GravatarFormatter
+							url={value ? value.avatar : ""}
+							name={value ? value.name : intl.formatMessage({ id: "user.deleted" })}
+						/>
+					);
 				},
 				meta: {
 					className: "w-1",
@@ -67,7 +72,7 @@ export default function Table({
 					return <ValueWithDateFormatter value={value.incomingPort} createdOn={value.createdOn} />;
 				},
 			}),
-			columnHelper.accessor((row) => row.npmplusDescription || "", {
+			columnHelper.accessor((row) => row.npmplusDescription, {
 				id: "npmplusDescription",
 				header: intl.formatMessage({ id: "column.description" }),
 				cell: (info) => {
@@ -239,7 +244,7 @@ export default function Table({
 			isFetching,
 		},
 		enableSortingRemoval: false,
-		state: sorting ? { sorting } : undefined,
+		state: { sorting },
 		onSortingChange,
 	});
 

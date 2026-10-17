@@ -21,6 +21,7 @@ import {
 } from "src/components";
 import { TableLayout } from "src/components/Table/TableLayout";
 import { intl, T } from "src/locale";
+import { forwardSummary } from "src/modules/Forward";
 import { MANAGE, PROXY_HOSTS } from "src/modules/Permissions";
 
 const features = tableFeatures({
@@ -51,11 +52,16 @@ export default function Table({
 	const columnHelper = createColumnHelper();
 	const columns = useMemo(
 		() => [
-			columnHelper.accessor((row) => row.owner.name, {
+			columnHelper.accessor((row) => row.owner?.name, {
 				id: "owner",
 				cell: (info) => {
 					const value = info.row.original.owner;
-					return <GravatarFormatter url={value ? value.avatar : ""} name={value ? value.name : ""} />;
+					return (
+						<GravatarFormatter
+							url={value ? value.avatar : ""}
+							name={value ? value.name : intl.formatMessage({ id: "user.deleted" })}
+						/>
+					);
 				},
 				meta: {
 					className: "w-1",
@@ -85,18 +91,20 @@ export default function Table({
 					);
 				},
 			}),
-			columnHelper.accessor(
-				(row) => `${row.forwardScheme}://${row.forwardHost}${row.forwardPort ? `:${row.forwardPort}` : ""}`,
-				{
-					id: "forwardHost",
-					header: intl.formatMessage({ id: "column.destination" }),
-					cell: (info) => (
+			columnHelper.accessor(forwardSummary, {
+				id: "forwardHost",
+				header: intl.formatMessage({ id: "column.destination" }),
+				cell: (info) => {
+					if (info.row.original.forwardScheme === "path" || !info.getValue()) {
+						return info.getValue();
+					}
+					return (
 						<a href={info.getValue()} target="_blank" rel="noopener">
 							{info.getValue()}
 						</a>
-					),
+					);
 				},
-			),
+			}),
 			columnHelper.accessor((row) => (row.certificate ? row.certificate.provider : "http-only"), {
 				id: "certificate",
 				header: intl.formatMessage({ id: "column.ssl" }),
@@ -104,7 +112,7 @@ export default function Table({
 			}),
 			columnHelper.accessor(
 				(row) => {
-					const accessLists = row.accessLists || [];
+					const { accessLists } = row;
 					const triggerLabel = intl.formatMessage({
 						id: row.npmplusAccessListType === "custom" ? "access-list.custom" : "access-list.public",
 					});
@@ -241,7 +249,7 @@ export default function Table({
 			isFetching,
 		},
 		enableSortingRemoval: false,
-		state: sorting ? { sorting } : undefined,
+		state: { sorting },
 		onSortingChange,
 	});
 

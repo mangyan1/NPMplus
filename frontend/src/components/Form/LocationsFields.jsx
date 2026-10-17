@@ -14,23 +14,12 @@ import { useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { AccessFields } from "src/components";
 import { intl, T } from "src/locale";
+import { forwardSummary } from "src/modules/Forward";
 import { upstreamUrlPattern } from "src/modules/Validations";
 
 export function LocationsFields({ initialValues, name = "locations" }) {
 	const nextUiKey = useRef(0);
 	const createUiLocation = (item) => ({
-		...item,
-		uiKey: nextUiKey.current++,
-	});
-
-	const [values, setValues] = useState((initialValues || []).map(createUiLocation));
-	const { setFieldValue } = useFormikContext();
-	const [advVisible, setAdvVisible] = useState([]);
-	const [expanded, setExpanded] = useState([]);
-	const [filter, setFilter] = useState("");
-	const scrollToKey = useRef(null);
-
-	const blankItem = {
 		npmplusEnabled: true,
 		path: "",
 		locationType: "",
@@ -50,15 +39,23 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 		npmplusAuthRequestUpstream: "",
 		npmplusAccessListType: "global",
 		id: null,
-	};
+		...item,
+		uiKey: nextUiKey.current++,
+	});
+
+	const [values, setValues] = useState(initialValues.map(createUiLocation));
+	const { setFieldValue } = useFormikContext();
+	const [advVisible, setAdvVisible] = useState([]);
+	const [expanded, setExpanded] = useState([]);
+	const [filter, setFilter] = useState("");
+	const scrollToKey = useRef(null);
 
 	const toggle = (key, list, set) => set(list.includes(key) ? list.filter((i) => i !== key) : [...list, key]);
 
 	const handleAdd = () => {
-		const item = createUiLocation(blankItem);
+		const item = createUiLocation();
 		const newValues = [...values, item];
 		setValues(newValues);
-		setFormField(newValues);
 		setExpanded([...expanded, item.uiKey]);
 		setFilter("");
 		scrollToKey.current = item.uiKey;
@@ -81,6 +78,9 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 			}
 			if (field === "npmplusProxyRequestBuffering" && fieldValue === true) {
 				updatedLocation.npmplusCrowdsecAppsec = true;
+			}
+			if (field === "npmplusAuthRequest" && fieldValue === "none") {
+				updatedLocation.npmplusAuthRequestUpstream = "";
 			}
 			if (field === "forwardScheme" && fieldValue !== "empty") {
 				if (!["http", "https"].includes(fieldValue)) {
@@ -117,15 +117,7 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 
 	const isOpen = (item) => expanded.includes(item.uiKey);
 
-	const locationLabel = (item) => `${item.locationType ?? ""}${item.path ?? ""}`;
-
-	const forwardSummary = ({ forwardScheme, forwardHost, forwardPort }) => {
-		if (!forwardHost || forwardScheme === "empty") return "";
-		if (forwardScheme && forwardScheme !== "path") {
-			return `${forwardScheme}://${forwardHost}${forwardPort ? `:${forwardPort}` : ""}`;
-		}
-		return forwardHost;
-	};
+	const locationLabel = (item) => `${item.locationType}${item.path}`;
 
 	const matchesFilter = (item) =>
 		`${locationLabel(item)} ${forwardSummary(item)}`.toLowerCase().includes(filter.trim().toLowerCase());
@@ -245,10 +237,10 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 										<input
 											id={`npmplusEnabled-${item.uiKey}`}
 											className={cn("form-check-input", {
-												"bg-lime": item.npmplusEnabled !== false,
+												"bg-lime": item.npmplusEnabled,
 											})}
 											type="checkbox"
-											checked={item.npmplusEnabled !== false}
+											checked={item.npmplusEnabled}
 											onChange={(e) => handleChange(idx, "npmplusEnabled", e.target.checked)}
 										/>
 									</span>
@@ -277,6 +269,8 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 										className="form-control"
 										placeholder="/path"
 										autoComplete="off"
+										required
+										pattern="\S{1,255}"
 										value={item.path}
 										onChange={(e) => handleChange(idx, "path", e.target.value)}
 									/>
@@ -331,6 +325,7 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 										type="text"
 										className="form-control"
 										required={item.forwardScheme !== "empty"}
+										pattern="\S{0,255}"
 										placeholder="eg: 10.0.0.1/path/"
 										value={item.forwardHost}
 										onChange={(e) => handleChange(idx, "forwardHost", e.target.value)}
@@ -349,7 +344,7 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 										max={65535}
 										className="form-control"
 										placeholder="eg: 8081"
-										value={item.forwardPort}
+										value={item.forwardPort || ""}
 										onChange={(e) => handleChange(idx, "forwardPort", e.target.value)}
 									/>
 								</div>
@@ -602,8 +597,9 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 														type="text"
 														className={`form-control ${item.npmplusAuthRequestUpstream && !upstreamUrlPattern.test(item.npmplusAuthRequestUpstream) ? "is-invalid" : ""}`}
 														placeholder="keep empty to reuse env value"
-														pattern="^https?://([^/:]+|\[[a-fA-F0-9:]+\]):[0-9]+$"
-														value={item.npmplusAuthRequestUpstream || ""}
+														maxLength={255}
+														pattern="^https?://(([^\s\/:]+|\[[a-fA-F0-9:]+\]):[0-9]+|cu_[^\s\/:]+)$"
+														value={item.npmplusAuthRequestUpstream}
 														onChange={(e) =>
 															handleChange(
 																idx,
@@ -630,12 +626,11 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 									<T id="proxy-host.access-lists" />
 								</h4>
 								<AccessFields
-									initialAccessListType={item?.npmplusAccessListType || "global"}
+									initialAccessListType={item?.npmplusAccessListType}
 									location={item.path}
-									initialAccessListIds={item?.npmplusAccessListIds || []}
-									name={`locations[${idx}].npmplusAccessListIds`}
-									typeFieldName={`locations[${idx}].npmplusAccessListType`}
+									initialAccessListIds={item?.npmplusAccessListIds}
 									onChange={(changes) => handleAccessFieldsChange(idx, changes)}
+									authRequest={item.npmplusAuthRequest}
 								/>
 							</div>
 						</div>

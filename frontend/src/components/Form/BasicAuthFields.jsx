@@ -6,8 +6,8 @@ import { T } from "src/locale";
 const blankItem = { username: "", password: "" };
 
 export function BasicAuthFields({ initialValues, name = "items" }) {
-	const [values, setValues] = useState(initialValues || []);
-	const [revealed, setRevealed] = useState({});
+	const [values, setValues] = useState(initialValues);
+	const [revealed, setRevealed] = useState([]);
 	const { setFieldValue } = useFormikContext();
 
 	useEffect(() => {
@@ -22,10 +22,8 @@ export function BasicAuthFields({ initialValues, name = "items" }) {
 
 	const handleRemove = (idx) => {
 		const newValues = values.filter((_, i) => i !== idx);
-		if (newValues.length === 0) {
-			newValues.push(blankItem);
-		}
 		setValues(newValues);
+		setRevealed(revealed.toSpliced(idx, 1));
 		setFormField(newValues);
 	};
 
@@ -86,7 +84,7 @@ export function BasicAuthFields({ initialValues, name = "items" }) {
 									tabIndex={-1}
 									aria-label="toggle visibility"
 									className="p-0 border-0 bg-transparent text-secondary d-flex align-items-center cursor-pointer"
-									onClick={() => setRevealed((r) => ({ ...r, [idx]: !r[idx] }))}
+									onClick={() => setRevealed((r) => Object.assign([...r], { [idx]: !r[idx] }))}
 								>
 									{revealed[idx] ? <IconEyeOff size={18} /> : <IconEye size={18} />}
 								</button>
