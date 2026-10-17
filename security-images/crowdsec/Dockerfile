@@ -4,7 +4,7 @@ FROM golang:1.26.9-alpine3.23@sha256:6750308561953d451210ed1a8086d36c8c8bdcbf672
 ARG CROWDSEC_COMMIT=909b5157986a2b2c2163300fdaef5ed01289f7d2
 ARG RE2_COMMIT=241e2e430836e80f93d704d1f06cd3e7fe3100f5
 ARG GRPC_VERSION=v1.83.2
-ARG X_CRYPTO_VERSION=v0.56.0
+ARG X_CRYPTO_VERSION=v0.57.0
 ARG PGX_VERSION=v5.11.0
 ARG YQ_VERSION=v4.50.1
 ARG X_NET_VERSION=v0.60.0
@@ -46,7 +46,8 @@ RUN make -j2 build BUILD_VERSION=v1.8.1 BUILD_TAG=909b515-mangyan1.security.1 \
 	find cmd -name 'notification-*' -type f -executable -exec cp '{}' /out/plugins/ \;
 
 FROM docker.io/crowdsecurity/crowdsec:latest@sha256:0f2523fa61ef507f15d953045cface490cc880670c62f2755ced17524107f71a
-RUN apk upgrade --no-cache -a
+# CVE-2026-85091: invalidate older runtime layers and require the patched zlib.
+RUN apk upgrade --no-cache -a && apk add --no-cache "zlib>=1.3.2-r1"
 COPY --from=builder /out/crowdsec /out/cscli /usr/local/bin/
 COPY --from=builder /out/yq /usr/local/bin/yq
 COPY --from=builder /out/plugins/ /usr/local/lib/crowdsec/plugins/
