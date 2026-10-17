@@ -99,6 +99,9 @@
 						"npmplus_mtls_verify_client_optional": {
 							"$ref": "../../../components/proxy-host-object.json#/properties/npmplus_mtls_verify_client_optional"
 						},
+						"npmplus_mtls_bypass_auth_request": {
+							"$ref": "../../../components/proxy-host-object.json#/properties/npmplus_mtls_bypass_auth_request"
+						},
 						"npmplus_reuse_key": {
 							"$ref": "../../../components/certificate-object.json#/properties/npmplus_reuse_key"
 						},
@@ -147,7 +150,6 @@
 								],
 								"forward_host": "127.0.0.1",
 								"forward_port": 8080,
-								"npmplus_access_list_ids": [],
 								"npmplus_access_list_type": "public",
 								"certificate_id": 0,
 								"ssl_forced": false,
@@ -167,6 +169,7 @@
 								"npmplus_directory": "",
 								"npmplus_mtls_certificate_id": 0,
 								"npmplus_mtls_verify_client_optional": false,
+								"npmplus_mtls_bypass_auth_request": false,
 								"npmplus_http3_support": false,
 								"forward_scheme": "http",
 								"enabled": true,

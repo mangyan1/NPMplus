@@ -11,6 +11,7 @@ import crypto from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { after, test } from "node:test";
+import { generate } from "otplib";
 import internalAuditLog from "../internal/audit-log.js";
 import crsControl from "../internal/crs-control.js";
 
@@ -1193,4 +1194,38 @@ test("access-list usernames reject record delimiters and preserve ordinary crede
 		{ username: "valid", password: "synthetic-hash" },
 	]);
 	assert.equal(readFileSync("/data/access/legacy-audit", "utf8"), "valid:synthetic-hash\n");
+});
+
+test("MFA changes await the new session before setting the enrollment and backup-code cookies", async (t) => {
+	const email = "mfa-session-refresh@example.test";
+	const password = "Mfa-Session-Fixture-1";
+	const user = await insertUser({ email, password, roles: [] });
+	const login = await api("POST", "/api/tokens", {
+		body: { identity: email, secret: password },
+		headers: { "x-forwarded-for": "192.0.2.166" },
+	});
+	assert.equal(login.status, 200, login.text);
+	const oldCookie = sessionCookieOf(login);
+	const setup = await api("POST", `/api/users/${user.id}/mfa/totp`, { cookie: oldCookie });
+	assert.equal(setup.status, 200, setup.text);
+	const enabled = await api("POST", `/api/users/${user.id}/mfa/totp/enable`, {
+		cookie: oldCookie,
+		body: { code: await generate({ secret: setup.body.secret }) },
+	});
+	assert.equal(enabled.status, 200, enabled.text);
+	const enabledCookie = sessionCookieOf(enabled);
+	assert.ok(enabledCookie);
+	assert.equal((await api("GET", "/api/users/me", { cookie: enabledCookie })).status, 200);
+	assert.equal((await api("GET", "/api/users/me", { cookie: oldCookie })).status, 401);
+	// Enrollment consumed its code; advance the clock without bypassing real verification.
+	const realNow = Date.now;
+	t.mock.method(Date, "now", () => realNow() + 31000);
+	const regenerated = await api("POST", `/api/users/${user.id}/mfa/backup-codes`, {
+		cookie: enabledCookie,
+		body: { code: await generate({ secret: setup.body.secret }) },
+	});
+	assert.equal(regenerated.status, 200, regenerated.text);
+	assert.equal(regenerated.body.backup_codes.length, 8);
+	assert.equal((await api("GET", "/api/users/me", { cookie: sessionCookieOf(regenerated) })).status, 200);
+	assert.equal((await api("GET", "/api/users/me", { cookie: enabledCookie })).status, 401);
 });

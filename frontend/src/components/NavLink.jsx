@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from "react-router";
 
-export function NavLink({ children, to, href, isDropdownItem, onClick }) {
+export function NavLink({ children, to, href, isDropdownItem, active, onClick }) {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const isActive = Boolean(to && location.pathname === to);
@@ -21,7 +21,7 @@ export function NavLink({ children, to, href, isDropdownItem, onClick }) {
 
 	return (
 		<a
-			className={isDropdownItem ? "dropdown-item" : `nav-link${isActive ? " active" : ""}`}
+			className={`${isDropdownItem ? "dropdown-item" : "nav-link"}${active ? " active" : ""}`}
 			href={to}
 			aria-current={isActive ? "page" : undefined}
 			onClick={(e) => {
@@ -29,9 +29,7 @@ export function NavLink({ children, to, href, isDropdownItem, onClick }) {
 				if (onClick) {
 					onClick();
 				}
-				if (to) {
-					void navigate(to);
-				}
+				void navigate(to);
 			}}
 		>
 			{children}

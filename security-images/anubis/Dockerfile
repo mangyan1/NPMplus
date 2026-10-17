@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1.27.1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
-FROM golang:1.26.8-alpine3.23@sha256:33ce311e5eecedee48ec1b84419c1306e9fbd71009f0d5c3f2a6904b579c1ecc AS builder
+FROM golang:1.26.9-alpine3.23@sha256:6750308561953d451210ed1a8086d36c8c8bdcbf672d38d9d0d424b8a7a0216c AS builder
 
 ARG ANUBIS_COMMIT=d39e26cedcc96bea5e4915297c756e7eec74aaf7
 ARG ANUBIS_VERSION=v1.27.0-mangyan1.security.1
-ARG X_TEXT_VERSION=v0.41.0
+ARG X_TEXT_VERSION=v0.42.0
+ARG X_NET_VERSION=v0.60.0
 ARG GRPC_VERSION=v1.83.2
 ARG CEL_GO_VERSION=v0.29.2
 
@@ -16,7 +17,7 @@ RUN git init && git remote add origin https://github.com/TecharoHQ/anubis.git &&
 	test "$(git rev-parse 'v1.27.0^{commit}')" = "$ANUBIS_COMMIT"
 # Preserve the stable application and generated assets; patch its dependencies.
 RUN go get "golang.org/x/text@$X_TEXT_VERSION" "google.golang.org/grpc@$GRPC_VERSION" \
-	"github.com/google/cel-go@$CEL_GO_VERSION" && go mod verify
+	"github.com/google/cel-go@$CEL_GO_VERSION" "golang.org/x/net@$X_NET_VERSION" && go mod verify
 RUN npm ci --ignore-scripts && npm run assets
 RUN SKIP_INTEGRATION=1 go test ./... && go vet ./...
 RUN CGO_ENABLED=0 go build -mod=readonly -trimpath \

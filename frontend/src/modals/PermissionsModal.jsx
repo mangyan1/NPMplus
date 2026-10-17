@@ -18,7 +18,7 @@ const showPermissionsModal = (id) => {
 const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 	const queryClient = useQueryClient();
 	const [errorMsg, setErrorMsg] = useState(null);
-	const { data, isLoading, error } = useUser(id);
+	const { data, isPending, error } = useUser(id);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const onSubmit = async (values, { setSubmitting }) => {
@@ -134,13 +134,13 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 
 	return (
 		<Modal show={visible} onHide={remove}>
-			{!isLoading && error && (
+			{error && (
 				<Alert variant="danger" className="m-3">
-					{error?.message || "Unknown error"}
+					{error?.message}
 				</Alert>
 			)}
-			{isLoading && <Loading noLogo />}
-			{!isLoading && data && (
+			{isPending && <Loading noLogo />}
+			{data && (
 				<Formik
 					initialValues={{
 						visibility: data.permissions?.visibility,
@@ -161,12 +161,7 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 								</Modal.Title>
 							</Modal.Header>
 							<Modal.Body>
-								<Alert
-									variant="danger"
-									show={Boolean(errorMsg)}
-									onClose={() => setErrorMsg(null)}
-									dismissible
-								>
+								<Alert variant="danger" show={errorMsg} onClose={() => setErrorMsg(null)} dismissible>
 									{errorMsg}
 								</Alert>
 								<div className="mb-3">

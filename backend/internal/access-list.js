@@ -7,6 +7,7 @@ import { access as logger } from "../logger.js";
 import accessListModel from "../models/access_list.js";
 import accessListAuthModel from "../models/access_list_auth.js";
 import accessListClientModel from "../models/access_list_client.js";
+import locationModel from "../models/location.js";
 import proxyHostModel from "../models/proxy_host.js";
 import internalAuditLog from "./audit-log.js";
 import internalNginx from "./nginx.js";
@@ -106,7 +107,11 @@ const internalAccessList = {
 			access.can("access_lists:manage");
 			const row = await internalAccessList.get(access, {
 				id: data.id,
-				expand: ["items", "clients", "proxy_hosts.[certificate,access_lists.[clients,items]]"],
+				expand: [
+					"items",
+					"clients",
+					"proxy_hosts.[certificate,access_lists.[clients,items],locations.access_lists.[clients,items]]",
+				],
 			});
 			const existingUsernames = new Set((row.items || []).map((item) => item.username));
 			if ((data.items || []).some((item) => !item.password && !existingUsernames.has(item.username))) {
@@ -154,7 +159,11 @@ const internalAccessList = {
 						access,
 						{
 							id: data.id,
-							expand: ["items", "clients", "proxy_hosts.[certificate,access_lists.[clients,items]]"],
+							expand: [
+								"items",
+								"clients",
+								"proxy_hosts.[certificate,access_lists.[clients,items],locations.access_lists.[clients,items]]",
+							],
 						},
 						trx,
 					);
@@ -235,7 +244,9 @@ const internalAccessList = {
 			.where("access_list.is_deleted", 0)
 			.andWhere("access_list.id", thisData.id)
 			.groupBy("access_list.id")
-			.allowGraph("[items,clients,proxy_hosts.[certificate,access_lists.[clients,items]]]")
+			.allowGraph(
+				"[items,clients,proxy_hosts.[certificate,access_lists.[clients,items],locations.access_lists.[clients,items]]]",
+			)
 			.first();
 
 		if (access.visibility !== "all") {
@@ -252,6 +263,9 @@ const internalAccessList = {
 			throw new errs.ItemNotFoundError(thisData.id);
 		}
 
+		if (Array.isArray(row.proxy_hosts)) {
+			row.proxy_hosts = [...new Map(row.proxy_hosts.map((host) => [host.id, host])).values()];
+		}
 		return row;
 	},
 
@@ -266,38 +280,26 @@ const internalAccessList = {
 		access.can("access_lists:manage");
 		const row = await internalAccessList.get(access, {
 			id: data.id,
-			expand: ["proxy_hosts.[certificate, access_lists.[clients,items]]", "items", "clients"],
+			expand: [
+				"proxy_hosts.[certificate, access_lists.[clients,items], locations.access_lists.[clients,items]]",
+				"items",
+				"clients",
+			],
 		});
-
-		if (!row?.id) {
-			throw new errs.ItemNotFoundError(data.id);
-		}
 		// 1. update row to be deleted
 		// 2. update any proxy hosts that were using it (ignoring permissions)
 		// 3. reconfigure those hosts
 		// 4. audit log
 
-		// 1. update row to be deleted
-		await accessListModel.query().where("id", row.id).patch({
-			is_deleted: 1,
-		});
-
-		// 2. update any proxy hosts that were using it (ignoring permissions)
 		const affectedHosts = (row.proxy_hosts || []).map((host) => {
 			const updatedHost = { ...host };
-			// check in case something crazy happened. This should never be the case, but safeguard
-			if (!Array.isArray(updatedHost.npmplus_access_list_ids)) {
-				updatedHost.npmplus_access_list_ids = [];
-			}
-			updatedHost.npmplus_access_list_ids = updatedHost.npmplus_access_list_ids.filter((id) => id !== row.id);
-
-			// update the access_lists object (separate from the access_lists_ids)
+			// update the access_lists object
 			if (!Array.isArray(updatedHost.access_lists)) {
 				updatedHost.access_lists = [];
 			}
 			updatedHost.access_lists = updatedHost.access_lists.filter((acl) => acl.id !== row.id);
 
-			if (updatedHost.npmplus_access_list_ids.length === 0) {
+			if (updatedHost.access_lists.length === 0) {
 				updatedHost.npmplus_access_list_type = "public";
 			}
 			if (!Array.isArray(updatedHost.locations)) {
@@ -305,14 +307,9 @@ const internalAccessList = {
 			}
 			updatedHost.locations = updatedHost.locations.map((location) => {
 				const updatedLocation = { ...location };
-				if (!Array.isArray(updatedLocation.npmplus_access_list_ids)) {
-					updatedLocation.npmplus_access_list_ids = [];
-				}
-				updatedLocation.npmplus_access_list_ids = updatedLocation.npmplus_access_list_ids.filter(
-					(id) => id !== row.id,
-				);
+				updatedLocation.access_lists = updatedLocation.access_lists.filter((acl) => acl.id !== row.id);
 				if (
-					updatedLocation.npmplus_access_list_ids.length === 0 &&
+					updatedLocation.access_lists.length === 0 &&
 					updatedLocation.npmplus_access_list_type === "custom"
 				) {
 					updatedLocation.npmplus_access_list_type = "global";
@@ -323,7 +320,35 @@ const internalAccessList = {
 		});
 		const deletedRow = { ...row, proxy_hosts: undefined };
 
-		const finalize = async () => {
+		await accessListModel.transaction(async (trx) => {
+			// 1. update row to be deleted
+			await trx("npmplus_proxy_host_access_list").where("access_list_id", row.id).delete();
+			await accessListAuthModel.query(trx).where("access_list_id", row.id).delete();
+			await accessListClientModel.query(trx).where("access_list_id", row.id).delete();
+			await accessListModel.query(trx).deleteById(row.id);
+			// 2. update any proxy hosts that were using it (ignoring permissions)
+			for (const host of affectedHosts) {
+				await proxyHostModel.query(trx).findById(host.id).patch({
+					npmplus_access_list_type: host.npmplus_access_list_type,
+				});
+				for (const location of host.locations) {
+					await locationModel.query(trx).where("id", location.id).patch({
+						npmplus_access_list_type: location.npmplus_access_list_type,
+					});
+				}
+			}
+		});
+
+		try {
+			// 3. Write the changes to the config
+			// Regenerate configs and htpasswd files
+			for (const host of affectedHosts) await internalNginx.configure(proxyHostModel, "proxy_host", host);
+
+			await internalNginx.reload();
+
+			// delete the htpasswd file
+			await rm(internalAccessList.getFilename(row), { force: true });
+		} finally {
 			// 4. audit log
 			await internalAuditLog.add(access, {
 				action: "deleted",
@@ -331,49 +356,7 @@ const internalAccessList = {
 				object_id: row.id,
 				meta: deletedRow,
 			});
-		};
-		try {
-			// 3. Write the changes to the database and the config
-			if (affectedHosts.length > 0) {
-				await proxyHostModel.transaction(async (trx) => {
-					await Promise.all(
-						affectedHosts.map(async (host) => {
-							await proxyHostModel.query(trx).patchAndFetchById(host.id, {
-								npmplus_access_list_ids: host.npmplus_access_list_ids,
-								npmplus_access_list_type: host.npmplus_access_list_type,
-								locations: host.locations,
-							});
-
-							return internalProxyHostAccessList.syncAccessListRelations(trx, host.id, host);
-						}),
-					);
-				});
-				row.proxy_hosts = affectedHosts;
-				// step 4. Regenerate configs and htpasswd files
-				// locations don't have accessList objects, only IDs, so populate it with the object itself
-				row.proxy_hosts = await Promise.all(
-					(row.proxy_hosts || []).map((host) => {
-						const cleanedHost = internalProxyHostAccessList.cleanAccessListTypes(host);
-						return internalProxyHostAccessList.populateLocationAccessLists(cleanedHost);
-					}),
-				);
-				await internalNginx.bulkGenerateConfigs(proxyHostModel, "proxy_host", row.proxy_hosts);
-			}
-
-			await internalNginx.reload();
-
-			// delete the htpasswd file
-			await rm(internalAccessList.getFilename(row), { force: true });
-		} catch (operationError) {
-			// the audit write must never replace the operation's own error
-			try {
-				await finalize();
-			} catch (cleanupError) {
-				logger.error(`Error auditing access list delete ${row.id}: ${cleanupError.message}`);
-			}
-			throw operationError;
 		}
-		await finalize();
 		return deletedRow;
 	},
 

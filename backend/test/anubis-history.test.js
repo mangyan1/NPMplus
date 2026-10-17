@@ -92,8 +92,8 @@ test("host coverage follows location inheritance and omits deleted or disabled h
 			{ path: "/api", npmplus_auth_request: "tinyauth" },
 		],
 	};
-	await ProxyHost.query().insert(host);
-	await ProxyHost.query().insert({ ...host, enabled: false });
+	await ProxyHost.query().insertGraph(host);
+	await ProxyHost.query().insertGraph({ ...host, enabled: false });
 	const result = await hostCoverage();
 	assert.equal(result.total, 1);
 	assert.equal(result.items[0].anubis, true);

@@ -170,6 +170,11 @@ const internalUser = {
 	// bounded module-level implementation above; no unbounded fetch here
 	fetchGravatar,
 
+	deleteAvatarFiles: async (id) => {
+		await rmAvatars("avatar", id);
+		await rmAvatars("gravatar", id);
+	},
+
 	setAvatar: async (access, id, file) => {
 		access.canUser(id);
 		const ext = avatarExt(file?.buffer);

@@ -3,34 +3,25 @@ import { intl } from "src/locale";
 const emailPattern = /@/;
 const domainPattern = /^(?!.*:[0-9]+$).+$/;
 const ipv4Pattern = /^[0-9.]+$/;
-const upstreamUrlPattern = /^https?:\/\/([^/:]+|\[[a-fA-F0-9:]+\]):[0-9]+$/;
+const upstreamUrlPattern = /^https?:\/\/(([^\s/:]+|\[[a-fA-F0-9:]+\]):[0-9]+|cu_[^\s/:]+)$/;
 
-const validateString = (minLength = 0, maxLength = 0) => {
-	if (minLength <= 0 && maxLength <= 0) {
-		// this doesn't require translation
-		console.error("validateString() must be called with a min or max or both values in order to work!");
-	}
-
-	return (value) => {
-		if (minLength && (typeof value === "undefined" || value.length === 0)) {
+const validateString =
+	(minLength = 0, maxLength = 0) =>
+	(value) => {
+		if (minLength && value.length === 0) {
 			return intl.formatMessage({ id: "error.required" });
 		}
-		if (minLength && value.length < minLength) {
+		if (value.length < minLength) {
 			return intl.formatMessage({ id: "error.min-character-length" }, { min: minLength });
 		}
-		if (maxLength && (typeof value === "undefined" || value.length > maxLength)) {
+		if (maxLength && value.length > maxLength) {
 			return intl.formatMessage({ id: "error.max-character-length" }, { max: maxLength });
 		}
 	};
-};
 
-const validateNumber = (min = -1, max = -1) => {
-	if (min === -1 && max === -1) {
-		// this doesn't require translation
-		console.error("validateNumber() must be called with a min or max or both values in order to work!");
-	}
-
-	return (value) => {
+const validateNumber =
+	(min = -1, max = -1) =>
+	(value) => {
 		const int = Number(value);
 		if (min > -1 && !int) {
 			return intl.formatMessage({ id: "error.required" });
@@ -42,7 +33,6 @@ const validateNumber = (min = -1, max = -1) => {
 			return intl.formatMessage({ id: "error.maximum" }, { max });
 		}
 	};
-};
 
 const validateEmail = () => (value) => {
 	if (value.length === 0) {
@@ -53,9 +43,9 @@ const validateEmail = () => (value) => {
 	}
 };
 
-const validateDomain = (allowWildcards = false) => {
+const validateDomain = (allowWildcards) => {
 	return (d) => {
-		const dom = d.trim().toLowerCase();
+		const dom = d.trim();
 
 		if (!allowWildcards) {
 			// Block wildcards
@@ -79,7 +69,7 @@ const validateDomain = (allowWildcards = false) => {
 	};
 };
 
-const validateDomains = (allowWildcards, maxDomains) => {
+const validateDomains = (allowWildcards) => {
 	const vDom = validateDomain(allowWildcards);
 
 	return (value) => {
@@ -87,13 +77,8 @@ const validateDomains = (allowWildcards, maxDomains) => {
 			return intl.formatMessage({ id: "error.required" });
 		}
 
-		// Deny if the list of domains is hit
-		if (maxDomains && value?.length >= maxDomains) {
-			return intl.formatMessage({ id: "error.max-domains" }, { max: maxDomains });
-		}
-
 		// validate each domain
-		for (const domain of value ?? []) {
+		for (const domain of value) {
 			if (!vDom(domain)) {
 				return intl.formatMessage({ id: "error.invalid-domain" }, { domain });
 			}

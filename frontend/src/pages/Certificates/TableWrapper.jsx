@@ -34,7 +34,7 @@ export default function TableWrapper() {
 
 	useEffect(() => {
 		// this can happen if someone deletes the last item while searching
-		if (search !== "" && !data) {
+		if (search !== "" && !data?.length) {
 			setSearch("");
 		}
 	});
@@ -55,12 +55,12 @@ export default function TableWrapper() {
 		try {
 			await downloadCertificate(id);
 		} catch (err) {
-			showError(err.message);
+			showError(<T id={err.message} />);
 		}
 	};
 
 	let filtered = null;
-	if (search && data) {
+	if (search) {
 		filtered = data?.filter(
 			(item) =>
 				item.domainNames.some((domain) => domain.toLowerCase().includes(search)) ||
@@ -156,7 +156,7 @@ export default function TableWrapper() {
 				</div>
 				<Table
 					data={filtered ?? data ?? []}
-					isFiltered={Boolean(search)}
+					isFiltered={search}
 					isFetching={isFetching}
 					onRenew={showRenewCertificateModal}
 					onDownload={handleDownload}
@@ -183,16 +183,14 @@ export default function TableWrapper() {
 										<T id={certificateProviderTranslation(certificate.provider)} />
 										{certificate.npmplusDnsProvider ? ` – ${certificate.npmplusDnsProvider}` : null}
 									</div>
-									{certificate.expiresOn ? (
-										<div>
-											<T
-												id="expires.on"
-												data={{
-													date: formatDateTime(certificate.expiresOn),
-												}}
-											/>
-										</div>
-									) : null}
+									<div>
+										<T
+											id="expires.on"
+											data={{
+												date: formatDateTime(certificate.expiresOn),
+											}}
+										/>
+									</div>
 								</>
 							) : null,
 						});

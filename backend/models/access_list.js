@@ -37,17 +37,9 @@ class AccessList extends Model {
 		return super.$formatDatabaseJson(thisJson);
 	}
 
-	static get name() {
-		return "AccessList";
-	}
+	static tableName = "access_list";
 
-	static get tableName() {
-		return "access_list";
-	}
-
-	static get jsonAttributes() {
-		return ["meta"];
-	}
+	static jsonAttributes = ["meta"];
 
 	static get relationMappings() {
 		return {
@@ -57,9 +49,6 @@ class AccessList extends Model {
 				join: {
 					from: "access_list.owner_user_id",
 					to: "user.id",
-				},
-				modify: (qb) => {
-					qb.where("user.is_deleted", 0);
 				},
 			},
 			items: {
@@ -88,9 +77,6 @@ class AccessList extends Model {
 						to: "npmplus_proxy_host_access_list.proxy_host_id",
 					},
 					to: "proxy_host.id",
-				},
-				modify: (qb) => {
-					qb.where("proxy_host.is_deleted", 0);
 				},
 			},
 		};

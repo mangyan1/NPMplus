@@ -18,6 +18,7 @@ import { isSetup, removeSetupToken, verifySetupToken } from "../setup.js";
 let setupCreationInProgress = false;
 
 const listSchema = {
+	type: "object",
 	additionalProperties: false,
 	properties: {
 		query: {
@@ -27,6 +28,7 @@ const listSchema = {
 };
 
 const userSchema = {
+	type: "object",
 	required: ["user_id"],
 	additionalProperties: false,
 	properties: {
@@ -82,7 +84,7 @@ router
 	 * Retrieve all users
 	 */
 	.get(async (req, res) => {
-		const data = await validator(listSchema, {
+		const data = validator(listSchema, {
 			query: typeof req.query.query === "string" ? req.query.query : null,
 		});
 		const users = await internalUser.getAll(res.locals.access, data.query);
@@ -150,7 +152,7 @@ router
 	 * Retrieve a specific user
 	 */
 	.get(async (req, res) => {
-		const data = await validator(userSchema, {
+		const data = validator(userSchema, {
 			user_id: req.params.user_id,
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
 		});
