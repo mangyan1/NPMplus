@@ -312,7 +312,7 @@ router
 	.post(async (req, res) => {
 		const { code } = apiValidator(getValidationSchema("/users/{userID}/mfa/totp/enable", "post"), req.body);
 		const result = await internalMfa.enableTotp(res.locals.access, req.params.user_id, code);
-		const data = internalToken.getFreshToken(res.locals.access, true);
+		const data = await internalToken.getFreshToken(res.locals.access, true);
 		res.cookie("__Host-Http-token", data.token, {
 			signed: true,
 			httpOnly: true,
@@ -357,7 +357,7 @@ router
 	.post(async (req, res) => {
 		const { code } = apiValidator(getValidationSchema("/users/{userID}/mfa/backup-codes", "post"), req.body);
 		const result = await internalMfa.regenerateBackupCodes(res.locals.access, req.params.user_id, code);
-		const data = internalToken.getFreshToken(res.locals.access, true);
+		const data = await internalToken.getFreshToken(res.locals.access, true);
 		res.cookie("__Host-Http-token", data.token, {
 			signed: true,
 			httpOnly: true,
