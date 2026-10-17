@@ -13,7 +13,7 @@ export default function TableWrapper() {
 
 	useEffect(() => {
 		// this can happen if someone deletes the last item while searching
-		if (search !== "" && !data) {
+		if (search !== "" && !data?.length) {
 			setSearch("");
 		}
 	});
@@ -31,10 +31,10 @@ export default function TableWrapper() {
 	}
 
 	let filtered = null;
-	if (search && data) {
+	if (search) {
 		filtered = data.filter((item) => {
-			const metaText = JSON.stringify(item.meta || {}).toLowerCase();
-			const value = [item.objectType, item.action, metaText].filter(Boolean).join(" ").toLowerCase();
+			const metaText = JSON.stringify(item.meta).toLowerCase();
+			const value = [item.objectType, item.action, metaText].join(" ");
 
 			return value.includes(search);
 		});

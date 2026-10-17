@@ -11,7 +11,8 @@ const fetchProxyHost = (id) => {
 			domainNames: [],
 			forwardHost: "",
 			forwardPort: 0,
-			npmplusAccessListIds: [],
+			accessLists: [],
+			locations: [],
 			certificateId: 0,
 			sslForced: false,
 			advancedConfig: "",
@@ -19,8 +20,9 @@ const fetchProxyHost = (id) => {
 			npmplusDirectory: "",
 			npmplusMtlsCertificateId: 0,
 			npmplusMtlsVerifyClientOptional: false,
+			npmplusMtlsBypassAuthRequest: false,
 			npmplusHttp3Support: false,
-			forwardScheme: "",
+			forwardScheme: "http",
 			enabled: true,
 			hstsEnabled: false,
 			hstsSubdomains: false,
@@ -39,12 +41,11 @@ const fetchProxyHost = (id) => {
 	return getProxyHost(id);
 };
 
-const useProxyHost = (id, options = {}) => {
+const useProxyHost = (id) => {
 	return useQuery({
 		queryKey: ["proxy-host", id],
 		queryFn: () => fetchProxyHost(id),
 		staleTime: 60 * 1000, // 1 minute
-		...options,
 	});
 };
 

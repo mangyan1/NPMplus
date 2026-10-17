@@ -8,18 +8,18 @@ import { getDirectory, useDeadHosts } from "src/hooks";
 import { T } from "src/locale";
 import { showDeadHostModal, showDeleteConfirmModal, showHelpModal } from "src/modals";
 import { DEAD_HOSTS, MANAGE } from "src/modules/Permissions";
-import { showObjectSuccess } from "src/notifications";
+import { showError, showObjectSuccess } from "src/notifications";
 import Table from "./Table";
 
 export default function TableWrapper() {
 	const queryClient = useQueryClient();
 	const [search, setSearch] = useState("");
-	const [sorting, setSorting] = useState([]);
+	const [sorting, setSorting] = useState([{ id: "enabled", desc: false }]);
 	const { isFetching, isLoading, isError, error, data } = useDeadHosts(["owner", "certificate"]);
 
 	useEffect(() => {
 		// this can happen if someone deletes the last item while searching
-		if (search !== "" && !data) {
+		if (search !== "" && !data?.length) {
 			setSearch("");
 		}
 	});
@@ -37,16 +37,20 @@ export default function TableWrapper() {
 	}
 
 	const handleDisableToggle = async (id, enabled) => {
-		await toggleDeadHost(id, enabled);
-		await Promise.all([
-			queryClient.invalidateQueries({ queryKey: ["dead-hosts"] }),
-			queryClient.invalidateQueries({ queryKey: ["dead-host", id] }),
-		]);
-		showObjectSuccess("dead-host", enabled ? "enabled" : "disabled");
+		try {
+			await toggleDeadHost(id, enabled);
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: ["dead-hosts"] }),
+				queryClient.invalidateQueries({ queryKey: ["dead-host", id] }),
+			]);
+			showObjectSuccess("dead-host", enabled ? "enabled" : "disabled");
+		} catch (err) {
+			showError(<T id={err.message} />);
+		}
 	};
 
 	let filtered = null;
-	if (search && data) {
+	if (search) {
 		filtered = data?.filter((item) => {
 			const directory = getDirectory(item).toLowerCase();
 			return (
@@ -59,7 +63,7 @@ export default function TableWrapper() {
 	const groupingActive = displayedHosts.some(getDirectory);
 
 	const sharedTableProps = {
-		isFiltered: Boolean(search),
+		isFiltered: search,
 		isFetching,
 		sorting,
 		onSortingChange: setSorting,

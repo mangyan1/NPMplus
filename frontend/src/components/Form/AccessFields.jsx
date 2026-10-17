@@ -1,4 +1,12 @@
-import { IconArrowDown, IconArrowUp, IconLock, IconLockOpen2, IconWorld, IconX } from "@tabler/icons-react";
+import {
+	IconAlertTriangle,
+	IconArrowDown,
+	IconArrowUp,
+	IconLock,
+	IconLockOpen2,
+	IconWorld,
+	IconX,
+} from "@tabler/icons-react";
 import { useFormikContext } from "formik";
 import { useState } from "react";
 import Select, { components } from "react-select";
@@ -26,21 +34,29 @@ const TypeOption = (props) => (
 	</components.Option>
 );
 
-export function AccessFields({ initialAccessListType, location, initialAccessListIds, name, typeFieldName, onChange }) {
-	const [values, setValues] = useState(initialAccessListIds || []);
+export function AccessFields({
+	initialAccessListType,
+	location,
+	initialAccessListIds,
+	name,
+	typeFieldName,
+	onChange,
+	authRequest,
+}) {
+	const [values, setValues] = useState(initialAccessListIds);
 	const [aclValue, setAclValue] = useState(initialAccessListType);
-	const { setFieldValue } = useFormikContext();
+	const { values: formValues, setFieldValue } = useFormikContext();
 	const { isLoading, isError, error, data } = useAccessLists(["owner", "items", "clients"]);
 
 	const createDefaultItem = (item) => ({
-		value: item.id || 0,
+		value: item.id,
 		label: item.name,
 		subLabel: intl.formatMessage(
 			{ id: "access-list.subtitle" },
 			{
 				users: item?.items?.length,
 				rules: item?.clients?.length,
-				date: item?.createdOn ? formatDateTime(item?.createdOn) : "N/A",
+				date: formatDateTime(item?.createdOn),
 			},
 		),
 		meta: item,
@@ -72,7 +88,7 @@ export function AccessFields({ initialAccessListType, location, initialAccessLis
 	};
 
 	const defaultOptions = data?.map(createDefaultItem) || [];
-	const valuesSet = new Set(values?.map((item) => item || 0) || []);
+	const valuesSet = new Set(values);
 	const options = defaultOptions.filter((option) => !valuesSet.has(option.value));
 
 	const typeOptions = () => {
@@ -89,21 +105,22 @@ export function AccessFields({ initialAccessListType, location, initialAccessLis
 
 	const applyUpdatedValues = (newValues) => {
 		setValues(newValues);
-		void setFieldValue(name, newValues);
-		onChange?.({ npmplusAccessListIds: newValues });
+		if (onChange) {
+			onChange({ npmplusAccessListIds: newValues });
+		} else {
+			void setFieldValue(name, newValues);
+		}
 	};
 
 	const onAccessListChange = (acl, idx) => {
-		const newValues = values.map((id, i) => (i === idx ? acl.id || 0 : id));
+		const newValues = values.map((id, i) => (i === idx ? acl.id : id));
 		applyUpdatedValues(newValues);
 	};
 
 	const handleAdd = () => {
 		const newAccessOption = options[0];
-		if (newAccessOption?.meta.id) {
-			const newValues = [...values, newAccessOption.meta.id];
-			applyUpdatedValues(newValues);
-		}
+		const newValues = [...values, newAccessOption.meta.id];
+		applyUpdatedValues(newValues);
 	};
 
 	const handleMoveUp = (idx) => {
@@ -133,10 +150,23 @@ export function AccessFields({ initialAccessListType, location, initialAccessLis
 		applyUpdatedValues(newValues);
 	};
 
+	const acls = (
+		{
+			custom: values,
+			global: formValues.npmplusAccessListType === "custom" ? formValues.npmplusAccessListIds : [],
+		}[aclValue] ?? []
+	)
+		.map((id) => data?.find((acl) => acl.id === id))
+		.filter(Boolean);
+
 	return (
 		<div className="mb-3">
 			{isLoading ? <div className="placeholder placeholder-lg col-12 my-3 placeholder-glow" /> : null}
-			{isError ? <div className="invalid-feedback">{`${error}`}</div> : null}
+			{isError ? (
+				<div className="invalid-feedback d-block">
+					<T id={error.message} />
+				</div>
+			) : null}
 			<div className="row">
 				<div className="col-md-10">
 					<div className="input-group mb-3 shadow-none">
@@ -156,11 +186,13 @@ export function AccessFields({ initialAccessListType, location, initialAccessLis
 								}),
 							}}
 							onChange={(e) => {
-								if (!e || Array.isArray(e)) return;
 								const value = e.type;
 								setAclValue(value);
-								void setFieldValue(typeFieldName, value);
-								onChange?.({ npmplusAccessListType: value });
+								if (onChange) {
+									onChange({ npmplusAccessListType: value });
+								} else {
+									void setFieldValue(typeFieldName, value);
+								}
 							}}
 						/>
 					</div>
@@ -169,12 +201,14 @@ export function AccessFields({ initialAccessListType, location, initialAccessLis
 			{!isLoading && !isError && aclValue === "custom" ? (
 				<>
 					{values.map((item, idx) => (
-						<div key={item ?? idx} className="input-group mb-1 shadow-none">
+						<div key={item} className="input-group mb-1 shadow-none">
 							<Select
 								className="col-md-8 mb-1"
 								unstyled
 								classNames={selectClassNames}
-								value={defaultOptions.find((o) => o.value === item) ?? null}
+								value={
+									defaultOptions.find((o) => o.value === item) ?? { value: item, label: `#${item}` }
+								}
 								options={options}
 								components={{ Option }}
 								styles={{
@@ -184,10 +218,8 @@ export function AccessFields({ initialAccessListType, location, initialAccessLis
 									}),
 								}}
 								onChange={(e) => {
-									if (!e || Array.isArray(e)) return;
 									onAccessListChange(e.meta, idx);
 								}}
-								isDisabled={aclValue !== "custom"}
 							/>
 
 							{idx > 0 ? (
@@ -226,7 +258,7 @@ export function AccessFields({ initialAccessListType, location, initialAccessLis
 							</button>
 						</div>
 					))}
-					{values.length < defaultOptions.length && ( // only show add button if there are more acls that can be added
+					{options.length > 0 && ( // only show add button if there are more acls that can be added
 						<div className="text-center">
 							<button type="button" className="btn my-3" onClick={handleAdd}>
 								<T id="action.add" />
@@ -235,6 +267,17 @@ export function AccessFields({ initialAccessListType, location, initialAccessLis
 					)}
 				</>
 			) : null}
+			{authRequest !== "none" &&
+				acls[0]?.satisfyAny &&
+				acls.some(
+					(acl) =>
+						acl.items?.length > 0 || acl.clients?.some((client) => client.address?.toLowerCase() !== "all"),
+				) && (
+					<p className="text-warning">
+						<IconAlertTriangle size={16} className="me-1" />
+						<T id="access-list.satisfy-any-warning" data={{ name: acls[0].name }} />
+					</p>
+				)}
 		</div>
 	);
 }

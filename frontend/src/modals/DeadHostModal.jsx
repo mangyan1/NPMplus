@@ -22,7 +22,7 @@ const showDeadHostModal = (id) => {
 };
 
 const DeadHostModal = EasyModal.create(({ id, visible, remove }) => {
-	const { data, isLoading, error } = useDeadHost(id);
+	const { data, isPending, error } = useDeadHost(id);
 	const { mutate: setDeadHost } = useSetDeadHost();
 	const { data: allDeadHosts } = useDeadHosts();
 	const suggestions = useDirectorySuggestions(allDeadHosts);
@@ -34,7 +34,7 @@ const DeadHostModal = EasyModal.create(({ id, visible, remove }) => {
 		setIsSubmitting(true);
 		setErrorMsg(null);
 
-		const { ...payload } = {
+		const payload = {
 			id: id === "new" ? undefined : id,
 			...values,
 		};
@@ -66,13 +66,13 @@ const DeadHostModal = EasyModal.create(({ id, visible, remove }) => {
 
 	return (
 		<Modal show={visible} onHide={remove}>
-			{!isLoading && error && (
+			{error && (
 				<Alert variant="danger" className="m-3">
-					{error?.message || "Unknown error"}
+					{error?.message}
 				</Alert>
 			)}
-			{isLoading && <Loading noLogo />}
-			{!isLoading && data && (
+			{isPending && <Loading noLogo />}
+			{data && (
 				<Formik
 					initialValues={{
 						domainNames: data?.domainNames,
@@ -82,9 +82,9 @@ const DeadHostModal = EasyModal.create(({ id, visible, remove }) => {
 						npmplusHttp3Support: data?.npmplusHttp3Support,
 						hstsEnabled: data?.hstsEnabled,
 						hstsSubdomains: data?.hstsSubdomains,
-						npmplusDirectory: data?.npmplusDirectory || "",
-						npmplusMtlsCertificateId: data?.npmplusMtlsCertificateId || 0,
-						npmplusMtlsVerifyClientOptional: data?.npmplusMtlsVerifyClientOptional || false,
+						npmplusDirectory: data?.npmplusDirectory,
+						npmplusMtlsCertificateId: data?.npmplusMtlsCertificateId,
+						npmplusMtlsVerifyClientOptional: data?.npmplusMtlsVerifyClientOptional,
 					}}
 					onSubmit={onSubmit}
 				>
@@ -96,12 +96,7 @@ const DeadHostModal = EasyModal.create(({ id, visible, remove }) => {
 								</Modal.Title>
 							</Modal.Header>
 							<Modal.Body className="p-0">
-								<Alert
-									variant="danger"
-									show={Boolean(errorMsg)}
-									onClose={() => setErrorMsg(null)}
-									dismissible
-								>
+								<Alert variant="danger" show={errorMsg} onClose={() => setErrorMsg(null)} dismissible>
 									{errorMsg}
 								</Alert>
 								<div className="card m-0 border-0">

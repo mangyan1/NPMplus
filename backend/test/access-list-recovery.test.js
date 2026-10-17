@@ -11,6 +11,7 @@ import { migrateUp } from "../migrate.js";
 import AccessList from "../models/access_list.js";
 import AccessListAuth from "../models/access_list_auth.js";
 import AccessListClient from "../models/access_list_client.js";
+import Location from "../models/location.js";
 import ProxyHost from "../models/proxy_host.js";
 
 await migrateUp();
@@ -142,11 +143,24 @@ const attach = async (list) => {
 			},
 		],
 	});
+	const location = await Location.query().insertAndFetch({
+		proxy_host_id: host.id,
+		path: "/private",
+		forward_scheme: "http",
+		forward_host: "127.0.0.1",
+		forward_port: 8080,
+		npmplus_access_list_type: "custom",
+	});
+	host.locations = [location];
 	await db()("npmplus_proxy_host_access_list").insert([
-		{ proxy_host_id: host.id, access_list_id: list.id },
-		{ proxy_host_id: host.id, access_list_id: second.id },
+		{ proxy_host_id: host.id, location_id: 0, access_list_id: list.id, position: 0 },
+		{ proxy_host_id: host.id, location_id: 0, access_list_id: second.id, position: 1 },
+		{ proxy_host_id: host.id, location_id: location.id, access_list_id: list.id, position: 0 },
+		{ proxy_host_id: host.id, location_id: location.id, access_list_id: second.id, position: 1 },
 	]);
-	const expanded = await ProxyHost.query().findById(host.id).withGraphFetched("[access_lists.[items,clients]]");
+	const expanded = await ProxyHost.query()
+		.findById(host.id)
+		.withGraphFetched("[access_lists.[items,clients],locations.access_lists.[items,clients]]");
 	await proxyAccess.populateLocationAccessLists(expanded);
 	await internalAccessList.build(await internalAccessList.get(access, { id: list.id, expand: ["items", "clients"] }));
 	await proxyAccess.build("proxy_host", expanded);
@@ -161,7 +175,7 @@ for (const phase of ["generate", "validate", "reload", "audit"]) {
 		const files = [
 			internalAccessList.getFilename(list),
 			`/data/access/host-${host.id}`,
-			`/data/access/host-${host.id}-location-1`,
+			`/data/access/host-${host.id}-location-${host.locations[0].id}`,
 			internalNginx.getConfigName("proxy_host", host.id),
 		];
 		const before = await Promise.all(files.map((filename) => readFile(filename, "utf8")));
@@ -207,7 +221,7 @@ test("a successful replacement updates attached host and custom-location files a
 	for (const filename of [
 		`/data/access/${list.id}`,
 		`/data/access/host-${host.id}`,
-		`/data/access/host-${host.id}-location-1`,
+		`/data/access/host-${host.id}-location-${host.locations[0].id}`,
 	])
 		assert.match(await readFile(filename, "utf8"), /^replacement:/m);
 	assert.equal((await ProxyHost.query().findById(host.id)).npmplus_nginx_online, true);
@@ -235,7 +249,7 @@ test("hosts attached after initial validation are included in failure recovery",
 			files = [
 				internalNginx.getConfigName("proxy_host", host.id),
 				`/data/access/host-${host.id}`,
-				`/data/access/host-${host.id}-location-1`,
+				`/data/access/host-${host.id}-location-${host.locations[0].id}`,
 			];
 			before = await Promise.all(files.map((filename) => readFile(filename, "utf8")));
 		}

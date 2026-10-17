@@ -7,7 +7,7 @@ import { Button, LoadingPage } from "src/components";
 import { useUser, useUsers } from "src/hooks";
 import { T } from "src/locale";
 import { showDeleteConfirmModal, showPermissionsModal, showSetPasswordModal, showUserModal } from "src/modals";
-import { showObjectSuccess } from "src/notifications";
+import { showError, showObjectSuccess } from "src/notifications";
 import Table from "./Table";
 
 export default function TableWrapper() {
@@ -17,7 +17,7 @@ export default function TableWrapper() {
 
 	useEffect(() => {
 		// this can happen if someone deletes the last item while searching
-		if (search !== "" && !data) {
+		if (search !== "" && !data?.length) {
 			setSearch("");
 		}
 	});
@@ -36,19 +36,21 @@ export default function TableWrapper() {
 	}
 
 	const handleDisableToggle = async (id, enabled) => {
-		await toggleUser(id, enabled);
-		await Promise.all([
-			queryClient.invalidateQueries({ queryKey: ["users"] }),
-			queryClient.invalidateQueries({ queryKey: ["user", id] }),
-		]);
-		showObjectSuccess("user", enabled ? "enabled" : "disabled");
+		try {
+			await toggleUser(id, enabled);
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: ["users"] }),
+				queryClient.invalidateQueries({ queryKey: ["user", id] }),
+			]);
+			showObjectSuccess("user", enabled ? "enabled" : "disabled");
+		} catch (err) {
+			showError(<T id={err.message} />);
+		}
 	};
 
 	let filtered = null;
-	if (search && data) {
-		filtered = data?.filter(
-			(item) => item.name.toLowerCase().includes(search) || item.email.toLowerCase().includes(search),
-		);
+	if (search) {
+		filtered = data?.filter((item) => item.name.toLowerCase().includes(search) || item.email.includes(search));
 	}
 
 	return (
@@ -87,7 +89,7 @@ export default function TableWrapper() {
 				</div>
 				<Table
 					data={filtered ?? data ?? []}
-					isFiltered={Boolean(search)}
+					isFiltered={search}
 					isFetching={isFetching}
 					currentUserId={currentUser?.id}
 					onEditUser={(id) => showUserModal(id)}

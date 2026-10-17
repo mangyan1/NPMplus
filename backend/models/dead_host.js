@@ -48,17 +48,9 @@ class DeadHost extends Model {
 		return super.$formatDatabaseJson(thisJson);
 	}
 
-	static get name() {
-		return "DeadHost";
-	}
+	static tableName = "dead_host";
 
-	static get tableName() {
-		return "dead_host";
-	}
-
-	static get jsonAttributes() {
-		return ["domain_names", "meta"];
-	}
+	static jsonAttributes = ["domain_names", "meta"];
 
 	static get relationMappings() {
 		return {
@@ -69,9 +61,6 @@ class DeadHost extends Model {
 					from: "dead_host.owner_user_id",
 					to: "user.id",
 				},
-				modify: (qb) => {
-					qb.where("user.is_deleted", 0);
-				},
 			},
 			certificate: {
 				relation: Model.HasOneRelation,
@@ -79,9 +68,6 @@ class DeadHost extends Model {
 				join: {
 					from: "dead_host.certificate_id",
 					to: "certificate.id",
-				},
-				modify: (qb) => {
-					qb.where("certificate.is_deleted", 0);
 				},
 			},
 		};

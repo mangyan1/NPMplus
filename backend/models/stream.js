@@ -44,17 +44,9 @@ class Stream extends Model {
 		return super.$formatDatabaseJson(thisJson);
 	}
 
-	static get name() {
-		return "Stream";
-	}
+	static tableName = "stream";
 
-	static get tableName() {
-		return "stream";
-	}
-
-	static get jsonAttributes() {
-		return ["meta"];
-	}
+	static jsonAttributes = ["meta"];
 
 	static get relationMappings() {
 		return {
@@ -65,9 +57,6 @@ class Stream extends Model {
 					from: "stream.owner_user_id",
 					to: "user.id",
 				},
-				modify: (qb) => {
-					qb.where("user.is_deleted", 0);
-				},
 			},
 			certificate: {
 				relation: Model.HasOneRelation,
@@ -75,9 +64,6 @@ class Stream extends Model {
 				join: {
 					from: "stream.certificate_id",
 					to: "certificate.id",
-				},
-				modify: (qb) => {
-					qb.where("certificate.is_deleted", 0);
 				},
 			},
 		};

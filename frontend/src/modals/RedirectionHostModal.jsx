@@ -23,7 +23,7 @@ const showRedirectionHostModal = (id) => {
 };
 
 const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
-	const { data, isLoading, error } = useRedirectionHost(id);
+	const { data, isPending, error } = useRedirectionHost(id);
 	const { mutate: setRedirectionHost } = useSetRedirectionHost();
 	const { data: allRedirectionHosts } = useRedirectionHosts();
 	const suggestions = useDirectorySuggestions(allRedirectionHosts);
@@ -35,7 +35,7 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 		setIsSubmitting(true);
 		setErrorMsg(null);
 
-		const { ...payload } = {
+		const payload = {
 			id: id === "new" ? undefined : id,
 			...values,
 		};
@@ -67,13 +67,13 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 
 	return (
 		<Modal show={visible} onHide={remove}>
-			{!isLoading && error && (
+			{error && (
 				<Alert variant="danger" className="m-3">
-					{error?.message || "Unknown error"}
+					{error?.message}
 				</Alert>
 			)}
-			{isLoading && <Loading noLogo />}
-			{!isLoading && data && (
+			{isPending && <Loading noLogo />}
+			{data && (
 				<Formik
 					initialValues={{
 						// Details tab
@@ -84,16 +84,16 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 						forwardHttpCode: data?.forwardHttpCode || 301,
 						preservePath: data?.preservePath || false,
 						// SSL tab
-						certificateId: data?.certificateId || 0,
-						sslForced: data?.sslForced || false,
-						npmplusHttp3Support: data?.npmplusHttp3Support || false,
-						hstsEnabled: data?.hstsEnabled || false,
-						hstsSubdomains: data?.hstsSubdomains || false,
+						certificateId: data?.certificateId,
+						sslForced: data?.sslForced,
+						npmplusHttp3Support: data?.npmplusHttp3Support,
+						hstsEnabled: data?.hstsEnabled,
+						hstsSubdomains: data?.hstsSubdomains,
 						// Advanced tab
-						advancedConfig: data?.advancedConfig || "",
-						npmplusDirectory: data?.npmplusDirectory || "",
-						npmplusMtlsCertificateId: data?.npmplusMtlsCertificateId || 0,
-						npmplusMtlsVerifyClientOptional: data?.npmplusMtlsVerifyClientOptional || false,
+						advancedConfig: data?.advancedConfig,
+						npmplusDirectory: data?.npmplusDirectory,
+						npmplusMtlsCertificateId: data?.npmplusMtlsCertificateId,
+						npmplusMtlsVerifyClientOptional: data?.npmplusMtlsVerifyClientOptional,
 					}}
 					onSubmit={onSubmit}
 				>
@@ -108,12 +108,7 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 								</Modal.Title>
 							</Modal.Header>
 							<Modal.Body className="p-0">
-								<Alert
-									variant="danger"
-									show={Boolean(errorMsg)}
-									onClose={() => setErrorMsg(null)}
-									dismissible
-								>
+								<Alert variant="danger" show={errorMsg} onClose={() => setErrorMsg(null)} dismissible>
 									{errorMsg}
 								</Alert>
 								<div className="card m-0 border-0">
@@ -211,8 +206,7 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 
 																	{form.errors.forwardDomainName ? (
 																		<div className="invalid-feedback">
-																			{form.errors.forwardDomainName &&
-																			form.touched.forwardDomainName
+																			{form.touched.forwardDomainName
 																				? form.errors.forwardDomainName
 																				: null}
 																		</div>

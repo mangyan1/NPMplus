@@ -5,11 +5,10 @@ import { useState } from "react";
 import { intl, T } from "src/locale";
 
 export function AccessClientFields({ initialValues, name = "clients" }) {
-	const initial = initialValues || [];
 	const [values, setValues] = useState(
-		initial.at(-1)?.address?.trim().toLowerCase() === "all"
-			? initial
-			: [...initial, { directive: "deny", address: "all" }],
+		initialValues.at(-1)?.address?.toLowerCase() === "all"
+			? initialValues
+			: [...initialValues, { directive: "deny", address: "all" }],
 	);
 	const { setFieldValue } = useFormikContext();
 
@@ -25,9 +24,6 @@ export function AccessClientFields({ initialValues, name = "clients" }) {
 
 	const handleRemove = (idx) => {
 		const newValues = values.toSpliced(idx, 1);
-		if (newValues.length === 1) {
-			newValues.splice(newValues.length - 1, 0, blankClient);
-		}
 		setValues(newValues);
 		setFormField(newValues);
 	};

@@ -16,14 +16,14 @@ const showAccessListModal = (id) => {
 };
 
 const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
-	const { data, isLoading, error } = useAccessList(id, ["items", "clients"]);
+	const { data, isPending, error } = useAccessList(id);
 	const { mutate: setAccessList } = useSetAccessList();
 	const [errorMsg, setErrorMsg] = useState(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const validate = (values) => {
 		// either Auths or Clients must be defined
-		if (values.items?.length === 0 && values.clients?.length === 0) {
+		if (values.items.length === 0 && values.clients.every((c) => c.address.trim().toLowerCase() === "all")) {
 			return intl.formatMessage({ id: "error.access.at-least-one" });
 		}
 
@@ -52,19 +52,19 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 		setIsSubmitting(true);
 		setErrorMsg(null);
 
-		const { ...payload } = {
+		const payload = {
 			id: id === "new" ? undefined : id,
 			...values,
 		};
 
 		// Filter out "items" to only use the "username" and "password" fields
-		payload.items = (values.items || []).map((i) => ({
+		payload.items = values.items.map((i) => ({
 			username: i.username,
 			password: i.password,
 		}));
 
 		// Filter out "clients" to only use the "directive" and "address" fields
-		payload.clients = (values.clients || []).map((i) => ({
+		payload.clients = values.clients.map((i) => ({
 			directive: i.directive,
 			address: i.address,
 		}));
@@ -87,20 +87,20 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 
 	return (
 		<Modal show={visible} onHide={remove}>
-			{!isLoading && error && (
+			{error && (
 				<Alert variant="danger" className="m-3">
-					{error?.message || "Unknown error"}
+					{error?.message}
 				</Alert>
 			)}
-			{isLoading && <Loading noLogo />}
-			{!isLoading && data && (
+			{isPending && <Loading noLogo />}
+			{data && (
 				<Formik
 					initialValues={{
 						name: data?.name,
 						satisfyAny: data?.satisfyAny,
 						passAuth: data?.passAuth,
-						items: data?.items || [],
-						clients: data?.clients || [],
+						items: data?.items,
+						clients: data?.clients,
 					}}
 					onSubmit={onSubmit}
 				>
@@ -112,12 +112,7 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 								</Modal.Title>
 							</Modal.Header>
 							<Modal.Body className="p-0">
-								<Alert
-									variant="danger"
-									show={Boolean(errorMsg)}
-									onClose={() => setErrorMsg(null)}
-									dismissible
-								>
+								<Alert variant="danger" show={errorMsg} onClose={() => setErrorMsg(null)} dismissible>
 									{errorMsg}
 								</Alert>
 								<div className="card m-0 border-0">
@@ -174,15 +169,13 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 																type="text"
 																required
 																autoComplete="off"
-																className="form-control"
+																className={`form-control ${form.errors.name && form.touched.name ? "is-invalid" : ""}`}
 																{...field}
 															/>
 
 															{form.errors.name ? (
 																<div className="invalid-feedback">
-																	{form.errors.name && form.touched.name
-																		? form.errors.name
-																		: null}
+																	{form.touched.name ? form.errors.name : null}
 																</div>
 															) : null}
 														</div>
@@ -261,10 +254,10 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 												</div>
 											</div>
 											<div className="tab-pane" id="tab-auth" role="tabpanel">
-												<BasicAuthFields initialValues={data?.items || []} />
+												<BasicAuthFields initialValues={data?.items} />
 											</div>
 											<div className="tab-pane" id="tab-rules" role="tabpanel">
-												<AccessClientFields initialValues={data?.clients || []} />
+												<AccessClientFields initialValues={data?.clients} />
 											</div>
 										</div>
 									</div>

@@ -22,7 +22,6 @@ function App() {
 							hideProgressBar={true}
 							newestOnTop={true}
 							closeOnClick={true}
-							rtl={document.dir === "rtl"}
 							closeButton={false}
 						/>
 					</AuthProvider>

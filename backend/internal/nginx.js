@@ -7,10 +7,10 @@ import utils from "../lib/utils.js";
 import { debug, nginx as logger } from "../logger.js";
 import internalProxyHostAccessList from "./proxy-host-access-list.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const controlApi = new Client("http://localhost", { connect: { socketPath: "/run/nginx-control.sock" } });
+const authRequestProviders = ["anubis", "tinyauth", "oauth2proxy", "voidauth", "authelia", "authentik"];
 
 const internalNginx = {
 	/**
@@ -109,7 +109,7 @@ const internalNginx = {
 		if (host_type === "default") {
 			return "/usr/local/nginx/conf/conf.d/default.conf";
 		}
-		return `/data/nginx/${internalNginx.getFileFriendlyHostType(host_type)}/${host_id}.conf`;
+		return `/data/nginx/${host_type}/${host_id}.conf`;
 	},
 
 	/**
@@ -135,8 +135,7 @@ const internalNginx = {
 			}
 
 			if (
-				location.forward_host &&
-				location.forward_host.indexOf("/") > -1 &&
+				location.forward_host?.includes("/") &&
 				!location.forward_host.startsWith("/") &&
 				!location.forward_host.startsWith("unix")
 			) {
@@ -176,8 +175,7 @@ const internalNginx = {
 
 		if (["http", "https", "grpc", "grpcs"].includes(host.forward_scheme)) {
 			if (
-				host.forward_host &&
-				host.forward_host.indexOf("/") > -1 &&
+				host.forward_host?.includes("/") &&
 				!host.forward_host.startsWith("/") &&
 				!host.forward_host.startsWith("unix")
 			) {
@@ -204,8 +202,7 @@ const internalNginx = {
 			}
 
 			if (
-				location.forward_host &&
-				location.forward_host.indexOf("/") > -1 &&
+				location.forward_host?.includes("/") &&
 				!location.forward_host.startsWith("/") &&
 				!location.forward_host.startsWith("unix")
 			) {
@@ -232,16 +229,15 @@ const internalNginx = {
 	 */
 	generateConfig: async (host_type, host_row) => {
 		// Prevent modifying the original object:
-		const host = JSON.parse(JSON.stringify(host_row));
-		const nice_host_type = internalNginx.getFileFriendlyHostType(host_type);
+		const host = structuredClone(host_row);
 
 		const renderEngine = utils.getRenderEngine();
 
-		const filename = internalNginx.getConfigName(nice_host_type, host.id);
+		const filename = internalNginx.getConfigName(host_type, host.id);
 
 		let template;
 		try {
-			template = await utils.getParsedTemplate(`${__dirname}/../templates/${nice_host_type}.conf`);
+			template = await utils.getParsedTemplate(`${__dirname}/../templates/${host_type}.conf`);
 		} catch (err) {
 			// a broken template load is a config problem the user must see, not a 500
 			throw new errs.ConfigurationError(err.message);
@@ -250,8 +246,7 @@ const internalNginx = {
 		host.env = process.env;
 
 		if (
-			host.forward_host &&
-			host.forward_host.indexOf("/") > -1 &&
+			host.forward_host?.includes("/") &&
 			!host.forward_host.startsWith("/") &&
 			!host.forward_host.startsWith("unix")
 		) {
@@ -267,14 +262,6 @@ const internalNginx = {
 			// note that there is access_lists -> an array in the correct order
 			// and access_list -> an object used in the config generation
 			// note the (s) in the former and lack thereof in the latter
-
-			// must be ordered by ID as the AccessList constructed is unordered, but for generation it must be.
-			// the IDs are retrieved in the correct order (specified in the UI) from the DB so they are used for the ordering
-			const hostAccessLists = Array.isArray(host.access_lists) ? host.access_lists : [];
-			host.access_lists = internalProxyHostAccessList.orderAccessListsByIds(
-				hostAccessLists,
-				host.npmplus_access_list_ids,
-			);
 			host.access_list = internalProxyHostAccessList.buildAclFile(host.access_lists);
 		}
 		const hostHtpasswdFileName = internalProxyHostAccessList.getHostFileName(host);
@@ -308,13 +295,6 @@ const internalNginx = {
 					// note that there is access_lists -> an array in the correct order
 					// and access_list -> an object used in the config generation
 					// note the (s) in the former and lack thereof in the latter
-
-					// must be ordered by ID as the AccessList constructed is unordered, but for generation it must be.
-					// the IDs are retrieved in the correct order (specified in the UI) from the DB so they are used for the ordering
-					location.access_lists = internalProxyHostAccessList.orderAccessListsByIds(
-						location.access_lists || [],
-						location.npmplus_access_list_ids,
-					);
 					location.access_list = internalProxyHostAccessList.buildAclFile(location.access_lists);
 				}
 
@@ -322,33 +302,18 @@ const internalNginx = {
 				if (htpasswdFileName.length > 0) {
 					location.filename = htpasswdFileName;
 				}
-				if (location.npmplus_auth_request === "anubis") {
-					host.create_anubis_locations = true;
-				}
-				if (location.npmplus_auth_request === "tinyauth") {
-					host.create_tinyauth_locations = true;
-				}
-				if (location.npmplus_auth_request === "oauth2proxy") {
-					host.create_oauth2proxy_locations = true;
-				}
-				if (location.npmplus_auth_request === "voidauth") {
-					host.create_voidauth_locations = true;
-				}
-				if (location.npmplus_auth_request === "authelia") {
-					host.create_authelia_locations = true;
-				}
-				if (
-					location.npmplus_auth_request === "authentik" ||
+				if (location.npmplus_enabled === false) continue;
+				const provider =
 					location.npmplus_auth_request === "authentik-send-basic-auth"
-				) {
-					host.create_authentik_locations = true;
-				}
+						? "authentik"
+						: location.npmplus_auth_request;
+				if (authRequestProviders.includes(provider)) host[`create_${provider}_locations`] = true;
 			}
 
 			const originalLocations = [...host.locations];
 			host.locations = await internalNginx.renderLocations(host);
 
-			for (const provider of ["anubis", "tinyauth", "oauth2proxy", "voidauth", "authelia", "authentik"]) {
+			for (const provider of authRequestProviders) {
 				let effectiveUpstream = "";
 
 				if (
@@ -360,6 +325,7 @@ const internalNginx = {
 				} else {
 					for (const location of originalLocations) {
 						if (
+							location.npmplus_enabled !== false &&
 							(location.npmplus_auth_request === provider ||
 								(provider === "authentik" &&
 									location.npmplus_auth_request === "authentik-send-basic-auth")) &&
@@ -393,22 +359,12 @@ const internalNginx = {
 	},
 
 	/**
-	 *
-	 * @param   {String} host_type
-	 * @returns String
-	 */
-	getFileFriendlyHostType: (host_type) => host_type.replace(/-/g, "_"),
-
-	/**
 	 * @param   {String}  host_type
 	 * @param   {Object}  [host]
 	 * @returns {Promise}
 	 */
 	deleteConfig: async (host_type, host) => {
-		const config_file = internalNginx.getConfigName(
-			internalNginx.getFileFriendlyHostType(host_type),
-			typeof host === "undefined" ? 0 : host.id,
-		);
+		const config_file = internalNginx.getConfigName(host_type, host?.id ?? 0);
 
 		await rm(config_file, { force: true });
 		await rm(`${config_file}.err`, { force: true });
@@ -420,28 +376,9 @@ const internalNginx = {
 	 * @returns {Promise}
 	 */
 	renameConfigAsError: async (host_type, host) => {
-		const config_file = internalNginx.getConfigName(
-			internalNginx.getFileFriendlyHostType(host_type),
-			typeof host === "undefined" ? 0 : host.id,
-		);
+		const config_file = internalNginx.getConfigName(host_type, host?.id ?? 0);
 
 		await rename(config_file, `${config_file}.err`);
-	},
-
-	/**
-	 * @param   {String}  hostType
-	 * @param   {Array}   hosts
-	 * @returns {Promise}
-	 */
-	bulkGenerateConfigs: async (model, hostType, hosts, { skipReload = false } = {}) => {
-		const results = [];
-
-		for (const host of hosts) {
-			const result = await internalNginx.configure(model, hostType, host, { skipReload });
-			results.push(result);
-		}
-
-		return results;
 	},
 };
 

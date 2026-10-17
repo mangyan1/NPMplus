@@ -8,18 +8,18 @@ import { getDirectory, useStreams } from "src/hooks";
 import { T } from "src/locale";
 import { showDeleteConfirmModal, showHelpModal, showStreamModal } from "src/modals";
 import { MANAGE, STREAMS } from "src/modules/Permissions";
-import { showObjectSuccess } from "src/notifications";
+import { showError, showObjectSuccess } from "src/notifications";
 import Table from "./Table";
 
 export default function TableWrapper() {
 	const queryClient = useQueryClient();
 	const [search, setSearch] = useState("");
-	const [sorting, setSorting] = useState([]);
+	const [sorting, setSorting] = useState([{ id: "enabled", desc: false }]);
 	const { isFetching, isLoading, isError, error, data } = useStreams(["owner", "certificate"]);
 
 	useEffect(() => {
 		// this can happen if someone deletes the last item while searching
-		if (search !== "" && !data) {
+		if (search !== "" && !data?.length) {
 			setSearch("");
 		}
 	});
@@ -37,23 +37,27 @@ export default function TableWrapper() {
 	}
 
 	const handleDisableToggle = async (id, enabled) => {
-		await toggleStream(id, enabled);
-		await Promise.all([
-			queryClient.invalidateQueries({ queryKey: ["streams"] }),
-			queryClient.invalidateQueries({ queryKey: ["stream", id] }),
-		]);
-		showObjectSuccess("stream", enabled ? "enabled" : "disabled");
+		try {
+			await toggleStream(id, enabled);
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: ["streams"] }),
+				queryClient.invalidateQueries({ queryKey: ["stream", id] }),
+			]);
+			showObjectSuccess("stream", enabled ? "enabled" : "disabled");
+		} catch (err) {
+			showError(<T id={err.message} />);
+		}
 	};
 
 	let filtered = null;
-	if (search && data) {
+	if (search) {
 		filtered = data?.filter((item) => {
 			const directory = getDirectory(item).toLowerCase();
 			return (
 				`${item.incomingPort}`.includes(search) ||
 				`${item.forwardingPort}`.includes(search) ||
-				item.forwardingHost.includes(search) ||
-				item.npmplusDescription?.toLowerCase().includes(search.toLowerCase()) ||
+				item.forwardingHost.toLowerCase().includes(search) ||
+				item.npmplusDescription?.toLowerCase().includes(search) ||
 				directory.includes(search)
 			);
 		});
@@ -63,7 +67,7 @@ export default function TableWrapper() {
 	const groupingActive = displayedStreams.some(getDirectory);
 
 	const sharedTableProps = {
-		isFiltered: Boolean(search),
+		isFiltered: search,
 		isFetching,
 		sorting,
 		onSortingChange: setSorting,
@@ -78,7 +82,9 @@ export default function TableWrapper() {
 				},
 				invalidations: [["streams"], ["stream", id]],
 				children: <T id="object.delete.content" tData={{ object: "stream" }} />,
-				subject: stream ? `${stream.incomingPort} → ${stream.forwardingHost}:${stream.forwardingPort}` : null,
+				subject: stream
+					? `${stream.incomingPort} → ${stream.forwardingHost}${stream.forwardingPort ? `:${stream.forwardingPort}` : ""}`
+					: null,
 				details: stream?.npmplusDescription,
 			});
 		},

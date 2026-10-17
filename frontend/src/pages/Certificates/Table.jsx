@@ -49,11 +49,16 @@ export default function Table({ data, isFetching, onDelete, onRenew, onDownload,
 	const columnHelper = createColumnHelper();
 	const columns = useMemo(
 		() => [
-			columnHelper.accessor((row) => row.owner.name, {
+			columnHelper.accessor((row) => row.owner?.name, {
 				id: "owner",
 				cell: (info) => {
 					const value = info.row.original.owner;
-					return <GravatarFormatter url={value ? value.avatar : ""} name={value ? value.name : ""} />;
+					return (
+						<GravatarFormatter
+							url={value ? value.avatar : ""}
+							name={value ? value.name : intl.formatMessage({ id: "user.deleted" })}
+						/>
+					);
 				},
 				meta: {
 					className: "w-1",
@@ -69,7 +74,7 @@ export default function Table({ data, isFetching, onDelete, onRenew, onDownload,
 							domains={value.domainNames}
 							createdOn={value.createdOn}
 							niceName={value.niceName}
-							provider={value.provider || ""}
+							provider={value.provider}
 						/>
 					);
 				},
@@ -82,7 +87,7 @@ export default function Table({ data, isFetching, onDelete, onRenew, onDownload,
 					cell: (info) => {
 						const r = info.row.original;
 						if (r.provider === "letsencrypt") {
-							if (r.npmplusDnsChallenge && r.npmplusDnsProvider) {
+							if (r.npmplusDnsChallenge) {
 								return (
 									<>
 										<T id="lets-encrypt" /> &ndash; {r.npmplusDnsProvider}
@@ -101,7 +106,7 @@ export default function Table({ data, isFetching, onDelete, onRenew, onDownload,
 			columnHelper.accessor((row) => row.expiresOn, {
 				id: "expiresOn",
 				header: intl.formatMessage({ id: "column.expires" }),
-				cell: (info) => <DateFormatter value={info.getValue()} highlightPast />,
+				cell: (info) => <DateFormatter value={info.getValue()} />,
 			}),
 			columnHelper.accessor(isInUse, {
 				id: "inUse",
@@ -110,10 +115,10 @@ export default function Table({ data, isFetching, onDelete, onRenew, onDownload,
 					const r = info.row.original;
 					return (
 						<CertificateInUseFormatter
-							proxyHosts={[...(r.proxyHosts || []), ...(r.mtlsProxyHosts || [])]}
-							redirectionHosts={[...(r.redirectionHosts || []), ...(r.mtlsRedirectionHosts || [])]}
-							deadHosts={[...(r.deadHosts || []), ...(r.mtlsDeadHosts || [])]}
-							streams={[...(r.streams || []), ...(r.mtlsStreams || [])]}
+							proxyHosts={[...r.proxyHosts, ...r.mtlsProxyHosts]}
+							redirectionHosts={[...r.redirectionHosts, ...r.mtlsRedirectionHosts]}
+							deadHosts={[...r.deadHosts, ...r.mtlsDeadHosts]}
+							streams={[...r.streams, ...r.mtlsStreams]}
 						/>
 					);
 				},
@@ -180,29 +185,29 @@ export default function Table({ data, isFetching, onDelete, onRenew, onDownload,
 									)}
 
 									{row.provider === "letsencrypt" && (
-										<>
-											<button
-												type="button"
-												className="dropdown-item"
-												onClick={() => {
-													onRenew?.(row.id);
-												}}
-											>
-												<IconRefresh size={16} />
-												<T id="action.renew" />
-											</button>
+										<button
+											type="button"
+											className="dropdown-item"
+											onClick={() => {
+												onRenew?.(row.id);
+											}}
+										>
+											<IconRefresh size={16} />
+											<T id="action.renew" />
+										</button>
+									)}
 
-											<button
-												type="button"
-												className="dropdown-item"
-												onClick={() => {
-													onDownload?.(row.id);
-												}}
-											>
-												<IconDownload size={16} />
-												<T id="action.download" />
-											</button>
-										</>
+									{row.provider === "letsencrypt" && (
+										<button
+											type="button"
+											className="dropdown-item"
+											onClick={() => {
+												onDownload?.(row.id);
+											}}
+										>
+											<IconDownload size={16} />
+											<T id="action.download" />
+										</button>
 									)}
 
 									{!inUse && (
