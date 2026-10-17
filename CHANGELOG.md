@@ -4,6 +4,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Adopt Anubis 1.28.1 with immutable source/runtime pins and the patched Go networking dependencies. Build its optional WASM and JavaScript fallback assets with pinned Rust tooling, preserve upstream challenge defaults, and verify the embedded baseline/SIMD assets alongside the existing non-root, honeypot and restart contracts. This satisfies the daily scanner's latest-stable compatibility guard and includes upstream's reverse-DNS verification fix.
+
 - Reconcile upstream through October 16: migrate custom locations and their ordered access lists into relational storage, adopt host hard-deletion and mTLS auth-request controls, and update navigation and translations. Keep the fork's session revocation, replay protection, ACL rollback, bounded fetches, setup gate, certificate pipeline, and reviewed dependency versions. Adapt Anubis coverage and ACL recovery to the new relations, with a populated-database upgrade and snapshot regression test. Template version 23 regenerates existing nginx configurations. Database rollback requires restoring the matching pre-upgrade snapshot.
 
 - Refresh nginx to 1.31.7 with matching OpenResty patches and njs 1.0.2. Update the Caddy, CrowdSec, and Anubis security builds to Go 1.26.9 and patched networking dependencies; update CrowdSec's OpenAPI parser and Caddy to 2.11.7. Override vulnerable proxy-addr and source-map-js transitive dependencies. Reassess the pinned pip vendor inventory and scope the remaining packaging-tool exceptions to exact package versions until October 23, preserving runtime Certbot DNS-plugin installation.

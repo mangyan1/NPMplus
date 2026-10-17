@@ -75,7 +75,7 @@ honeypot:
                    "--security-opt", "no-new-privileges", "--tmpfs", "/tmp",
                    "--mount", f"type=volume,source={volume},target=/data",
                    "--mount", f"type=bind,source={policy_path.resolve()},target=/policy.yaml,readonly",
-                   "-e", "HS512_SECRET=npmplus-synthetic-smoke-key-only-20261002",
+                   "-e", "HS512_SECRET=" + "smoke-test-only!" * 4,
                    "-e", "REDIRECT_DOMAINS=example.test",
                    "-p", "127.0.0.1::8923", "-p", "127.0.0.1::9090", image,
                    "--target=", "--policy-fname=/policy.yaml")
@@ -103,6 +103,12 @@ honeypot:
             assert status == 401 and b"anubis" in html.lower(), "challenge page missing"
             status, asset = request(base, "/.within.website/x/cmd/anubis/static/js/main.mjs")
             assert status == 200 and asset, "embedded challenge JavaScript missing"
+            for variant in ["baseline", "simd128"]:
+                for algorithm in ["sha256", "argon2id", "hashx"]:
+                    status, asset = request(base, f"/.within.website/x/cmd/anubis/static/wasm/{variant}/{algorithm}.wasm")
+                    assert status == 200 and asset.startswith(b"\x00asm"), f"missing {variant} {algorithm} WASM asset"
+            status, asset = request(base, "/.within.website/x/cmd/anubis/static/js/worker/wasm2js.mjs")
+            assert status == 200 and asset, "embedded JavaScript WASM fallback worker missing"
             assert request(metrics, "/metrics")[0] == 200, "Prometheus listener missing"
             print("PASS allow/deny/challenge, embedded assets, metrics", flush=True)
             assert request(base, "/.within.website/x/cmd/anubis/api/honeypot/smoke/init")[0] == 200
