@@ -1,19 +1,24 @@
-# Packaging-tool exceptions; reviewed on 2026-10-04, all expire 2026-10-11.
-# Scanned with Trivy 0.74.0 on 2026-10-04: ghcr.io/mangyan1/npmplus@sha256:e9e90bc214ff757290e4b929f68ea12bc2afc724bb0efc7ae6abb9c08a601bff
+# Packaging-tool exceptions; reviewed on 2026-10-16, all expire 2026-10-23.
+# Re-scanned with Trivy 0.74.0; Python imports and pip's vendor manifest verified:
+# ghcr.io/mangyan1/npmplus@sha256:87f65d1c9297c87d6b6eed6b740266d1835f643b5303da33a77956bd0c49fd06
 vulnerabilities:
   - id: CVE-2025-47273
-    expired_at: 2026-10-11
-    statement: "Rechecked 2026-10-04: setuptools 70.3.0 metadata finding persists, but no installed setuptools distribution is listed by Python; pip 26.2.1 is still the latest release. Keep upstream-compatible Certbot runtime plugin support; reassess with the next pip image update."
+    purls:
+      - pkg:pypi/setuptools@70.3.0
+    expired_at: 2026-10-23
+    statement: "Rechecked 2026-10-16: pip 26.2.1's vendor manifest lists setuptools 70.3.0, while importlib.metadata finds no installed setuptools distribution. PyPI still reports pip 26.2.1 as latest. This is a bundled packaging-tool inventory finding, not proof of an importable vulnerable setuptools runtime. Preserve Certbot DNS-plugin installation and reassess the vendor manifest with the next pip release or by expiry."
   - id: GHSA-6v7p-g79w-8964
-    expired_at: 2026-10-11
-    statement: "Rechecked 2026-10-04: pip 26.2.1 vendors msgpack 1.1.2; scanner lists 1.2.1 as fixed; pip 26.2.1 is still the latest release. Runtime Certbot plugin installation remains intentional; await a reviewed pip vendor update rather than modifying its bundled modules."
+    purls:
+      - pkg:pypi/msgpack@1.1.2
+    expired_at: 2026-10-23
+    statement: "Rechecked 2026-10-16: importing pip._vendor.msgpack confirms 1.1.2; the scanner lists 1.2.1 as fixed. PyPI still reports pip 26.2.1 as latest. The packaging cache remains an accepted risk, not universally unreachable. Keep runtime Certbot DNS-plugin installation; await a reviewed pip vendor update rather than modifying bundled modules, and reassess by expiry."
   - id: CVE-2026-97687
     purls:
       - pkg:pypi/urllib3@2.7.0
-    expired_at: 2026-10-11
-    statement: "Rechecked 2026-10-04: pip 26.2.1 is still the latest release and still embeds urllib3 2.7.0 in its vendor bundle/SBOM; the separately installed Certbot urllib3 remains pinned to patched 2.8.0 and pip check passes. Accept the remaining packaging-tool HTTPS-proxy TLS risk temporarily under the owner decision preserving runtime DNS-plugin installation; not universally unreachable. Await a fixed pip release, retain suppressed findings in artifacts, and reassess by expiry. Advisory: https://github.com/advisories/GHSA-8988-9cw3-xx77"
+    expired_at: 2026-10-23
+    statement: "Rechecked 2026-10-16: imports confirm pip._vendor.urllib3 2.7.0 and separate Certbot urllib3 2.8.0. PyPI still reports pip 26.2.1 as latest. Accept the packaging-tool HTTPS-proxy TLS risk temporarily under the owner decision preserving runtime DNS-plugin installation; not universally unreachable. Retain suppressed findings in artifacts and reassess by expiry. Advisory: https://github.com/advisories/GHSA-8988-9cw3-xx77"
   - id: CVE-2026-97689
     purls:
       - pkg:pypi/urllib3@2.7.0
-    expired_at: 2026-10-11
-    statement: "Rechecked 2026-10-04: pip 26.2.1 is still the latest release and still embeds urllib3 2.7.0; installed Certbot urllib3 is patched at 2.8.0. Malicious chunked responses during pip downloads remain a packaging-tool availability risk, not a false positive. Keep runtime DNS-plugin installation per the owner decision, do not modify pip's bundled modules, retain suppressed findings in artifacts, and reassess by expiry. Advisory: https://github.com/advisories/GHSA-vxq7-64xx-v4gw"
+    expired_at: 2026-10-23
+    statement: "Rechecked 2026-10-16: imports confirm pip._vendor.urllib3 2.7.0 and separate Certbot urllib3 2.8.0; pip 26.2.1 remains latest on PyPI. Malicious chunked responses during pip downloads remain an accepted packaging-tool availability risk, not a false positive. Preserve runtime DNS-plugin installation, do not modify bundled modules, retain suppressed findings in artifacts, and reassess by expiry. Advisory: https://github.com/advisories/GHSA-vxq7-64xx-v4gw"

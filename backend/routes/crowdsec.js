@@ -168,7 +168,7 @@ router
 		});
 		return res.status(202).send(await crsControl.enable());
 	})
-	.delete(crsControlLimit, async (req, res) => {
+	.delete(crsControlLimit, async (_req, res) => {
 		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
 		// Persist intent before asking the host to change its configuration.
 		await internalAuditLog.add(res.locals.access, {
