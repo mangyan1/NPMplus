@@ -16,7 +16,8 @@ RUN apk upgrade --no-cache -a && \
 	/usr/bin/caddy version
 
 FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
-RUN apk upgrade --no-cache -a && apk add --no-cache tzdata
+# CVE-2026-85091: invalidate older runtime layers and require the patched zlib.
+RUN apk upgrade --no-cache -a && apk add --no-cache tzdata "zlib>=1.3.2-r1"
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 COPY Caddyfile /etc/caddy/Caddyfile
 RUN caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
