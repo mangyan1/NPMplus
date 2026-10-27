@@ -2,9 +2,9 @@
 
 This build retains CrowdSec v1.8.1 at its immutable release commit and the official
 image's entrypoint, staged configuration, detection agent, LAPI, AppSec and every
-notification plugin. It rebuilds with Go 1.26.8, gRPC 1.83.2 and x/crypto 0.56.0,
-updates Alpine packages, and separately rebuilds yq 4.50.1 with x/net 0.58.0 and
-x/text 0.41.0. Native RE2 and upstream's static SQLite implementation stay enabled.
+notification plugin. It rebuilds with Go 1.26.10, gRPC 1.83.2 and x/crypto 0.57.0,
+updates Alpine packages, and separately rebuilds yq 4.50.1 with x/net 0.60.0 and
+x/text 0.42.0. Native RE2 and upstream's static SQLite implementation stay enabled.
 The MIT license is included in the image.
 
 The old pgx/v4 driver uses end-of-life pgproto3/v2, which has no patched release.
