@@ -7,6 +7,7 @@ import re
 import signal
 import ssl
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
@@ -21,6 +22,24 @@ WRAPPER = "/usr/local/bin/npmplus-safe-update"
 BACKUP = Path("/var/backups/npmplus-last-good")
 context = ssl._create_unverified_context()
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
+
+
+def show_failure(kind, error, traceback):
+    # Only disposable CI hosts can reach this driver. Retain the controller's
+    # real error even when SIGHUP moved its output away from the original log.
+    directories = sorted(Path("/var/log").glob("npmplus-update.*"), key=lambda p: p.stat().st_mtime)
+    for directory in directories[-2:]:
+        for name in ["progress.log", "controller.log", "recovery.log", "disconnected.log"]:
+            path = directory / name
+            if path.is_file():
+                print(f"--- {path} ---\n{path.read_text(errors='replace')[-30000:]}", flush=True)
+    subprocess.run(["systemctl", "list-jobs", "--no-pager"], check=False)
+    subprocess.run(["journalctl", "-u", "npmplus-public.service", "-u", "crowdsec-firewall-bouncer.service",
+                    "-u", "npmplus-cloudflare-origin-lock.service", "-u", "docker.service", "--since", "10 minutes ago", "-n", "150", "--no-pager"], check=False)
+    sys.__excepthook__(kind, error, traceback)
+
+
+sys.excepthook = show_failure
 
 
 def run(*args):
@@ -64,6 +83,8 @@ with tempfile.TemporaryDirectory(prefix="npmplus-recovery-drill-") as directory:
     for label, interrupt in [("ctrl-c", signal.SIGINT), ("disconnect", signal.SIGHUP), ("terminate", signal.SIGTERM), ("timeout", None)]:
         healthy()
         compose_before, setup_before = digest(COMPOSE), digest(SETUP)
+        docker_invocation = run("systemctl", "show", "docker.service", "--property=InvocationID", "--value").strip()
+        assert docker_invocation, "Docker has no active invocation"
         marker = root / f"{label}.started"
         candidate = root / f"{label}.sh"
         candidate.write_text(f'''#!/bin/bash
@@ -104,4 +125,5 @@ printf 'late-writer' >/opt/npmplus/npmplus/database.sqlite
         assert digest(COMPOSE) == compose_before
         assert digest(SETUP) == setup_before
         healthy()
+        assert run("systemctl", "show", "docker.service", "--property=InvocationID", "--value").strip() == docker_invocation, "rollback restarted the shared Docker daemon"
         print(f"PASS real {label} restores database, image/configuration and protected healthy services", flush=True)
