@@ -201,7 +201,9 @@ const regenerateAllHosts = async () => {
 				}),
 			);
 
-			await internalNginx.bulkGenerateConfigs(proxyModel, "proxy_host", updatedProxyHosts, { skipReload: true });
+			for (const host of updatedProxyHosts) {
+				await internalNginx.configure(proxyModel, "proxy_host", host, { skipReload: true });
+			}
 		}
 
 		const redirectionHosts = await redirectionModel
@@ -211,9 +213,9 @@ const regenerateAllHosts = async () => {
 			.withGraphFetched("certificate");
 
 		if (redirectionHosts?.length > 0) {
-			await internalNginx.bulkGenerateConfigs(redirectionModel, "redirection_host", redirectionHosts, {
-				skipReload: true,
-			});
+			for (const host of redirectionHosts) {
+				await internalNginx.configure(redirectionModel, "redirection_host", host, { skipReload: true });
+			}
 		}
 
 		const deadHosts = await deadModel
@@ -223,7 +225,9 @@ const regenerateAllHosts = async () => {
 			.withGraphFetched("certificate");
 
 		if (deadHosts?.length > 0) {
-			await internalNginx.bulkGenerateConfigs(deadModel, "dead_host", deadHosts, { skipReload: true });
+			for (const host of deadHosts) {
+				await internalNginx.configure(deadModel, "dead_host", host, { skipReload: true });
+			}
 		}
 
 		const streamHosts = await streamModel
@@ -233,7 +237,9 @@ const regenerateAllHosts = async () => {
 			.withGraphFetched("certificate");
 
 		if (streamHosts?.length > 0) {
-			await internalNginx.bulkGenerateConfigs(streamModel, "stream", streamHosts, { skipReload: true });
+			for (const host of streamHosts) {
+				await internalNginx.configure(streamModel, "stream", host, { skipReload: true });
+			}
 		}
 
 		await utils.writeHash();
