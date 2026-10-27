@@ -1223,6 +1223,11 @@ test("delegated proxy CRUD cannot publish local sockets or named upstreams", asy
 });
 
 test("access-list usernames reject record delimiters and preserve ordinary credentials", async () => {
+	const oversizedPassword = await api("POST", "/api/nginx/access-lists", {
+		cookie: adminCookie,
+		body: { name: "oversized-password", items: [{ username: "valid-user", password: "é".repeat(40) }] },
+	});
+	assert.equal(oversizedPassword.status, 400, "the bcrypt limit is 72 bytes, not 72 characters");
 	for (const username of [
 		"user:injected",
 		"user\ninjected",
@@ -1242,6 +1247,11 @@ test("access-list usernames reject record delimiters and preserve ordinary crede
 		body: { name: "valid-user", items: [{ username: "valid.user@example.com", password: "test-password" }] },
 	});
 	assert.equal(created.status, 201, created.text);
+	const oversizedUpdate = await api("PUT", `/api/nginx/access-lists/${created.body.id}`, {
+		cookie: adminCookie,
+		body: { items: [{ username: "valid.user@example.com", password: "é".repeat(40) }] },
+	});
+	assert.equal(oversizedUpdate.status, 400, "updates must also reject passwords over 72 bytes");
 	const updated = await api("PUT", `/api/nginx/access-lists/${created.body.id}`, {
 		cookie: adminCookie,
 		body: { items: [{ username: "bad:record", password: "test-password" }] },

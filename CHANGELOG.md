@@ -10,6 +10,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 - Reconcile upstream through October 26: update nginx to 1.31.8, Alpine to 3.24.3, compression modules and the CrowdSec Lua bouncer; adopt native GeoIP, regex-location quoting, stricter host validation, mTLS HTTPS enforcement, UTC timestamps, table pagination and searchable paginated audit history. Preserve the fork's Node 24 SQLite runtime, database-backed authentication, ACL rollback, deny-all policies and pinned-pip DNS-01 pipeline. Existing GeoIP2 configurations need the migration described in ADVANCED.md; database rollback requires the safe updater's matching snapshot.
 
+- Keep audit details accessible on narrow phones and preserve filtered empty states. Adopt native access-password validation and enforce bcrypt's 72-byte limit on the server; correct the upstream client-rule pattern so ordinary hostnames containing the letter l remain valid. Existing masked credentials and explicit deny-all policies remain supported.
+
 - Add regression coverage for bounded audit pagination, non-UTC database upgrades and sessions surviving container restarts with a persistent cookie-signing secret. Update the pinned pip and Certbot versions while retaining runtime DNS-plugin installation; document the reviewed upstream integration boundaries in FORK.md.
 
 - Update mature Express and Undici versions and constrain older Undici 8 transitive clients. Reject compressed API request bodies before decompression to mitigate the parser advisory while its patch ages through the npm quarantine; scope the temporary parser/upload exceptions to exact versions through October 30. Reassess the unchanged pip-vendored packaging findings through November 2; raw scans retain all findings.

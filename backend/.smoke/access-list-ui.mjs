@@ -58,9 +58,19 @@ try {
 	await dialog.getByRole("tab", { name: "Authorizations", exact: true }).click();
 	await dialog.locator('#tab-auth input[type="text"]').fill("renamed");
 	await dialog.getByRole("button", { name: "Save", exact: true }).click();
-	await dialog.getByText(message, { exact: true }).waitFor();
+	assert.ok(
+		await dialog
+			.locator('#tab-auth input[type="password"]')
+			.evaluate((input) => input.required && input.validity.valueMissing && input.validationMessage.length > 0),
+	);
 	assert.equal(writes, 0, "blank-password rename must be rejected before the API request");
 	await page.screenshot({ path: "backend/.smoke/security-access-list-validation.png", animations: "disabled" });
+	await dialog.getByRole("tab", { name: "Rules", exact: true }).click();
+	const clientAddress = dialog.locator('#tab-rules input[name="clients[0].address"]');
+	await clientAddress.fill("allowed.example.test");
+	assert.ok(await clientAddress.evaluate((input) => input.validity.valid), "ordinary hostnames may contain l");
+	await clientAddress.fill("");
+	await dialog.getByRole("tab", { name: "Authorizations", exact: true }).click();
 	await dialog.locator('#tab-auth input[type="text"]').fill("original");
 	const unchanged = page.waitForResponse(
 		(response) =>
