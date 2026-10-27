@@ -25,7 +25,10 @@ RUN git init && git remote add origin https://github.com/TecharoHQ/anubis.git &&
 RUN go get "golang.org/x/text@$X_TEXT_VERSION" "google.golang.org/grpc@$GRPC_VERSION" \
 	"cel.dev/cel-go@$CEL_GO_VERSION" "golang.org/x/net@$X_NET_VERSION" && go mod verify
 RUN npm ci --ignore-scripts && npm run assets
-RUN cargo test --workspace --locked && SKIP_INTEGRATION=1 go test ./... && go vet ./...
+COPY geoip-fixture.patch /tmp/geoip-fixture.patch
+RUN git apply --check /tmp/geoip-fixture.patch && git apply /tmp/geoip-fixture.patch
+RUN cargo test --workspace --locked && SKIP_INTEGRATION=1 go test ./... && \
+	SKIP_INTEGRATION=1 go test ./lib/geoip -run '^TestUpdate$' -count 100 && go vet ./...
 RUN CGO_ENABLED=0 go build -mod=readonly -trimpath \
 	-ldflags "-s -w -X github.com/TecharoHQ/anubis.Version=$ANUBIS_VERSION" \
 	-o /out/anubis ./cmd/anubis
