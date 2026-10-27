@@ -69,7 +69,12 @@ export default function TableWrapper() {
 					</div>
 				</div>
 				<Pagination top {...paginationProps} />
-				<Table data={data.results} isFetching={isFetching} onSelectItem={showEventDetailsModal} />
+				<Table
+					data={data.results}
+					isFetching={isFetching}
+					search={search}
+					onSelectItem={showEventDetailsModal}
+				/>
 				<Pagination {...paginationProps} />
 			</div>
 		</div>

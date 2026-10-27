@@ -1,3 +1,4 @@
+import { IconEye } from "@tabler/icons-react";
 import {
 	createColumnHelper,
 	createSortedRowModel,
@@ -52,13 +53,17 @@ export default function Table({ data, isFetching, search, onSelectItem }) {
 				cell: (info) => (
 					<button
 						type="button"
+						aria-label={intl.formatMessage({ id: "action.view-details" })}
 						className="btn btn-action btn-sm px-1"
 						onClick={(e) => {
 							e.preventDefault();
 							onSelectItem?.(info.row.original.id);
 						}}
 					>
-						<T id="action.view-details" />
+						<IconEye size={18} className="d-sm-none" aria-hidden="true" />
+						<span className="d-none d-sm-inline">
+							<T id="action.view-details" />
+						</span>
 					</button>
 				),
 				meta: {

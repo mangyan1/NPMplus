@@ -6,7 +6,7 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 - Refresh the verified Packagecloud CrowdSec repository-helper checksum after reviewing its apt-lock retry and OS-validation changes. Installer v1.70 retains checksum enforcement; an unexpected helper still fails closed before execution.
 
-- Rebuild Caddy with digest-pinned Go 1.26.10 to include the crypto/x509 intermediate-certificate distrust fix. Keep the source dependency checks, upstream HTTP tests and candidate-image vulnerability gate enabled.
+- Rebuild Caddy with digest-pinned Go 1.26.10 to include the crypto/x509 intermediate-certificate distrust fix and a targeted chi 5.4.0 replacement for its client-IP middleware advisory. Keep the source dependency checks, upstream HTTP tests and candidate-image vulnerability gate enabled.
 
 - Reconcile upstream through October 26: update nginx to 1.31.8, Alpine to 3.24.3, compression modules and the CrowdSec Lua bouncer; adopt native GeoIP, regex-location quoting, stricter host validation, mTLS HTTPS enforcement, UTC timestamps, table pagination and searchable paginated audit history. Preserve the fork's Node 24 SQLite runtime, database-backed authentication, ACL rollback, deny-all policies and pinned-pip DNS-01 pipeline. Existing GeoIP2 configurations need the migration described in ADVANCED.md; database rollback requires the safe updater's matching snapshot.
 

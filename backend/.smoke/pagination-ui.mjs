@@ -93,6 +93,16 @@ try {
 			}),
 		);
 		assert.ok(boxes.length === 2 && boxes.every((box) => box.left >= 0 && box.right <= width));
+		const actions = await page.getByRole("button", { name: "View Details", exact: true }).evaluateAll((buttons) =>
+			buttons.map((button) => {
+				const box = button.getBoundingClientRect();
+				return { left: box.left, right: box.right };
+			}),
+		);
+		assert.ok(
+			actions.length === 25 && actions.every((box) => box.left >= 0 && box.right <= width),
+			`audit actions clip at ${width}px`,
+		);
 		await page.screenshot({ path: `backend/.smoke/security-pagination-${width}.png`, fullPage: true });
 	}
 	assert.deepEqual(errors, []);
