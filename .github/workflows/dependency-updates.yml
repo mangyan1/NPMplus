@@ -115,6 +115,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: update lua-cs-bouncer version
         id: update
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           LCSB_VER="$(
           git ls-remote --tags --refs https://github.com/crowdsecurity/lua-cs-bouncer \
@@ -125,12 +127,23 @@ jobs:
               | tail -1
           )"
           LCSB_SHA="$(git ls-remote https://github.com/crowdsecurity/lua-cs-bouncer "$LCSB_VER" "$LCSB_VER^{}" | tail -1 | cut -f1)"
+          CURRENT_LCSB_SHA="$(sed -n 's|^ARG LCSB_VER=\(.*\) #.*|\1|p' Dockerfile)"
+          if bash .github/scripts/check-forward-update.sh crowdsecurity/lua-cs-bouncer "$CURRENT_LCSB_SHA" "$LCSB_SHA"; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            compare_status=$?
+            if [ "$compare_status" -eq 1 ]; then
+              exit 0
+            fi
+            exit "$compare_status"
+          fi
           echo "compare=https://github.com/crowdsecurity/lua-cs-bouncer/compare/$(sed -n 's|^ARG LCSB_VER=\(.*\) #.*|\1|p' Dockerfile)...$LCSB_SHA" >> $GITHUB_OUTPUT
           sed -i "s|ARG LCSB_VER=.*|ARG LCSB_VER=$LCSB_SHA # $LCSB_VER|" Dockerfile
           sed -i "s|crowdsec-npmplus-bouncer/.*\"|crowdsec-npmplus-bouncer/$LCSB_VER\"|" rootfs/usr/local/nginx/conf/conf.d/crowdsec.conf.disabled
           echo "version=$LCSB_VER" >> $GITHUB_OUTPUT
           curl -sSfL https://raw.githubusercontent.com/crowdsecurity/lua-cs-bouncer/refs/tags/"$LCSB_VER"/config_example.conf -o rootfs/etc/crowdsec.conf.original
       - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        if: steps.update.outputs.available == 'true'
         with:
           token: ${{ github.token }}
           signoff: true
