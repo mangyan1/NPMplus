@@ -19,6 +19,8 @@ It runs the API privilege/replay checks, modal interactions, the CrowdSec dashbo
 The `security-browser` GitHub workflow builds the checked-out source and runs the same command on pushes and pull requests.
 The dashboard harness intercepts its APIs with synthetic observations, including attacker history, timeline ordering,
 event pagination, refresh failure, and desktop/390px/320px layouts. Backend tests separately verify those API contracts.
+The session-recovery harness seeds a stale browser login and verifies immediate login recovery for rejected or missing
+cookies, without reload loops. Genuine account permission denials and temporary outages preserve the session and allow Retry.
 
 Modal coverage includes user and permission saves, password setting, invalid forms, cancellation, deletion, certificate
 forms, and audit details. Only a synthetic certificate and its failed renewal response are intercepted: renewal starts as

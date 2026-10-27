@@ -70,6 +70,7 @@ try {
 	run("pagination-ui.mjs", api);
 	run("access-list-ui.mjs", api);
 	run("ui-driver.mjs", api);
+	run("session-recovery.mjs", api);
 	run("session-restart.mjs", api);
 	const setup = await start("setup", ["INITIAL_SETUP_TOKEN=local-security-setup-token-20260919-only"]);
 	run("security-ui.mjs", setup);

@@ -4,6 +4,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Return to login when an update leaves a rejected or missing admin session cookie. Validate saved browser sessions immediately, preserve genuine permission denials and temporary outage handling, and cover stale sessions in API and browser regressions.
+
 - Coordinate rollback with the firewall bouncer's startup gate before restoring CrowdSec data. Installer v1.72 stops independent container activation while the public guard is closed, and retains detailed controller errors when disconnected-host recovery drills fail.
 
 - Fix startup regeneration for existing proxy, redirect, dead and stream hosts after the upstream refactor. Add populated-database and real-container restart regressions so a healthy fresh installation cannot hide a broken upgrade path.

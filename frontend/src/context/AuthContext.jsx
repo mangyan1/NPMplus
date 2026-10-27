@@ -69,6 +69,10 @@ function AuthProvider({ children, tokenRefreshInterval = 5 * 60 * 1000 }) {
 			// clearing + reloading; a dead session must show the login form
 			// rather than burning the /tokens rate limit in a reload loop.
 			refresh(false).catch(() => {});
+		} else {
+			// localStorage only records an expiry, not proof that a session cookie
+			// survived an update. Check now rather than waiting five minutes.
+			refresh().catch(() => {});
 		}
 	}, [authenticated, totpChallenge]);
 
