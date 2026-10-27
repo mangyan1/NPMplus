@@ -76,8 +76,9 @@ try {
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.goto(`${base}/nginx/proxy`, { waitUntil: "networkidle" });
 	await page.getByRole("button", { name: /add proxy host/i }).click();
-	await page.locator("#domainNames").getByRole("combobox").fill("browser-audit.example.test");
-	await page.locator("#domainNames").getByRole("combobox").press("Enter");
+	const domainNames = page.getByLabel("Domain Names", { exact: true });
+	await domainNames.fill("browser-audit.example.test");
+	await domainNames.press("Enter");
 	await page.getByLabel(/^Forward Hostname \/ IP/).fill("127.0.0.1");
 	await page.getByLabel("Forward Port", { exact: true }).fill("81");
 	const saved = page.waitForResponse(
