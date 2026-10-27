@@ -28,6 +28,8 @@ const start = async (kind, env) => {
 		`type=volume,source=${volume},target=/data`,
 		"-e",
 		"TZ=UTC",
+		"-e",
+		"COOKIE_SECRET=local-security-cookie-signing-fixture",
 		...env.flatMap((value) => ["-e", value]),
 		image,
 	);
@@ -52,6 +54,7 @@ const run = (script, base) => {
 			SMOKE_ADMIN_EMAIL: "admin@example.test",
 			SMOKE_ADMIN_PASSWORD: "rc5-smoke-password",
 			SMOKE_SETUP_TOKEN: "local-security-setup-token-20260919-only",
+			SMOKE_CONTAINER: containers[0],
 		},
 		timeout: 180000,
 	});
@@ -64,8 +67,10 @@ try {
 	]);
 	run("security-regressions.mjs", api);
 	run("modal-ui.mjs", api);
+	run("pagination-ui.mjs", api);
 	run("access-list-ui.mjs", api);
 	run("ui-driver.mjs", api);
+	run("session-restart.mjs", api);
 	const setup = await start("setup", ["INITIAL_SETUP_TOKEN=local-security-setup-token-20260919-only"]);
 	run("security-ui.mjs", setup);
 	console.log("PASS Docker security and browser integration");

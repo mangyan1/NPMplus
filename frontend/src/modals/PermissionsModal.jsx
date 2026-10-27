@@ -1,4 +1,3 @@
-import { useQueryClient } from "@tanstack/react-query";
 import cn from "clsx";
 import { Field, Form, Formik } from "formik";
 import { useState } from "react";
@@ -10,13 +9,13 @@ import { useUser } from "src/hooks";
 import { T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
 import { isAdmin } from "src/modules/Permissions";
+import { showObjectSuccess } from "src/notifications";
 
 const showPermissionsModal = (id) => {
 	void EasyModal.show(PermissionsModal, { id });
 };
 
 const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
-	const queryClient = useQueryClient();
 	const [errorMsg, setErrorMsg] = useState(null);
 	const { data, isPending, error } = useUser(id);
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -27,11 +26,8 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 		setErrorMsg(null);
 		try {
 			await setPermissions(id, values);
+			showObjectSuccess("user", "updated");
 			remove();
-			await Promise.all([
-				queryClient.invalidateQueries({ queryKey: ["users"] }),
-				queryClient.invalidateQueries({ queryKey: ["user"] }),
-			]);
 		} catch (err) {
 			setErrorMsg(<T id={err.message} />);
 		}
@@ -87,7 +83,7 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 					<input
 						type="radio"
 						className="btn-check"
-						name="btn-radio-basic"
+						name={field.name}
 						id={`${field.name}-manage`}
 						autoComplete="off"
 						value="manage"
@@ -101,7 +97,7 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 					<input
 						type="radio"
 						className="btn-check"
-						name="btn-radio-basic"
+						name={field.name}
 						id={`${field.name}-view`}
 						autoComplete="off"
 						value="view"
@@ -115,7 +111,7 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 					<input
 						type="radio"
 						className="btn-check"
-						name="btn-radio-basic"
+						name={field.name}
 						id={`${field.name}-hidden`}
 						autoComplete="off"
 						value="hidden"
@@ -133,7 +129,7 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 	};
 
 	return (
-		<Modal show={visible} onHide={remove}>
+		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
 			{error && (
 				<Alert variant="danger" className="m-3">
 					{error?.message}
@@ -143,19 +139,19 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 			{data && (
 				<Formik
 					initialValues={{
-						visibility: data.permissions?.visibility,
-						accessLists: data.permissions?.accessLists,
-						certificates: data.permissions?.certificates,
-						deadHosts: data.permissions?.deadHosts,
-						proxyHosts: data.permissions?.proxyHosts,
-						redirectionHosts: data.permissions?.redirectionHosts,
-						streams: data.permissions?.streams,
+						visibility: data.permissions?.visibility ?? "user",
+						accessLists: data.permissions?.accessLists ?? "hidden",
+						certificates: data.permissions?.certificates ?? "hidden",
+						deadHosts: data.permissions?.deadHosts ?? "hidden",
+						proxyHosts: data.permissions?.proxyHosts ?? "hidden",
+						redirectionHosts: data.permissions?.redirectionHosts ?? "hidden",
+						streams: data.permissions?.streams ?? "hidden",
 					}}
 					onSubmit={onSubmit}
 				>
 					{() => (
 						<Form>
-							<Modal.Header closeButton>
+							<Modal.Header closeButton={!isSubmitting}>
 								<Modal.Title>
 									<T id="user.set-permissions" data={{ name: data?.name }} />
 								</Modal.Title>
@@ -174,7 +170,7 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 												<input
 													type="radio"
 													className="btn-check"
-													name="btn-radio-basic"
+													name={field.name}
 													id={`${field.name}-user`}
 													autoComplete="off"
 													value="user"
@@ -191,7 +187,7 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 												<input
 													type="radio"
 													className="btn-check"
-													name="btn-radio-basic"
+													name={field.name}
 													id={`${field.name}-all`}
 													autoComplete="off"
 													value="all"

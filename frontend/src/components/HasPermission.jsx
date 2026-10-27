@@ -12,13 +12,13 @@ function HasPermission({
 	pageLoading = false,
 	loadingNoLogo = false,
 }) {
-	const { data, isLoading } = useUser("me");
+	const { data, isPending } = useUser("me");
 
 	if (!section) {
 		return <>{children}</>;
 	}
 
-	if (isLoading) {
+	if (isPending) {
 		if (hideError) {
 			return null;
 		}

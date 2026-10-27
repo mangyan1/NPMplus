@@ -8,6 +8,7 @@ import { Button } from "src/components";
 import { intl, T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
 import { validateString } from "src/modules/Validations";
+import { showObjectSuccess } from "src/notifications";
 
 const showSetPasswordModal = (id) => {
 	void EasyModal.show(SetPasswordModal, { id });
@@ -20,9 +21,11 @@ const SetPasswordModal = EasyModal.create(({ id, visible, remove }) => {
 
 	const onSubmit = async (values, { setSubmitting }) => {
 		if (isSubmitting) return;
+		setIsSubmitting(true);
 		setError(null);
 		try {
 			await updateAuth(id, values.new);
+			showObjectSuccess("user", "updated");
 			remove();
 		} catch (err) {
 			setError(<T id={err.message} />);
@@ -32,7 +35,7 @@ const SetPasswordModal = EasyModal.create(({ id, visible, remove }) => {
 	};
 
 	return (
-		<Modal show={visible} onHide={remove}>
+		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
 			<Formik
 				initialValues={{
 					new: "",
@@ -41,7 +44,7 @@ const SetPasswordModal = EasyModal.create(({ id, visible, remove }) => {
 			>
 				{() => (
 					<Form>
-						<Modal.Header closeButton>
+						<Modal.Header closeButton={!isSubmitting}>
 							<Modal.Title>
 								<T id="user.set-password" />
 							</Modal.Title>
@@ -54,7 +57,7 @@ const SetPasswordModal = EasyModal.create(({ id, visible, remove }) => {
 								<T id="logout-other-devices" />
 							</Alert>
 							<div className="mb-3">
-								<Field name="new" validate={validateString(8, 100)}>
+								<Field name="new" validate={validateString(8, 255, false)}>
 									{({ field, form }) => (
 										<div className="input-group input-group-flat">
 											<div className="form-floating">

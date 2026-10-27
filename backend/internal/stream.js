@@ -1,5 +1,4 @@
 import errs from "../lib/error.js";
-import { castJsonIfNeed } from "../lib/helpers.js";
 import { assertPrivilegedNginxFields } from "../lib/nginx-privilege.js";
 import { global as logger } from "../logger.js";
 import streamModel from "../models/stream.js";
@@ -32,6 +31,34 @@ const validateIncomingPort = async (incomingPort, ownId) => {
 	}
 };
 
+const cleanStreamData = (data, existingData) => {
+	const combinedData = { ...existingData, ...data };
+
+	if (!combinedData.tcp_forwarding && !combinedData.udp_forwarding) {
+		throw new errs.ValidationError("TCP or UDP forwarding needs to be enabled");
+	}
+
+	if (combinedData.udp_forwarding) {
+		combinedData.npmplus_proxy_tls = false;
+		if (combinedData.npmplus_proxy_protocol_forwarding === 1) combinedData.npmplus_proxy_protocol_forwarding = 2;
+		combinedData.certificate_id = 0;
+	}
+
+	if (combinedData.certificate_id === "new" && !combinedData.npmplus_dns_challenge) {
+		throw new errs.ValidationError("New certificates for streams require the DNS challenge");
+	}
+
+	if (combinedData.certificate_id !== "new" && !(combinedData.certificate_id > 0)) {
+		combinedData.npmplus_mtls_certificate_id = 0;
+	}
+
+	if (!(combinedData.npmplus_mtls_certificate_id > 0)) {
+		combinedData.npmplus_mtls_verify_client_optional = false;
+	}
+
+	return combinedData;
+};
+
 const internalStream = {
 	/**
 	 * @param   {Access}  access
@@ -39,16 +66,16 @@ const internalStream = {
 	 * @returns {Promise}
 	 */
 	create: async (access, data) => {
-		const thisData = data;
+		const thisData = cleanStreamData(data);
 		const createCertificate = thisData.certificate_id === "new";
 
 		if (createCertificate) {
 			delete thisData.certificate_id;
-		} else if (Number(thisData.certificate_id) > 0) {
-			await internalCertificate.get(access, { id: thisData.certificate_id });
+		} else if (thisData.certificate_id > 0) {
+			await internalCertificate.get(access, { id: thisData.certificate_id, mtls: false });
 		}
-		if (Number(thisData.npmplus_mtls_certificate_id) > 0) {
-			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id });
+		if (thisData.npmplus_mtls_certificate_id > 0) {
+			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id, mtls: true });
 		}
 
 		access.can("streams:manage");
@@ -57,6 +84,10 @@ const internalStream = {
 		await validateIncomingPort(thisData.incoming_port);
 
 		thisData.owner_user_id = access.token.getUserId(1);
+
+		if (createCertificate) {
+			thisData.certificate_id = (await internalCertificate.createQuickCertificate(access, thisData)).id;
+		}
 
 		const createdRow = await streamModel.query().insertAndFetch(thisData);
 
@@ -73,14 +104,6 @@ const internalStream = {
 			});
 		};
 		try {
-			if (createCertificate) {
-				// update host with cert id
-				await streamModel
-					.query()
-					.where("id", createdRow.id)
-					.patch({ certificate_id: (await internalCertificate.createQuickCertificate(access, thisData)).id });
-			}
-
 			const row = await internalStream.get(access, {
 				id: createdRow.id,
 				expand: ["certificate"],
@@ -109,16 +132,18 @@ const internalStream = {
 	 * @return {Promise}
 	 */
 	update: async (access, data) => {
-		const thisData = data;
+		const existingRow = await internalStream.get(access, { id: data.id });
+
+		const thisData = cleanStreamData(data, existingRow);
 		const createCertificate = thisData.certificate_id === "new";
 
 		if (createCertificate) {
 			delete thisData.certificate_id;
-		} else if (Number(thisData.certificate_id) > 0) {
-			await internalCertificate.get(access, { id: thisData.certificate_id });
+		} else if (thisData.certificate_id > 0) {
+			await internalCertificate.get(access, { id: thisData.certificate_id, mtls: false });
 		}
-		if (Number(thisData.npmplus_mtls_certificate_id) > 0) {
-			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id });
+		if (thisData.npmplus_mtls_certificate_id > 0) {
+			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id, mtls: true });
 		}
 
 		access.can("streams:manage");
@@ -127,7 +152,6 @@ const internalStream = {
 			await validateIncomingPort(thisData.incoming_port, thisData.id);
 		}
 
-		const existingRow = await internalStream.get(access, { id: thisData.id });
 		if (existingRow.id !== thisData.id) {
 			// Sanity check that something crazy hasn't happened
 			throw new errs.InternalValidationError(
@@ -137,10 +161,7 @@ const internalStream = {
 		await assertPrivilegedNginxFields(access, thisData, existingRow);
 
 		if (createCertificate) {
-			const cert = await internalCertificate.createQuickCertificate(access, {
-				...thisData,
-				domain_names: thisData.domain_names || existingRow.domain_names,
-			});
+			const cert = await internalCertificate.createQuickCertificate(access, thisData);
 
 			// update host with cert id
 			thisData.certificate_id = cert.id;
@@ -363,10 +384,9 @@ const internalStream = {
 	 *
 	 * @param   {Access}  access
 	 * @param   {Array}   [expand]
-	 * @param   {String}  [searchQuery]
 	 * @returns {Promise}
 	 */
-	getAll: (access, expand, searchQuery) => {
+	getAll: (access, expand) => {
 		access.can("streams:view");
 
 		const query = streamModel
@@ -377,16 +397,6 @@ const internalStream = {
 
 		if (access.visibility !== "all") {
 			query.andWhere("owner_user_id", access.token.getUserId(1));
-		}
-
-		// Query is used for searching
-		if (typeof searchQuery === "string" && searchQuery.length > 0) {
-			query.where(function () {
-				this.where(castJsonIfNeed("incoming_port"), "like", `%${searchQuery}%`)
-					.orWhere(castJsonIfNeed("forwarding_port"), "like", `%${searchQuery}%`)
-					.orWhere("forwarding_host", "like", `%${searchQuery}%`)
-					.orWhere("npmplus_description", "like", `%${searchQuery}%`);
-			});
 		}
 
 		if (expand) query.withGraphFetched(`[${expand.join(", ")}]`);

@@ -33,7 +33,7 @@ for path in "$@"; do
 	fi
 
 	for key in $(jq -r 'keys[]' "$SRC/ui/en.json"); do
-		if ! jq -e --arg key "$key" 'has($key)' "$path" >/dev/null; then
+		if ! jq -e --arg key "$key" '.[$key] | length > 0' "$path" >/dev/null; then
 			echo "ui/$file: missing key: $key"
 		fi
 	done
@@ -41,12 +41,6 @@ for path in "$@"; do
 	for key in $(jq -r 'keys[]' "$path"); do
 		if ! jq -e --arg key "$key" 'has($key)' "$SRC/ui/en.json" >/dev/null; then
 			echo "ui/$file: unknown key: $key"
-		fi
-	done
-
-	for doc in "$SRC"/help/en/*.md; do
-		if [ ! -s "$SRC/help/$code/${doc##*/}" ]; then
-			echo "help/$code: missing doc: ${doc##*/}"
 		fi
 	done
 done

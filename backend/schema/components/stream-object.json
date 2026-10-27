@@ -54,36 +54,39 @@
 			"type": "string",
 			"pattern": "^([0-9]{0,5}|\\$server_port)$",
 			"maxLength": 12,
+			"default": "",
 			"example": 80
 		},
 		"tcp_forwarding": {
 			"type": "boolean",
+			"default": false,
 			"example": true
 		},
 		"udp_forwarding": {
 			"type": "boolean",
+			"default": false,
 			"example": false
 		},
 		"npmplus_proxy_protocol_forwarding": {
 			"type": "integer",
 			"enum": [0, 1, 2],
+			"default": 0,
 			"example": 0
 		},
 		"npmplus_proxy_tls": {
 			"type": "boolean",
+			"default": false,
 			"example": false
 		},
 		"enabled": {
 			"$ref": "../common.json#/properties/enabled"
 		},
 		"certificate_id": {
-			"description": "Certificate ID",
-			"type": "integer",
-			"minimum": 0,
-			"example": 5
+			"$ref": "../common.json#/properties/certificate_id"
 		},
 		"npmplus_advanced_config": {
 			"type": "string",
+			"default": "",
 			"example": ""
 		},
 		"npmplus_nginx_online": {
@@ -104,6 +107,7 @@
 		"npmplus_description": {
 			"type": "string",
 			"maxLength": 255,
+			"default": "",
 			"example": "MariaDB database connection"
 		},
 		"certificate": {

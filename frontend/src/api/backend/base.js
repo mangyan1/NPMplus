@@ -21,6 +21,13 @@ function buildBody(data) {
 		return JSON.stringify(decamelizeKeys(data));
 	}
 }
+async function processWrite(url, response) {
+	const payload = await processResponse(response);
+	if (!url.startsWith("/tokens") && !["/users/setup", "/users/me/sessions"].includes(url)) {
+		await queryClient.invalidateQueries();
+	}
+	return payload;
+}
 async function processResponse(response, reload = true) {
 	// Session status must be handled even when a proxy returns an HTML error page.
 	if (response.status === 401 && reload) {
@@ -73,6 +80,7 @@ export async function post({ url, params, data, headers: extraHeaders }, abortSo
 	// Check if the data is an instance of FormData
 	// If data is FormData, let the browser set the Content-Type header
 	if (data instanceof FormData) {
+		if ((await new Response(data).blob()).size > 1024 * 1024) throw new Error("error.max-upload-size");
 		body = data;
 	} else {
 		// If data is JSON, set the Content-Type header to 'application/json'
@@ -84,7 +92,7 @@ export async function post({ url, params, data, headers: extraHeaders }, abortSo
 	}
 	const signal = getAbortSignal(abortSource);
 	const response = await fetch(apiUrl, { method, headers, body, signal });
-	return processResponse(response);
+	return processWrite(url, response);
 }
 export async function put({ url, params, data }, abortSource) {
 	const apiUrl = buildUrl({ url, params });
@@ -95,12 +103,12 @@ export async function put({ url, params, data }, abortSource) {
 	const signal = getAbortSignal(abortSource);
 	const body = buildBody(data);
 	const response = await fetch(apiUrl, { method, headers, body, signal });
-	return processResponse(response);
+	return processWrite(url, response);
 }
 export async function del({ url, params }, abortSource) {
 	const apiUrl = buildUrl({ url, params });
 	const method = "DELETE";
 	const signal = getAbortSignal(abortSource);
 	const response = await fetch(apiUrl, { method, signal });
-	return processResponse(response);
+	return processWrite(url, response);
 }

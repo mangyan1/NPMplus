@@ -159,7 +159,9 @@ test("CRS disable requires admin, audits before acting, and shares the control c
 		assert.equal(calls, 1);
 		const logs = await api("GET", "/api/audit-log", { cookie: adminCookie });
 		assert.ok(
-			logs.body.some((entry) => entry.object_type === "crowdsec-crs" && entry.action === "disable-requested"),
+			logs.body.results.some(
+				(entry) => entry.object_type === "crowdsec-crs" && entry.action === "disable-requested",
+			),
 		);
 		// an audit failure must never reach the host
 		internalAuditLog.add = async () => {

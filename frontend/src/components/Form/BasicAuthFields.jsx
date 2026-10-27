@@ -1,7 +1,7 @@
 import { IconEye, IconEyeOff, IconX } from "@tabler/icons-react";
 import { useFormikContext } from "formik";
 import { useEffect, useState } from "react";
-import { T } from "src/locale";
+import { intl, T } from "src/locale";
 
 const blankItem = { username: "", password: "" };
 
@@ -59,6 +59,7 @@ export function BasicAuthFields({ initialValues, name = "items" }) {
 							type="text"
 							autoComplete="off"
 							className="form-control input-sm"
+							pattern="[^:\p{Cc}]{1,255}"
 							value={item.username}
 							onChange={(e) => handleChange(idx, "username", e.target.value)}
 						/>
@@ -69,11 +70,20 @@ export function BasicAuthFields({ initialValues, name = "items" }) {
 								type={revealed[idx] ? "text" : "password"}
 								autoComplete="new-password"
 								className="form-control"
+								ref={(input) =>
+									input?.setCustomValidity(
+										new TextEncoder().encode(item.password).length > 72
+											? intl.formatMessage({ id: "error.max-byte-length" }, { max: 72 })
+											: "",
+									)
+								}
+								required={
+									item.username.trim() !== "" &&
+									!initialValues.some((iv) => iv.username === item.username)
+								}
 								value={item.password}
 								placeholder={
-									initialValues.filter((iv) => iv.username === item.username).length > 0
-										? "••••••••"
-										: ""
+									initialValues.some((iv) => iv.username === item.username) ? "••••••••" : ""
 								}
 								onChange={(e) => handleChange(idx, "password", e.target.value)}
 							/>

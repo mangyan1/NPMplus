@@ -7,7 +7,7 @@ import { selectClassNames } from "src/modules/Select";
 
 export function DNSProviderFields({ showBoundaryBox }) {
 	const { values, setFieldValue } = useFormikContext();
-	const { data: dnsProviders, isLoading } = useDnsProviders();
+	const { data: dnsProviders, isPending } = useDnsProviders();
 
 	const handleChange = (newValue, _actionMeta) => {
 		void setFieldValue("npmplusDnsProvider", newValue?.value);
@@ -43,8 +43,9 @@ export function DNSProviderFields({ showBoundaryBox }) {
 							placeholder={intl.formatMessage({
 								id: "certificates.dns.provider.placeholder",
 							})}
-							isLoading={isLoading}
+							isLoading={isPending}
 							isSearchable
+							required
 							onChange={handleChange}
 							options={options}
 						/>
@@ -93,7 +94,9 @@ export function DNSProviderFields({ showBoundaryBox }) {
 									className="form-control"
 									min={0}
 									max={7200}
+									required
 									{...field}
+									value={field.value ?? 0}
 								/>
 
 								<small className="text-secondary">

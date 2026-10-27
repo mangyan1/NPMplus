@@ -87,6 +87,24 @@ const replaceLocationsAndAccessLists = async (trx, proxyHostId, data) => {
 	}
 };
 
+const cleanForwardOptions = (item) => {
+	const scheme = item.forward_scheme ?? "http";
+	if (scheme !== "empty") {
+		if (!item.forward_host) throw new errs.ValidationError(`Forward host is required for the ${scheme} scheme`);
+		if (!["http", "https"].includes(scheme)) {
+			item.npmplus_proxy_request_buffering = false;
+			item.npmplus_proxy_response_buffering = false;
+		}
+		if (scheme === "path") {
+			item.npmplus_upstream_compression = false;
+		} else {
+			item.npmplus_fancyindex = false;
+		}
+	}
+	if (!item.npmplus_crowdsec_appsec) item.npmplus_proxy_request_buffering = false;
+	if ((item.npmplus_auth_request ?? "none") === "none") item.npmplus_auth_request_upstream = "";
+};
+
 const internalProxyHost = {
 	/**
 	 * @param   {Access}  access
@@ -103,8 +121,8 @@ const internalProxyHost = {
 			// a delegated manager may only attach a certificate they can see
 			await internalCertificate.get(access, { id: thisData.certificate_id });
 		}
-		if (Number(thisData.npmplus_mtls_certificate_id) > 0) {
-			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id });
+		if (thisData.npmplus_mtls_certificate_id > 0) {
+			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id, mtls: true });
 		}
 
 		access.can("proxy_hosts:manage");
@@ -123,7 +141,15 @@ const internalProxyHost = {
 		thisData.owner_user_id = access.token.getUserId(1);
 		thisData = internalHost.cleanSslHstsData(createCertificate, thisData);
 		thisData = internalProxyHostAccessList.cleanAccessListTypes(thisData);
+		for (const item of [thisData, ...(thisData.locations ?? [])]) cleanForwardOptions(item);
+		if (thisData.locations?.some(({ path }) => !path)) {
+			throw new errs.ValidationError("Location paths can not be empty");
+		}
 		await internalProxyHostAccessList.validateAccessLists(access, thisData);
+
+		if (createCertificate) {
+			thisData.certificate_id = (await internalCertificate.createQuickCertificate(access, thisData)).id;
+		}
 
 		const createdRow = await proxyHostModel.transaction(async (trx) => {
 			const insertedRow = await proxyHostModel.query(trx).insertAndFetch(thisData);
@@ -144,14 +170,6 @@ const internalProxyHost = {
 			});
 		};
 		try {
-			if (createCertificate) {
-				// update host with cert id
-				await proxyHostModel
-					.query()
-					.where("id", createdRow.id)
-					.patch({ certificate_id: (await internalCertificate.createQuickCertificate(access, thisData)).id });
-			}
-
 			const row = await internalProxyHost.get(access, {
 				id: createdRow.id,
 				expand: ["certificate", "access_lists.[clients,items]", "locations.access_lists.[clients,items]"],
@@ -189,8 +207,8 @@ const internalProxyHost = {
 			// a delegated manager may only attach a certificate they can see
 			await internalCertificate.get(access, { id: thisData.certificate_id });
 		}
-		if (Number(thisData.npmplus_mtls_certificate_id) > 0) {
-			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id });
+		if (thisData.npmplus_mtls_certificate_id > 0) {
+			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id, mtls: true });
 		}
 
 		access.can("proxy_hosts:manage");
@@ -210,13 +228,14 @@ const internalProxyHost = {
 			}
 		}
 
-		if (existingRow.id !== thisData.id) {
-			// Sanity check that something crazy hasn't happened
-			throw new errs.InternalValidationError(
-				`Proxy Host could not be updated, IDs do not match: ${existingRow.id} !== ${thisData.id}`,
-			);
+		thisData = internalHost.cleanSslHstsData(createCertificate, thisData, existingRow);
+		thisData = internalProxyHostAccessList.cleanAccessListTypes(thisData);
+		for (const item of [thisData, ...(thisData.locations ?? [])]) cleanForwardOptions(item);
+		if (thisData.locations?.some(({ path }) => !path)) {
+			throw new errs.ValidationError("Location paths can not be empty");
 		}
 		await assertPrivilegedNginxFields(access, thisData, existingRow);
+		await internalProxyHostAccessList.validateAccessLists(access, thisData);
 
 		if (createCertificate) {
 			const cert = await internalCertificate.createQuickCertificate(access, {
@@ -227,10 +246,6 @@ const internalProxyHost = {
 			// update host with cert id
 			thisData.certificate_id = cert.id;
 		}
-
-		thisData = internalHost.cleanSslHstsData(createCertificate, thisData, existingRow);
-		thisData = internalProxyHostAccessList.cleanAccessListTypes(thisData);
-		await internalProxyHostAccessList.validateAccessLists(access, thisData);
 
 		await proxyHostModel.transaction(async (trx) => {
 			await proxyHostModel.query(trx).where({ id: thisData.id }).patch(thisData);
@@ -475,10 +490,9 @@ const internalProxyHost = {
 	 *
 	 * @param   {Access}  access
 	 * @param   {Array}   [expand]
-	 * @param   {String}  [searchQuery]
 	 * @returns {Promise}
 	 */
-	getAll: (access, expand, searchQuery) => {
+	getAll: (access, expand) => {
 		access.can("proxy_hosts:view");
 
 		const query = proxyHostModel
@@ -490,13 +504,6 @@ const internalProxyHost = {
 
 		if (access.visibility !== "all") {
 			query.andWhere("owner_user_id", access.token.getUserId(1));
-		}
-
-		// Query is used for searching
-		if (typeof searchQuery === "string" && searchQuery.length > 0) {
-			query.where(function () {
-				this.where(castJsonIfNeed("domain_names"), "like", `%${searchQuery}%`);
-			});
 		}
 
 		if (expand) query.withGraphFetched(`[${expand.join(", ")}]`);

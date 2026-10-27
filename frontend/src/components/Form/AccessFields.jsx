@@ -46,7 +46,7 @@ export function AccessFields({
 	const [values, setValues] = useState(initialAccessListIds);
 	const [aclValue, setAclValue] = useState(initialAccessListType);
 	const { values: formValues, setFieldValue } = useFormikContext();
-	const { isLoading, isError, error, data } = useAccessLists(["owner", "items", "clients"]);
+	const { isPending, isError, error, data } = useAccessLists(["owner", "items", "clients"]);
 
 	const createDefaultItem = (item) => ({
 		value: item.id,
@@ -93,11 +93,11 @@ export function AccessFields({
 
 	const typeOptions = () => {
 		const ret = [];
-		if (!isLoading && !isError && location !== undefined) {
+		if (!isPending && !isError && location !== undefined) {
 			ret.push(createOption("global"));
 		}
 		ret.push(createOption("public"));
-		if (!isLoading && !isError && defaultOptions.length > 0) {
+		if (!isPending && !isError && defaultOptions.length > 0) {
 			ret.push(createOption("custom"));
 		}
 		return ret;
@@ -161,7 +161,7 @@ export function AccessFields({
 
 	return (
 		<div className="mb-3">
-			{isLoading ? <div className="placeholder placeholder-lg col-12 my-3 placeholder-glow" /> : null}
+			{isPending ? <div className="placeholder placeholder-lg col-12 my-3 placeholder-glow" /> : null}
 			{isError ? (
 				<div className="invalid-feedback d-block">
 					<T id={error.message} />
@@ -198,7 +198,7 @@ export function AccessFields({
 					</div>
 				</div>
 			</div>
-			{!isLoading && !isError && aclValue === "custom" ? (
+			{!isPending && !isError && aclValue === "custom" ? (
 				<>
 					{values.map((item, idx) => (
 						<div key={item} className="input-group mb-1 shadow-none">
@@ -258,6 +258,14 @@ export function AccessFields({
 							</button>
 						</div>
 					))}
+					{values.length === 0 ? (
+						<>
+							<input className="visually-hidden" tabIndex={-1} required defaultValue="" />
+							<div className="invalid-feedback d-block">
+								<T id="error.required" />
+							</div>
+						</>
+					) : null}
 					{options.length > 0 && ( // only show add button if there are more acls that can be added
 						<div className="text-center">
 							<button type="button" className="btn my-3" onClick={handleAdd}>

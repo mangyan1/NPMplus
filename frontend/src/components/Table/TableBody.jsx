@@ -44,7 +44,7 @@ function TableBody(props) {
 	return (
 		<tbody className="table-tbody">
 			{orderedKeys.map((key) => (
-				<Fragment key={key || "no-group"}>
+				<Fragment key={key}>
 					<tr>
 						<th
 							scope="rowgroup"

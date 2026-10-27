@@ -138,7 +138,7 @@ mkdir -vp /data/npmplus/avatar \
 
 
 if [ -n "$(ls -A /data/nginx/custom 2> /dev/null)"  ]; then
-    cp -van /data/nginx/custom/* /data/nginx_custom
+    cp -van /data/nginx/custom/* /data/custom_nginx
 fi
 rm -vrf /data/nginx/custom
 
@@ -179,6 +179,13 @@ if [ -n "$(ls -A /data/custom_ssl 2> /dev/null)" ]; then
 fi
 rm -vrf /data/custom_ssl
 
+for dir in /data/tls/custom/npm-*; do
+    if [ -s "$dir/fullchain.pem" ] && { [ ! -s "$dir/cert.pem" ] || [ ! -s "$dir/chain.pem" ]; } then
+        awk '/-----BEGIN CERTIFICATE-----/ { n++ } n == 1' "$dir/fullchain.pem" > "$dir/cert.pem"
+        awk '/-----BEGIN CERTIFICATE-----/ { n++ } n > 1' "$dir/fullchain.pem" > "$dir/chain.pem"
+    fi
+done
+
 
 if mountpoint -q /etc/letsencrypt; then
   if [ -n "$(ls -A /etc/letsencrypt 2> /dev/null)" ]; then
@@ -196,8 +203,7 @@ if [ -d /data/tls/certbot/live ] && [ -d /data/tls/certbot/archive ]; then
   find /data/tls/certbot/live ! -name "$(printf "*\n*")" -type f -name "*.pem" > /tmp/certs.txt
   while IFS= read -r cert
   do
-    rm -vf "$cert"
-    ln -rs "$(find /data/tls/certbot/archive/"$(echo "$cert" | sed "s|/data/tls/certbot/live/\(npm-[0-9]\+/.*\).pem|\1|g")"*.pem | sort -V | tail -n1)" "$cert"
+    ln -rsf "$(find /data/tls/certbot/archive/"$(echo "$cert" | sed "s|/data/tls/certbot/live/\(npm-[0-9]\+/.*\).pem|\1|g")"*.pem | sort -V | tail -n1)" "$cert"
   done < /tmp/certs.txt
   rm /tmp/certs.txt
 fi
@@ -417,9 +423,6 @@ fi
 if [ "$NGINX_LOAD_NJS_MODULE" = "true" ]; then
     sed -i "s|#\(load_module.\+js_module.so;\)|\1|g" /usr/local/nginx/conf/nginx.conf
     sed -i "s|#js_engine qjs;|js_engine qjs;|g" /usr/local/nginx/conf/nginx.conf
-fi
-if [ "$NGINX_LOAD_GEOIP2_MODULE" = "true" ]; then
-    sed -i "s|#\(load_module.\+geoip2_module.so;\)|\1|g" /usr/local/nginx/conf/nginx.conf
 fi
 if [ "$NGINX_LOAD_LDAP_MODULE" = "true" ]; then
     sed -i "s|#\(load_module.\+ngx_http_auth_ldap_module.so;\)|\1|g" /usr/local/nginx/conf/nginx.conf

@@ -71,7 +71,7 @@ export function AccessClientFields({ initialValues, name = "clients" }) {
 								type="text"
 								className="form-control"
 								autoComplete="off"
-								pattern="[^lL]+"
+								pattern="(?![aA][lL][lL]$)\S{1,255}"
 								value={client.address}
 								onChange={(e) => handleChange(idx, "address", e.target.value)}
 								placeholder={intl.formatMessage({

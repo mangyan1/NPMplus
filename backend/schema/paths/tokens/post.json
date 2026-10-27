@@ -23,7 +23,8 @@
 							"example": "bigredhorsebanana"
 						},
 						"code": {
-							"minLength": 1,
+							"minLength": 6,
+							"maxLength": 8,
 							"type": "string",
 							"example": "123456"
 						}

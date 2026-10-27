@@ -1,5 +1,6 @@
 import { Alert } from "react-bootstrap";
 import Modal from "react-bootstrap/Modal";
+import { decamelizeKeys } from "src/api/backend/caseConvert";
 import { Button, EventFormatter, GravatarFormatter, Loading } from "src/components";
 import { useAuditLog } from "src/hooks";
 import { T } from "src/locale";
@@ -41,7 +42,7 @@ const EventDetailsModal = EasyModal.create(({ id, visible, remove }) => {
 								spellCheck={false}
 								rows={9}
 								readOnly
-								value={JSON.stringify(data.meta, null, 2)}
+								value={JSON.stringify(decamelizeKeys(data.meta), null, 2)}
 							/>
 						</div>
 					</Modal.Body>

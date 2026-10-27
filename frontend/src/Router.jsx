@@ -33,7 +33,7 @@ function Router() {
 	const health = useHealth();
 	const { authenticated } = useAuthState();
 
-	if (health.isLoading) {
+	if (health.isPending) {
 		return <LoadingPage />;
 	}
 
