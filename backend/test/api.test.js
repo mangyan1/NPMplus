@@ -181,9 +181,19 @@ test("a missing session is refused (403)", async () => {
 	assert.equal(res.status, 403);
 });
 
-// an unsigned garbage cookie is dropped by cookie-parser and looks like "no
-// session" (403); a *signed* cookie carrying a bogus jwt is what reaches the
-// token verification failure and 401s
+test("rejected session cookies clear authentication instead of becoming anonymous", async () => {
+	for (const value of ["s:old-session.rejected-signature", "unsigned-session", ""]) {
+		const res = await api("GET", "/api/users/me?expand=permissions", {
+			cookie: `__Host-Http-token=${encodeURIComponent(value)}`,
+		});
+		assert.equal(res.status, 401, res.text);
+		assert.ok(res.setCookie.some((cookie) => CLEARED_SESSION_COOKIE_RE.test(cookie)));
+		assert.ok(res.setCookie.some((cookie) => cookie.startsWith(OIDC_NO_REDIRECT_PREFIX)));
+	}
+	assert.equal((await api("GET", "/api/users/me?expand=permissions")).status, 403);
+});
+
+// A valid cookie signature carrying an invalid JWT must also answer 401.
 test("an invalid session token is an authentication failure (401)", async () => {
 	// cookie-signature 1.0.6 wire format: val + '.' + b64(hmac-sha256(secret, val)).replace(/=+$/,'')
 	const mac = crypto
