@@ -40,6 +40,7 @@ try {
 	const enrolled = page.waitForResponse((response) => response.url().endsWith("/mfa/totp/enable"));
 	await page.getByRole("button", { name: "Verify and Enable", exact: true }).click();
 	assert.equal((await enrolled).status(), 200);
+	await page.getByRole("button", { name: "I have saved my backup codes" }).waitFor();
 	const backupCodes = await page.locator(".modal code").allTextContents();
 	assert.equal(backupCodes.length, 8);
 	await page.getByRole("button", { name: "I have saved my backup codes" }).click();
