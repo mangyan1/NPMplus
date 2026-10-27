@@ -10,12 +10,13 @@ export function DomainNamesField({
 	id = "domainNames",
 	isWildcardPermitted,
 	dnsProviderWildcardSupported,
+	forCertificate,
 	onChange,
 }) {
 	const { setFieldValue } = useFormikContext();
 
 	const handleChange = (v, _actionMeta) => {
-		const doms = v?.map((i) => i.value.trim());
+		const doms = [...new Set(v?.map((i) => i.value.trim()))];
 		void setFieldValue(name, doms);
 		onChange?.(doms);
 	};
@@ -28,35 +29,47 @@ export function DomainNamesField({
 	}
 
 	return (
-		<Field name={name} validate={validateDomains(isWildcardPermitted && dnsProviderWildcardSupported)}>
-			{({ field, form }) => (
+		<Field name={name}>
+			{({ field }) => (
 				<div className="mb-3">
 					<label className="form-label" htmlFor={id}>
 						<T id={label} />
 					</label>
 					<CreatableSelect
+						ref={(select) =>
+							select?.inputRef.setCustomValidity(
+								validateDomains(
+									field.value,
+									isWildcardPermitted && dnsProviderWildcardSupported,
+									forCertificate,
+								) ?? "",
+							)
+						}
 						unstyled
 						classNames={selectClassNames}
 						name={field.name}
-						id={id}
+						inputId={id}
 						closeMenuOnSelect={true}
 						isClearable={false}
-						isValidNewOption={validateDomain(isWildcardPermitted && dnsProviderWildcardSupported)}
+						isValidNewOption={(input, selected) =>
+							validateDomain(
+								input,
+								isWildcardPermitted && dnsProviderWildcardSupported,
+								forCertificate,
+							) && !selected.some(({ value }) => value.toLowerCase() === input.trim().toLowerCase())
+						}
 						isMulti
+						required
 						placeholder={intl.formatMessage({ id: "domain-names.placeholder" })}
 						onChange={handleChange}
 						value={field.value?.map((d) => ({ label: d, value: d }))}
 					/>
 
-					{form.errors[field.name] && form.touched[field.name] ? (
-						<small className="text-danger">{form.errors[field.name]}</small>
-					) : helperTexts.length ? (
-						helperTexts.map((i, idx) => (
-							<small key={idx} className="text-info">
-								{i}
-							</small>
-						))
-					) : null}
+					{helperTexts.map((i, idx) => (
+						<small key={idx} className="text-info">
+							{i}
+						</small>
+					))}
 				</div>
 			)}
 		</Field>

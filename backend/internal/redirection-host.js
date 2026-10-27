@@ -20,11 +20,11 @@ const internalRedirectionHost = {
 
 		if (createCertificate) {
 			delete thisData.certificate_id;
-		} else if (Number(thisData.certificate_id) > 0) {
-			await internalCertificate.get(access, { id: thisData.certificate_id });
+		} else if (thisData.certificate_id > 0) {
+			await internalCertificate.get(access, { id: thisData.certificate_id, mtls: false });
 		}
-		if (Number(thisData.npmplus_mtls_certificate_id) > 0) {
-			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id });
+		if (thisData.npmplus_mtls_certificate_id > 0) {
+			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id, mtls: true });
 		}
 
 		access.can("redirection_hosts:manage");
@@ -43,6 +43,10 @@ const internalRedirectionHost = {
 		thisData.owner_user_id = access.token.getUserId(1);
 		thisData = internalHost.cleanSslHstsData(createCertificate, thisData);
 
+		if (createCertificate) {
+			thisData.certificate_id = (await internalCertificate.createQuickCertificate(access, thisData)).id;
+		}
+
 		const createdRow = await redirectionHostModel.query().insertAndFetch(thisData);
 
 		let savedRow;
@@ -58,14 +62,6 @@ const internalRedirectionHost = {
 			});
 		};
 		try {
-			if (createCertificate) {
-				// update host with cert id
-				await redirectionHostModel
-					.query()
-					.where("id", createdRow.id)
-					.patch({ certificate_id: (await internalCertificate.createQuickCertificate(access, thisData)).id });
-			}
-
 			const row = await internalRedirectionHost.get(access, {
 				id: createdRow.id,
 				expand: ["certificate"],
@@ -99,11 +95,11 @@ const internalRedirectionHost = {
 
 		if (createCertificate) {
 			delete thisData.certificate_id;
-		} else if (Number(thisData.certificate_id) > 0) {
-			await internalCertificate.get(access, { id: thisData.certificate_id });
+		} else if (thisData.certificate_id > 0) {
+			await internalCertificate.get(access, { id: thisData.certificate_id, mtls: false });
 		}
-		if (Number(thisData.npmplus_mtls_certificate_id) > 0) {
-			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id });
+		if (thisData.npmplus_mtls_certificate_id > 0) {
+			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id, mtls: true });
 		}
 
 		access.can("redirection_hosts:manage");
@@ -368,10 +364,9 @@ const internalRedirectionHost = {
 	 *
 	 * @param   {Access}  access
 	 * @param   {Array}   [expand]
-	 * @param   {String}  [searchQuery]
 	 * @returns {Promise}
 	 */
-	getAll: (access, expand, searchQuery) => {
+	getAll: (access, expand) => {
 		access.can("redirection_hosts:view");
 
 		const query = redirectionHostModel
@@ -382,13 +377,6 @@ const internalRedirectionHost = {
 
 		if (access.visibility !== "all") {
 			query.andWhere("owner_user_id", access.token.getUserId(1));
-		}
-
-		// Query is used for searching
-		if (typeof searchQuery === "string" && searchQuery.length > 0) {
-			query.where(function () {
-				this.where(castJsonIfNeed("domain_names"), "like", `%${searchQuery}%`);
-			});
 		}
 
 		if (expand) query.withGraphFetched(`[${expand.join(", ")}]`);

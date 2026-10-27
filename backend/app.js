@@ -19,8 +19,10 @@ app.set("json spaces", 2);
 app.set("json replacer", jsonReplacer);
 
 app.use(cookieParser(process.env.COOKIE_SECRET || crypto.randomBytes(16).toString("hex")));
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true, limit: "1mb", parameterLimit: 1000 }));
+// The API sends uncompressed bodies. Reject encoded input before decompression
+// (GHSA-27r3-jxmh-p828) while the patched parser ages through quarantine.
+app.use(express.json({ limit: "1mb", inflate: false }));
+app.use(express.urlencoded({ extended: true, limit: "1mb", parameterLimit: 1000, inflate: false }));
 
 /**
  * General Logging, BEFORE routes

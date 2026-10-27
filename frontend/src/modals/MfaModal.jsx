@@ -31,8 +31,8 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 			setBackupCodesRemaining(status.backupCodesRemaining);
 			setStep("status");
 		} catch (err) {
-			setError(err.message);
-			setStep("status");
+			setError(<T id={err.message} />);
+			setStep("error");
 		}
 	}, [id]);
 
@@ -48,7 +48,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 			setSetupData(data);
 			setStep("setup");
 		} catch (err) {
-			setError(err.message);
+			setError(<T id={err.message} />);
 		}
 		setIsSubmitting(false);
 	};
@@ -65,7 +65,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 				await loadStatus();
 			}
 		} catch (err) {
-			setError(err.message);
+			setError(<T id={err.message} />);
 		}
 		setIsSubmitting(false);
 	};
@@ -78,7 +78,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 			setIsEnabled(false);
 			setStep("status");
 		} catch (err) {
-			setError(err.message);
+			setError(<T id={err.message} />);
 		}
 		setIsSubmitting(false);
 	};
@@ -91,7 +91,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 			setBackupCodes(result.backupCodes);
 			setStep("backup");
 		} catch (err) {
-			setError(err.message);
+			setError(<T id={err.message} />);
 		}
 		setIsSubmitting(false);
 	};
@@ -200,6 +200,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 													type={showCode || !field.value ? "text" : "password"}
 													inputMode="numeric"
 													autoComplete="one-time-code"
+													required
 													className={`form-control ${form.errors.code && form.touched.code ? "is-invalid" : ""}`}
 													placeholder="000000"
 													maxLength={6}
@@ -234,7 +235,13 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 									>
 										<T id="cancel" />
 									</Button>
-									<Button type="submit" fullWidth color="azure" isLoading={isSubmitting}>
+									<Button
+										type="submit"
+										fullWidth
+										color="azure"
+										isLoading={isSubmitting}
+										disabled={isSubmitting}
+									>
 										<T id="totp.verify-enable" />
 									</Button>
 								</div>
@@ -255,7 +262,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 						<div className="row g-2">
 							{backupCodes.map((code, index) => (
 								<div key={index} className="col-6">
-									<code className="d-block p-2 bg-light rounded text-center">{code}</code>
+									<code className="d-block p-2 text-center">{code}</code>
 								</div>
 							))}
 						</div>
@@ -287,6 +294,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 													{...field}
 													type={showCode || !field.value ? "text" : "password"}
 													autoComplete="one-time-code"
+													required
 													className={`form-control ${form.errors.code && form.touched.code ? "is-invalid" : ""}`}
 													placeholder="000000"
 													maxLength={8}
@@ -321,7 +329,13 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 									>
 										<T id="cancel" />
 									</Button>
-									<Button type="submit" fullWidth color="red" isLoading={isSubmitting}>
+									<Button
+										type="submit"
+										fullWidth
+										color="red"
+										isLoading={isSubmitting}
+										disabled={isSubmitting}
+									>
 										<T id="totp.disable-confirm" />
 									</Button>
 								</div>
@@ -355,6 +369,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 													{...field}
 													type={showCode || !field.value ? "text" : "password"}
 													autoComplete="one-time-code"
+													required
 													className={`form-control ${form.errors.code && form.touched.code ? "is-invalid" : ""}`}
 													placeholder="000000"
 													maxLength={6}
@@ -389,7 +404,13 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 									>
 										<T id="cancel" />
 									</Button>
-									<Button type="submit" fullWidth color="azure" isLoading={isSubmitting}>
+									<Button
+										type="submit"
+										fullWidth
+										color="azure"
+										isLoading={isSubmitting}
+										disabled={isSubmitting}
+									>
 										<T id="mfa.regenerate" />
 									</Button>
 								</div>
@@ -404,8 +425,8 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 	};
 
 	return (
-		<Modal show={visible} onHide={remove}>
-			<Modal.Header closeButton>
+		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
+			<Modal.Header closeButton={!isSubmitting}>
 				<Modal.Title>
 					<T id="mfa.title" />
 				</Modal.Title>

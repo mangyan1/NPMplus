@@ -18,6 +18,12 @@ const invalidUsername = /[:\u0000-\u001f\u007f]/;
 
 const omissions = () => ["is_deleted", "owner.is_deleted"];
 
+const validatePasswordBytes = (items) => {
+	if ((items ?? []).some((item) => item.password && bcrypt.truncates(item.password))) {
+		throw new errs.ValidationError("Access list passwords cannot be longer than 72 bytes");
+	}
+};
+
 const internalAccessList = {
 	/**
 	 * @param   {Access}  access
@@ -31,6 +37,7 @@ const internalAccessList = {
 				message_i18n: "error.access.password-required",
 			});
 		}
+		validatePasswordBytes(data.items);
 
 		const row = await accessListModel.query().insertAndFetch({
 			name: data.name,
@@ -114,6 +121,7 @@ const internalAccessList = {
 				],
 			});
 			const existingUsernames = new Set((row.items || []).map((item) => item.username));
+			validatePasswordBytes(data.items);
 			if ((data.items || []).some((item) => !item.password && !existingUsernames.has(item.username))) {
 				throw Object.assign(
 					new errs.ValidationError("A password is required for new or renamed access-list users"),

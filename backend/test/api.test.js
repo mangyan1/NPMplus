@@ -151,6 +151,19 @@ let peonCookie = null;
 let adminId = null;
 let peonId = null;
 
+test("encoded JSON and form bodies are rejected before decompression and routing", async () => {
+	for (const contentType of ["application/json", "application/x-www-form-urlencoded"]) {
+		for (const encoding of ["gzip", "deflate", "br"]) {
+			const response = await api("POST", "/api/tokens", {
+				body: { identity: ADMIN_EMAIL },
+				headers: { "content-type": contentType, "content-encoding": encoding },
+			});
+			assert.equal(response.status, 415, response.text);
+		}
+	}
+	assert.equal((await api("GET", "/api")).status, 200);
+});
+
 // the server already started listening at module load, so there is no
 // listening event left to await here; closeAllConnections is required because
 // undici keeps keep-alive sockets open and server.close would wait forever,
@@ -708,6 +721,50 @@ test("proxy host without a tcp destination clears the reachability probe state",
 	assert.equal(created.body.meta.reach_err, null, created.text);
 });
 
+test("audit history pages, filters and bounds results behind the admin gate", async () => {
+	const { default: AuditLog } = await import("../models/audit-log.js");
+	const ids = [];
+	for (let index = 0; index < 5; index++) {
+		const row = await AuditLog.query().insert({
+			user_id: 1,
+			action: "created",
+			object_type: "pagination-fixture",
+			object_id: index,
+			meta: { fixture: true },
+		});
+		ids.unshift(row.id);
+	}
+	try {
+		const query = new URLSearchParams({ query: "PAGINATION-FIXTURE", page_size: "2" });
+		const first = await api("GET", `/api/audit-log?${query}`, { cookie: adminCookie });
+		assert.equal(first.status, 200, first.text);
+		assert.equal(first.body.total, 5);
+		assert.deepEqual(
+			first.body.results.map(({ id }) => id),
+			ids.slice(0, 2),
+		);
+		const second = await api("GET", "/api/audit-log?query=pagination-fixture&page_size=2&page=1", {
+			cookie: adminCookie,
+		});
+		assert.equal(second.status, 200, second.text);
+		assert.deepEqual(
+			second.body.results.map(({ id }) => id),
+			ids.slice(2, 4),
+		);
+		const empty = await api("GET", "/api/audit-log?query=pagination-fixture&page_size=2&page=3", {
+			cookie: adminCookie,
+		});
+		assert.equal(empty.body.total, 5);
+		assert.deepEqual(empty.body.results, []);
+		for (const invalidQuery of ["page=-1", "page_size=0", "page_size=1001"]) {
+			assert.equal((await api("GET", `/api/audit-log?${invalidQuery}`, { cookie: adminCookie })).status, 400);
+		}
+		assert.equal((await api("GET", "/api/audit-log", { cookie: peonCookie })).status, 403);
+	} finally {
+		await AuditLog.query().delete().whereIn("id", ids);
+	}
+});
+
 // CrowdSec routes: no LAPI is wired in the test environment, so these pin the
 // permission wall and the input-validation guards that fire before the LAPI
 // is ever contacted
@@ -758,7 +815,9 @@ test("CRS control requires admin, fixed observation input, same origin and a pri
 		assert.equal(calls, 1);
 		const logs = await api("GET", "/api/audit-log", { cookie: adminCookie });
 		assert.ok(
-			logs.body.some((entry) => entry.object_type === "crowdsec-crs" && entry.action === "enable-requested"),
+			logs.body.results.some(
+				(entry) => entry.object_type === "crowdsec-crs" && entry.action === "enable-requested",
+			),
 		);
 		internalAuditLog.add = async () => {
 			throw new Error("fixture audit failure");
@@ -1164,6 +1223,11 @@ test("delegated proxy CRUD cannot publish local sockets or named upstreams", asy
 });
 
 test("access-list usernames reject record delimiters and preserve ordinary credentials", async () => {
+	const oversizedPassword = await api("POST", "/api/nginx/access-lists", {
+		cookie: adminCookie,
+		body: { name: "oversized-password", items: [{ username: "valid-user", password: "é".repeat(40) }] },
+	});
+	assert.equal(oversizedPassword.status, 400, "the bcrypt limit is 72 bytes, not 72 characters");
 	for (const username of [
 		"user:injected",
 		"user\ninjected",
@@ -1183,6 +1247,11 @@ test("access-list usernames reject record delimiters and preserve ordinary crede
 		body: { name: "valid-user", items: [{ username: "valid.user@example.com", password: "test-password" }] },
 	});
 	assert.equal(created.status, 201, created.text);
+	const oversizedUpdate = await api("PUT", `/api/nginx/access-lists/${created.body.id}`, {
+		cookie: adminCookie,
+		body: { items: [{ username: "valid.user@example.com", password: "é".repeat(40) }] },
+	});
+	assert.equal(oversizedUpdate.status, 400, "updates must also reject passwords over 72 bytes");
 	const updated = await api("PUT", `/api/nginx/access-lists/${created.body.id}`, {
 		cookie: adminCookie,
 		body: { items: [{ username: "bad:record", password: "test-password" }] },

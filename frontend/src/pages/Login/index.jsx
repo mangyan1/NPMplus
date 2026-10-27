@@ -86,7 +86,13 @@ function TotpForm() {
 							<Button type="button" fullWidth onClick={cancelTotp} disabled={isSubmitting}>
 								<T id="cancel" />
 							</Button>
-							<Button type="submit" fullWidth color="azure" isLoading={isSubmitting}>
+							<Button
+								type="submit"
+								fullWidth
+								color="azure"
+								isLoading={isSubmitting}
+								disabled={isSubmitting}
+							>
 								<T id="login.totp-verify" />
 							</Button>
 						</div>
@@ -168,8 +174,8 @@ function PasswordForm() {
 								</Field>
 							</div>
 							<div className="mb-2">
-								<Field name="password" validate={validateString(8, 255)}>
-									{({ field, form }) => (
+								<Field name="password">
+									{({ field }) => (
 										<>
 											<label className="form-label">
 												<T id="password" />
@@ -180,7 +186,7 @@ function PasswordForm() {
 														autoComplete="current-password"
 														required
 														maxLength={255}
-														className={`form-control ${form.errors.password && form.touched.password ? " is-invalid" : ""}`}
+														className="form-control"
 														placeholder={intl.formatMessage({ id: "password" })}
 													/>
 
@@ -200,18 +206,19 @@ function PasswordForm() {
 														</button>
 													</span>
 												</div>
-												<ErrorMessage
-													name="password"
-													component="div"
-													className="invalid-feedback d-block"
-												/>
 											</label>
 										</>
 									)}
 								</Field>
 							</div>
 							<div className="form-footer">
-								<Button type="submit" fullWidth color="azure" isLoading={isSubmitting}>
+								<Button
+									type="submit"
+									fullWidth
+									color="azure"
+									isLoading={isSubmitting}
+									disabled={isSubmitting}
+								>
 									<T id="sign-in" />
 								</Button>
 							</div>

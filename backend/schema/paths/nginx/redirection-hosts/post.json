@@ -17,10 +17,13 @@
 				"schema": {
 					"type": "object",
 					"additionalProperties": false,
+					"allOf": [
+						{
+							"$ref": "../../../common.json#/properties/ssl_create_rules"
+						}
+					],
 					"required": [
 						"domain_names",
-						"forward_scheme",
-						"forward_http_code",
 						"forward_domain_name"
 					],
 					"properties": {

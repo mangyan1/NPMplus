@@ -109,7 +109,6 @@ services:
 #      - "COOKIE_SECRET_FILE=/run/secrets/npmplus_cookie_secret" # preferred: persistent cookie signing secret from a mounted secret file
 #      - "ENABLE_PRERUN=true" # see readme, default off
 #      - "NGINX_LOAD_NJS_MODULE=true" # loads the njs module, requires manual configuration, default false
-#      - "NGINX_LOAD_GEOIP2_MODULE=true" # loads the geoip2 module, requires manual configuration, default false
 #      - "NGINX_LOAD_LDAP_MODULE=true" # loads the ldap module, requires manual configuration, default false
 #      - "NGINX_LOAD_NTLM_MODULE=true" # loads the ntlm module, requires manual configuration, default false
 #      - "NGINX_LOAD_VHOST_TRAFFIC_STATUS_MODULE=true" # loads the virtual host traffic status module, requires manual configuration, default false

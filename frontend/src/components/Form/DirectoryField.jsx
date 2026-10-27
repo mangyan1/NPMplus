@@ -19,6 +19,7 @@ export function DirectoryField({
 						id={name}
 						type="text"
 						className="form-control"
+						maxLength={255}
 						placeholder={placeholder}
 						list={datalistId}
 						{...field}

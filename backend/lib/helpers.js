@@ -2,6 +2,8 @@ import dayjs from "dayjs";
 import { ref } from "objection";
 import { isPostgres } from "./config.js";
 
+const localDateTimePattern = /^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$/u;
+
 const datePeriodPattern = /^([0-9]+)(y|Q|M|w|d|h|m|s|ms)$/m;
 
 /**
@@ -72,6 +74,9 @@ const jsonReplacer = (key, value) => {
 		].includes(key)
 	) {
 		return;
+	}
+	if (["created_on", "modified_on", "expires_on"].includes(key) && localDateTimePattern.test(value)) {
+		return new Date(`${value.replace(" ", "T")}Z`).toISOString();
 	}
 	return value;
 };

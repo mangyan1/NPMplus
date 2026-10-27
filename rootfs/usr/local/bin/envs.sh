@@ -37,8 +37,10 @@ fi
 
 
 touch /data/.env
+set -a
 # shellcheck source=/dev/null
 . /data/.env
+set +a
 if [ -s /tmp/env.sha512sum ] && [ "$(cat /tmp/env.sha512sum)" != "$(sha512sum < /data/.env)" ]; then
     echo "You need to recreate the NPMplus container after changing the .env file, restarting the container after changing the .env file is not supported"
     sleep inf
@@ -164,7 +166,6 @@ export PHP84="${PHP84:-false}"
 export PHP85="${PHP85:-false}"
 export DISABLE_GRAVATAR="${DISABLE_GRAVATAR:-false}"
 export NGINX_LOAD_NJS_MODULE="${NGINX_LOAD_NJS_MODULE:-false}"
-export NGINX_LOAD_GEOIP2_MODULE="${NGINX_LOAD_GEOIP2_MODULE:-false}"
 export NGINX_LOAD_LDAP_MODULE="${NGINX_LOAD_LDAP_MODULE:-false}"
 export NGINX_LOAD_NTLM_MODULE="${NGINX_LOAD_NTLM_MODULE:-false}"
 export NGINX_LOAD_VHOST_TRAFFIC_STATUS_MODULE="${NGINX_LOAD_VHOST_TRAFFIC_STATUS_MODULE:-false}"
@@ -238,6 +239,12 @@ fi
 #tmp
 if [ -n "$NGINX_LOAD_GEOIP_MODULE" ]; then
     echo "NGINX_LOAD_GEOIP_MODULE env is not supported. The module was removed."
+    sleep inf
+fi
+
+#tmp
+if [ -n "$NGINX_LOAD_GEOIP2_MODULE" ]; then
+    echo "NGINX_LOAD_GEOIP2_MODULE env is not supported. The geoip2 module was replaced by the geoip module, which is always loaded, please check the README for the new config."
     sleep inf
 fi
 
@@ -401,11 +408,11 @@ if ! echo "$CUSTOM_OCSP_STAPLING" | grep -q "^true$\|^false$"; then
     sleep inf
 fi
 
-if [ "$ACME_PROFILE" != "none" ] && [ "$(curl -sSL "$ACME_SERVER" | jq .meta.profiles."$ACME_PROFILE")" = "null" ]; then
+if [ "$ACME_PROFILE" != "none" ] && [ "$(curl -sSL "$ACME_SERVER" | jq --arg p "$ACME_PROFILE" '.meta.profiles[$p]')" = "null" ]; then
     if [ "$(curl -sSL "$ACME_SERVER" | jq -r ".newNonce")" != "null" ]; then
         echo "The ACME_PROFILE seems to be not supported by the ACME_SERVER."
         sleep inf
-	else
+    else
         echo "Cannot check if the ACME_PROFILE is supported by the ACME_SERVER since the ACME_SERVER is down."
     fi
 fi
@@ -543,6 +550,7 @@ fi
 
 if ! echo "$NGINX_WORKER_CONNECTIONS" | grep -q "^[0-9]\+$"; then
     echo "NGINX_WORKER_CONNECTIONS needs to be a number."
+    sleep inf
 fi
 
 if ! echo "$NGINX_FORCE_X25519MLKEM768" | grep -q "^true$\|^false$"; then
@@ -595,8 +603,8 @@ if ! echo "$CERTBOT_RUN_INTERVAL" | grep -q "^[0-9]\+$" || [ "$CERTBOT_RUN_INTER
     sleep inf
 fi
 
-if ! echo "$ECH_ROTATION_INTERVAL" | grep -q "^[0-9]\+$"; then
-    echo "ECH_ROTATION_INTERVAL needs to be a number."
+if ! echo "$ECH_ROTATION_INTERVAL" | grep -q "^[0-9]\+$" || [ "$ECH_ROTATION_INTERVAL" -lt 1 ] || [ "$ECH_ROTATION_INTERVAL" -gt 24 ]; then
+    echo "ECH_ROTATION_INTERVAL must be a number between 1 and 24."
     sleep inf
 fi
 
@@ -687,6 +695,11 @@ if [ -n "$INITIAL_ADMIN_EMAIL" ] && ! echo "$INITIAL_ADMIN_EMAIL" | grep -q "@.*
     sleep inf
 fi
 
+if [ -n "$INITIAL_ADMIN_PASSWORD" ] && { [ "${#INITIAL_ADMIN_PASSWORD}" -lt 8 ] || [ "${#INITIAL_ADMIN_PASSWORD}" -gt 255 ]; }; then
+    echo "INITIAL_ADMIN_PASSWORD needs to be between 8 and 255 characters long."
+    sleep inf
+fi
+
 if [ -n "$INITIAL_DEFAULT_PAGE" ] && ! echo "$INITIAL_DEFAULT_PAGE" | grep -q "^\(404\|444\|redirect\|congratulations\|forbidden\|html\)$"; then
     echo "INITIAL_DEFAULT_PAGE needs to be 404, 444, redirect, congratulations, forbidden or html."
     sleep inf
@@ -725,11 +738,6 @@ fi
 
 if ! echo "$NGINX_LOAD_NJS_MODULE" | grep -q "^true$\|^false$"; then
     echo "NGINX_LOAD_NJS_MODULE needs to be true or false."
-    sleep inf
-fi
-
-if ! echo "$NGINX_LOAD_GEOIP2_MODULE" | grep -q "^true$\|^false$"; then
-    echo "NGINX_LOAD_GEOIP2_MODULE needs to be true or false."
     sleep inf
 fi
 

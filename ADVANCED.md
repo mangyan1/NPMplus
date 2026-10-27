@@ -293,17 +293,18 @@ upstream cu_mybackend {
 
 ## Geoblocking example (mainly community support) 
 
-1. set the `NGINX_LOAD_GEOIP2_MODULE` env to true and redeploy NPMplus
+The native nginx GeoIP module now reads MaxMind databases and is always enabled.
+Remove `NGINX_LOAD_GEOIP2_MODULE` from Compose and replace any existing `geoip2`
+blocks before updating. Databases are reread when nginx reloads.
+
+1. remove the legacy `NGINX_LOAD_GEOIP2_MODULE` environment option, if present
 2. deploy a geoipupdate container (see the compose.yaml for an example, create credentials [here](https://www.maxmind.com/en/geolite2/signup))
 3. open and edit this file: `/opt/npmplus/custom_nginx/http_top.conf`, if you changed /opt/npmplus to a different path make sure to change the path to fit
 ```yaml
-geoip2 /data/goaccess/geoip/GeoLite2-Country.mmdb {
-  auto_reload 60m;
-  $geoip2_country_iso_code country iso_code;
-}
+geoip_country /data/goaccess/geoip/GeoLite2-Country.mmdb;
 
 # whitelist example, you can add as many country codes as you want, country code list: https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2#XY
-#map $geoip2_country_iso_code $geoip2_country_rule {
+#map $geoip_country_code $geoip2_country_rule {
 #  default no;
 #  AA yes;
 #  XY yes;
@@ -311,7 +312,7 @@ geoip2 /data/goaccess/geoip/GeoLite2-Country.mmdb {
 #}
 
 # blacklist example, you can add as many country codes as you want, country code list: https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2#XY
-#map $geoip2_country_iso_code $geoip2_country_rule {
+#map $geoip_country_code $geoip2_country_rule {
 #  default yes;
 #  AA no;
 #  XY no;

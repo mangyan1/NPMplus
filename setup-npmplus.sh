@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.69"
+SCRIPT_VERSION="1.70"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -25,7 +25,8 @@ ANUBIS_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:anubis"
 DOCKER_INSTALL_URL="https://get.docker.com"
 DOCKER_INSTALL_SHA256="36bab4d12295a539f7493d52ed8296244895d2febceff5e725dedc0b0708f77b"
 PACKAGECLOUD_INSTALL_URL="https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh"
-PACKAGECLOUD_INSTALL_SHA256="3a098063d364ab1e69516d6835d69945d0e4061c003f86a98e7cf307bb79a91e"
+# Reviewed 2026-10-26: CrowdSec repository setup, bounded apt-lock retries and OS validation.
+PACKAGECLOUD_INSTALL_SHA256="47a7376bf6dedfa6573d7724a3c8951dccb5d2d51bcf10ab534f658d3d048ff2"
 
 say() { printf '\n\033[1;32m== %s\033[0m\n' "$*"; }
 ask() { # ask "question" "default" -> answer on stdout, default on empty enter

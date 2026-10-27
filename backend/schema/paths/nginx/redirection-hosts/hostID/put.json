@@ -30,6 +30,11 @@
 				"schema": {
 					"type": "object",
 					"additionalProperties": false,
+					"allOf": [
+						{
+							"$ref": "../../../../common.json#/properties/ssl_update_rules"
+						}
+					],
 					"minProperties": 1,
 					"properties": {
 						"domain_names": {

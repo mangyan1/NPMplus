@@ -5,6 +5,7 @@ import { rateLimit } from "express-rate-limit";
 import multer from "multer";
 import dnsPlugins from "../../certbot/dns-plugins.json" with { type: "json" };
 import internalCertificate from "../../internal/certificate.js";
+import errs from "../../lib/error.js";
 import jwtdecode from "../../lib/express/jwt-decode.js";
 import requireLogin from "../../lib/express/require-login.js";
 import apiValidator from "../../lib/validator/api.js";
@@ -30,9 +31,6 @@ const listSchema = {
 					"mtls_streams",
 				],
 			},
-		},
-		query: {
-			$ref: "common#/properties/query",
 		},
 	},
 };
@@ -69,11 +67,6 @@ const uploadCerts = multer({
 	{ name: "certificate", maxCount: 1 },
 	{ name: "certificate_key", maxCount: 1 },
 ]);
-const parseCertFiles = (req, res, next) =>
-	uploadCerts(req, res, (err) => {
-		if (err) return res.status(400).send({ error: "only certificate and certificate_key files are allowed" });
-		next();
-	});
 
 /**
  * /api/nginx/certificates
@@ -90,9 +83,8 @@ router
 	.get(async (req, res) => {
 		const data = await validator(listSchema, {
 			expand: typeof req.query.expand === "string" ? req.query.expand.split(",") : null,
-			query: typeof req.query.query === "string" ? req.query.query : null,
 		});
-		const rows = await internalCertificate.getAll(res.locals.access, data.expand, data.query);
+		const rows = await internalCertificate.getAll(res.locals.access, data.expand);
 		res.status(200).send(rows);
 	})
 
@@ -167,8 +159,8 @@ router
 	 *
 	 * Validate certificates
 	 */
-	.post(parseCertFiles, (req, res) => {
-		if (!req.files?.certificate) return res.status(400).send({ error: "certificate file is required" });
+	.post(uploadCerts, (req, res) => {
+		if (!req.files?.certificate) throw new errs.ValidationError("certificate file is required");
 
 		const result = internalCertificate.validate(res.locals.access, {
 			files: req.files,
@@ -226,8 +218,8 @@ router
 	 *
 	 * Upload certificates
 	 */
-	.post(parseCertFiles, async (req, res) => {
-		if (!req.files?.certificate) return res.status(400).send({ error: "certificate file is required" });
+	.post(uploadCerts, async (req, res) => {
+		if (!req.files?.certificate) throw new errs.ValidationError("certificate file is required");
 
 		const result = await internalCertificate.upload(res.locals.access, {
 			id: Number.parseInt(req.params.certificate_id, 10),

@@ -5,7 +5,7 @@ function EmptyRow({ tableInstance }) {
 		<tr>
 			<td colSpan={tableInstance.getAllFlatColumns().length}>
 				<p className="text-center">
-					<T id="table.no-items" />
+					<T id="empty-search" />
 				</p>
 			</td>
 		</tr>

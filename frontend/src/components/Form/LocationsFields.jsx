@@ -38,7 +38,6 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 		npmplusAuthRequest: "none",
 		npmplusAuthRequestUpstream: "",
 		npmplusAccessListType: "global",
-		id: null,
 		...item,
 		uiKey: nextUiKey.current++,
 	});
@@ -75,9 +74,6 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 
 			if (field === "npmplusCrowdsecAppsec" && fieldValue === false) {
 				updatedLocation.npmplusProxyRequestBuffering = false;
-			}
-			if (field === "npmplusProxyRequestBuffering" && fieldValue === true) {
-				updatedLocation.npmplusCrowdsecAppsec = true;
 			}
 			if (field === "npmplusAuthRequest" && fieldValue === "none") {
 				updatedLocation.npmplusAuthRequestUpstream = "";
@@ -148,6 +144,7 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 							aria-label={intl.formatMessage({ id: "location.filter" })}
 							value={filter}
 							onChange={(e) => setFilter(e.target.value)}
+							onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
 						/>
 
 						<button
@@ -325,7 +322,7 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 										type="text"
 										className="form-control"
 										required={item.forwardScheme !== "empty"}
-										pattern="\S{0,255}"
+										pattern="(?=\S{0,255}$)[^\s\/]{0,253}(\/\S*)?"
 										placeholder="eg: 10.0.0.1/path/"
 										value={item.forwardHost}
 										onChange={(e) => handleChange(idx, "forwardHost", e.target.value)}
@@ -418,7 +415,17 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 												<T id="host.flags.disable-request-buffering" />
 											</span>
 											<span className="col-auto">
-												<span className="form-check form-check-single form-switch">
+												<span
+													className="form-check form-check-single form-switch"
+													title={
+														item.npmplusCrowdsecAppsec ||
+														!["http", "https"].includes(item.forwardScheme)
+															? undefined
+															: intl.formatMessage({
+																	id: "host.flags.disable-request-buffering.requires-appsec",
+																})
+													}
+												>
 													<input
 														id={`npmplusProxyRequestBuffering-${item.uiKey}`}
 														className={cn("form-check-input", {
@@ -433,7 +440,10 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 																e.target.checked,
 															)
 														}
-														disabled={!["http", "https"].includes(item.forwardScheme)}
+														disabled={
+															!item.npmplusCrowdsecAppsec ||
+															!["http", "https"].includes(item.forwardScheme)
+														}
 													/>
 												</span>
 											</span>
@@ -596,7 +606,9 @@ export function LocationsFields({ initialValues, name = "locations" }) {
 														id={`npmplusAuthRequestUpstream-${item.uiKey}`}
 														type="text"
 														className={`form-control ${item.npmplusAuthRequestUpstream && !upstreamUrlPattern.test(item.npmplusAuthRequestUpstream) ? "is-invalid" : ""}`}
-														placeholder="keep empty to reuse env value"
+														placeholder={intl.formatMessage({
+															id: "host.auth-request-upstream.placeholder",
+														})}
 														maxLength={255}
 														pattern="^https?://(([^\s\/:]+|\[[a-fA-F0-9:]+\]):[0-9]+|cu_[^\s\/:]+)$"
 														value={item.npmplusAuthRequestUpstream}

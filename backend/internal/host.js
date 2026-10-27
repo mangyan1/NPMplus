@@ -1,3 +1,4 @@
+import { domainToASCII, domainToUnicode } from "node:url";
 import { castJsonIfNeed } from "../lib/helpers.js";
 import deadHostModel from "../models/dead_host.js";
 import proxyHostModel from "../models/proxy_host.js";
@@ -15,7 +16,9 @@ const checkHostnameRecordsTaken = (hostname, existingRows, ignoreId) =>
 			(!ignoreId || ignoreId !== existingRow.id) &&
 			// Does this domain match?
 			existingRow.domain_names.some(
-				(existingHostname) => existingHostname.toLowerCase() === hostname.toLowerCase(),
+				(existingHostname) =>
+					(domainToASCII(existingHostname) || existingHostname).toLowerCase() ===
+					(domainToASCII(hostname) || hostname).toLowerCase(),
 			),
 	);
 
@@ -33,8 +36,18 @@ const internalHost = {
 	cleanSslHstsData: (newCert, data, existingData) => {
 		const combinedData = { ...existingData, ...data };
 
-		if (!combinedData.certificate_id && !newCert) {
+		if (!(combinedData.certificate_id > 0) && !newCert) {
 			combinedData.ssl_forced = false;
+			combinedData.npmplus_http3_support = false;
+			combinedData.npmplus_mtls_certificate_id = 0;
+		}
+
+		if (!(combinedData.npmplus_mtls_certificate_id > 0)) {
+			combinedData.npmplus_mtls_verify_client_optional = false;
+		}
+
+		if (combinedData.npmplus_mtls_certificate_id > 0 && !combinedData.npmplus_mtls_verify_client_optional) {
+			combinedData.ssl_forced = true;
 		}
 
 		if (!combinedData.ssl_forced) {
@@ -74,7 +87,17 @@ const internalHost = {
 							await model
 								.query()
 								.where("enabled", 1)
-								.andWhere(castJsonIfNeed("domain_names"), "like", `%${hostname}%`),
+								.andWhere((query) =>
+									query
+										.whereILike(
+											castJsonIfNeed("domain_names"),
+											`%${domainToASCII(hostname) || hostname}%`,
+										)
+										.orWhereILike(
+											castJsonIfNeed("domain_names"),
+											`%${domainToUnicode(hostname) || hostname}%`,
+										),
+								),
 							ignore_type === type && ignore_id ? ignore_id : 0,
 						),
 				),

@@ -1,5 +1,4 @@
 import { IconAlertTriangle } from "@tabler/icons-react";
-import { useQueryClient } from "@tanstack/react-query";
 import cn from "clsx";
 import { Field, Form, Formik } from "formik";
 import { useState } from "react";
@@ -16,7 +15,6 @@ const showHTTPCertificateModal = () => {
 };
 
 const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {
-	const queryClient = useQueryClient();
 	const [errorMsg, setErrorMsg] = useState(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [domains, setDomains] = useState([]);
@@ -45,7 +43,6 @@ const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {
 				setErrorMsg(<T id={err.message} />);
 			}
 		}
-		await queryClient.invalidateQueries({ queryKey: ["certificates"] });
 		setIsSubmitting(false);
 		setSubmitting(false);
 	};
@@ -105,7 +102,7 @@ const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {
 	);
 
 	return (
-		<Modal show={visible} onHide={remove}>
+		<Modal show={visible} onHide={isSubmitting || isTesting ? undefined : remove}>
 			<Formik
 				initialValues={{
 					domainNames: [],
@@ -116,7 +113,7 @@ const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {
 			>
 				{() => (
 					<Form>
-						<Modal.Header closeButton>
+						<Modal.Header closeButton={!(isSubmitting || isTesting)}>
 							<Modal.Title>
 								<T id="object.add" tData={{ object: "lets-encrypt-via-http" }} />
 							</Modal.Title>
@@ -132,6 +129,7 @@ const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {
 										<T id="certificates.http.warning" />
 									</p>
 									<DomainNamesField
+										forCertificate
 										onChange={(doms) => {
 											setDomains(doms);
 											setTestResults(null);
@@ -186,8 +184,7 @@ const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {
 								</Button>
 								<Button
 									type="submit"
-									actionType="primary"
-									className="bg-pink"
+									color="pink"
 									isLoading={isSubmitting}
 									disabled={isSubmitting || isTesting}
 								>
