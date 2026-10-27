@@ -67,6 +67,7 @@ if [[ $1 == compose ]]; then
         echo 'bouncer startup gate recreated CrowdSec during shutdown' >&2
         exit 15
       fi
+      [[ ! -f "$FIXTURE_ROOT/dockerd-stopped" ]] || { echo 'Docker was stopped with its required boot guard' >&2; exit 16; }
       touch "$FIXTURE_ROOT/stopped" ;;
     *' up -d'*)
       [[ $FIXTURE_CASE != rollback-fails ]] || exit 7
@@ -259,6 +260,18 @@ echo '-A FORWARD -m set --match-set crowdsec-blacklists src -j DROP'
         self.assertNotEqual(code, 0, output)
         self.assert_restored()
         self.assertIn("reverted - failure diagnostics are in", output)
+
+    def test_restoration_does_not_stop_docker_through_its_required_boot_guard(self):
+        self.write_tool("systemctl", '''#!/bin/bash
+if [[ $* == 'disable npmplus-boot-guard.service' ]]; then touch "$FIXTURE_ROOT/guard-detached"; fi
+if [[ $* == 'stop npmplus-boot-guard.service' && ! -f "$FIXTURE_ROOT/guard-detached" ]]; then
+  touch "$FIXTURE_ROOT/dockerd-stopped"
+fi
+''')
+        code, output = self.run_wrapper()
+        self.assertNotEqual(code, 0, output)
+        self.assert_restored()
+        self.assertFalse((self.root / "dockerd-stopped").exists())
 
     def test_ctrl_c_restores_state_and_stops_the_deployment_child(self):
         code, output = self.run_wrapper("interrupt", signal.SIGINT)

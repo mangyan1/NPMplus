@@ -3303,8 +3303,10 @@ revert() {
 	fi
 	for unit in npmplus-public.service npmplus-cloudflare-origin-lock.service npmplus-boot-guard.service; do
 		if systemctl cat "$unit" >/dev/null 2>&1; then
-			timeout --kill-after=5s 90s systemctl stop "$unit" || return 1
+			# Detach Docker's Requires= edge before stopping its boot guard.
+			# Stopping the required unit first also stops the shared Docker daemon.
 			systemctl disable "$unit" >/dev/null || return 1
+			timeout --kill-after=5s 90s systemctl stop "$unit" || return 1
 		fi
 	done
 	timeout --kill-after=5s 90s docker compose -f "$COMPOSE_FILE" down || return 1
