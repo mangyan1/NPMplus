@@ -1,0 +1,10 @@
+--- a/lib/geoip/geoiptest/geoiptest.go
++++ b/lib/geoip/geoiptest/geoiptest.go
+@@ -111,6 +111,7 @@
+ 	t.Helper()
+ 
+ 	tree, err := mmdbwriter.New(mmdbwriter.Options{
++		BuildEpoch:   1, // Stable fixture bytes across clock-second boundaries.
+ 		DatabaseType: dbType,
+ 		RecordSize:   24,
+ 	})

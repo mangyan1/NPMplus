@@ -12,6 +12,10 @@ executable is copied into the final image. The runtime retains user 1000,
 `/ko-app/anubis`, the trust store, and upstream data. No challenge, honeypot, or
 policy rule is removed.
 
+The synthetic GeoIP database helper uses a fixed build epoch so identical records
+produce identical bytes when generated across a clock-second boundary. The full
+upstream test suite remains enabled, and its update test also runs 100 times.
+
 The Security Images workflow tests and scans both AMD64 and ARM64 candidates
 before promoting their exact digests to `ghcr.io/mangyan1/npmplus:anubis`.
 Candidate and commit tags do not move the upstream Anubis tags. Installer adoption
