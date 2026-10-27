@@ -33,6 +33,7 @@ jobs:
           node validate-schema.js
           pnpm test
           python3 ../tests/installer-recovery.py
+          python3 ../tests/safe-update-recovery.py
           python3 ../tests/crs-observation.py
           python3 ../tests/crs-control.py
           python3 ../tests/heal-migration.py
