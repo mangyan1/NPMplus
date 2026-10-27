@@ -23,7 +23,7 @@ CADDY_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:caddy"
 CROWDSEC_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:crowdsec"
 ANUBIS_IMAGE_CHANNEL="ghcr.io/mangyan1/npmplus:anubis"
 DOCKER_INSTALL_URL="https://get.docker.com"
-DOCKER_INSTALL_SHA256="36bab4d12295a539f7493d52ed8296244895d2febceff5e725dedc0b0708f77b"
+DOCKER_INSTALL_SHA256="7f966774378d94acf1817eb1aba213c21b576d01d1ee2f0656fe36e75ffa1258"
 PACKAGECLOUD_INSTALL_URL="https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh"
 # Reviewed 2026-10-26: CrowdSec repository setup, bounded apt-lock retries and OS validation.
 PACKAGECLOUD_INSTALL_SHA256="47a7376bf6dedfa6573d7724a3c8951dccb5d2d51bcf10ab534f658d3d048ff2"
