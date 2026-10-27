@@ -210,6 +210,16 @@ exit 42
         self.assertNotEqual(code, 0, output)
         self.assert_previous_snapshot()
 
+    def test_failed_helper_copy_cannot_promote_an_incomplete_snapshot(self):
+        (self.root / "usr/local/bin/npmplus-backup").write_text("original-backup-helper")
+        self.write_tool("cp", '''#!/bin/bash
+if [[ $* == *usr/local/bin/npmplus-backup* ]]; then exit 9; fi
+exec /bin/cp "$@"
+''')
+        code, output = self.run_wrapper()
+        self.assertNotEqual(code, 0, output)
+        self.assert_previous_snapshot()
+
     def test_failed_snapshot_promotion_restores_the_previous_directory(self):
         code, output = self.run_wrapper("promote-fails")
         self.assertNotEqual(code, 0, output)

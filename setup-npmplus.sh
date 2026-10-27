@@ -3506,13 +3506,21 @@ BACKUP=$SNAPSHOT_STAGE
 log "snapshot: building $BACKUP; previous last-good remains untouched"
 chmod 700 "$BACKUP"
 cp -a "$COMPOSE_FILE" "$BACKUP/compose.yaml"
-cp -a /opt/npmplus/crowdsec/crowdsec.conf "$BACKUP/crowdsec-bouncer.conf" 2>/dev/null || rm -f "$BACKUP/crowdsec-bouncer.conf"
-cp -a /opt/anubis.yaml "$BACKUP/anubis.yaml" 2>/dev/null || rm -f "$BACKUP/anubis.yaml"
+if [[ -e /opt/npmplus/crowdsec/crowdsec.conf ]]; then
+	cp -a /opt/npmplus/crowdsec/crowdsec.conf "$BACKUP/crowdsec-bouncer.conf"
+fi
+if [[ -e /opt/anubis.yaml ]]; then
+	cp -a /opt/anubis.yaml "$BACKUP/anubis.yaml"
+fi
 cp -a "$SETUP" "$BACKUP/setup-npmplus.sh"
 for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal npmplus-collect-enforcement npmplus-collect-anubis; do
 	rm -f "$BACKUP/$f" "$BACKUP/cron-$f"
-	cp -a "/usr/local/bin/$f" "$BACKUP/$f" 2>/dev/null || true
-	cp -a "/etc/cron.d/$f" "$BACKUP/cron-$f" 2>/dev/null || true
+	if [[ -e "/usr/local/bin/$f" ]]; then
+		cp -a "/usr/local/bin/$f" "$BACKUP/$f"
+	fi
+	if [[ -e "/etc/cron.d/$f" ]]; then
+		cp -a "/etc/cron.d/$f" "$BACKUP/cron-$f"
+	fi
 done
 host_security_paths=(
 	etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
