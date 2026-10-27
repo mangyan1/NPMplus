@@ -2,10 +2,19 @@ import { Field, Form, Formik } from "formik";
 import { useState } from "react";
 import { Alert } from "react-bootstrap";
 import Modal from "react-bootstrap/Modal";
-import { Button, DirectoryField, Loading, NginxConfigField, SSLCertificateField } from "src/components";
+import {
+	Button,
+	DirectoryField,
+	HasPermission,
+	Loading,
+	NginxConfigField,
+	SSLCertificateField,
+	SSLOptionsFields,
+} from "src/components";
 import { useDirectorySuggestions, useSetStream, useStream, useStreams } from "src/hooks";
 import { intl, T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
+import { MANAGE, STREAMS } from "src/modules/Permissions";
 import { showTabOfInvalid, validateString } from "src/modules/Validations";
 import { showObjectSuccess } from "src/notifications";
 
@@ -29,6 +38,7 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 		const payload = {
 			id: id === "new" ? undefined : id,
 			...values,
+			domainNames: values.certificateId === "new" ? values.domainNames : undefined,
 		};
 
 		setStream(payload, {
@@ -57,7 +67,7 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 	};
 
 	return (
-		<Modal show={visible} onHide={remove}>
+		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
 			{error && (
 				<Alert variant="danger" className="m-3">
 					{error?.message}
@@ -85,7 +95,7 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 				>
 					{({ values, setFieldValue }) => (
 						<Form onInvalid={showTabOfInvalid}>
-							<Modal.Header closeButton>
+							<Modal.Header closeButton={!isSubmitting}>
 								<Modal.Title>
 									<T id={data?.id ? "object.edit" : "object.add"} tData={{ object: "stream" }} />
 								</Modal.Title>
@@ -116,7 +126,6 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 													data-bs-toggle={values.udpForwarding ? undefined : "tab"}
 													aria-selected="false"
 													aria-disabled={values.udpForwarding}
-													tabIndex={-1}
 													role="tab"
 												>
 													<T id="column.ssl" />
@@ -129,7 +138,6 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 													title="Settings"
 													data-bs-toggle="tab"
 													aria-selected="false"
-													tabIndex={-1}
 													role="tab"
 												>
 													<T id="domains.advanced" />
@@ -152,6 +160,7 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 																type="text"
 																minLength={1}
 																maxLength={11}
+																pattern="[0-9]{1,5}(-[0-9]{1,5})?"
 																className={`form-control ${form.errors.incomingPort && form.touched.incomingPort ? "is-invalid" : ""}`}
 																required
 																placeholder="eg: 8080"
@@ -197,7 +206,7 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 												</Field>
 												<div className="row">
 													<div className="col-md-8">
-														<Field name="forwardingHost" validate={validateString(1, 255)}>
+														<Field name="forwardingHost" validate={validateString(1, 253)}>
 															{({ field, form }) => (
 																<div className="mb-3">
 																	<label
@@ -211,6 +220,7 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 																		type="text"
 																		className={`form-control ${form.errors.forwardingHost && form.touched.forwardingHost ? "is-invalid" : ""}`}
 																		required
+																		pattern="\S+"
 																		placeholder={intl.formatMessage({
 																			id: "stream.forward-host.placeholder",
 																		})}
@@ -242,6 +252,7 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 																		id="forwardingPort"
 																		type="text"
 																		maxLength={12}
+																		pattern="[0-9]{0,5}|\$server_port"
 																		className={`form-control ${form.errors.forwardingPort && form.touched.forwardingPort ? "is-invalid" : ""}`}
 																		placeholder="eg: 8081"
 																		{...field}
@@ -298,7 +309,7 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 																							) {
 																								setFieldValue(
 																									"npmplusProxyProtocolForwarding",
-																									0,
+																									2,
 																								);
 																							}
 																							setFieldValue(
@@ -308,6 +319,14 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 																							setFieldValue(
 																								"certificateId",
 																								0,
+																							);
+																							setFieldValue(
+																								"npmplusMtlsCertificateId",
+																								0,
+																							);
+																							setFieldValue(
+																								"npmplusMtlsVerifyClientOptional",
+																								false,
 																							);
 																						}
 																					}}
@@ -349,7 +368,7 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 																							) {
 																								setFieldValue(
 																									"npmplusProxyProtocolForwarding",
-																									0,
+																									2,
 																								);
 																							}
 																							setFieldValue(
@@ -470,41 +489,11 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 												<SSLCertificateField
 													name="certificateId"
 													label="ssl-certificate"
-													allowNew={false}
+													allowNew
 													forHttp={false}
 												/>
 
-												<div className="row">
-													<div className="col-12">
-														<Field name="npmplusMtlsVerifyClientOptional">
-															{({ field }) => (
-																<label className="form-check form-switch mt-1">
-																	<input
-																		className="form-check-input"
-																		type="checkbox"
-																		checked={
-																			values?.npmplusMtlsVerifyClientOptional ===
-																			true
-																		}
-																		onChange={(e) => {
-																			setFieldValue(field.name, e.target.checked);
-																		}}
-																		disabled={
-																			!(
-																				values?.certificateId > 0 &&
-																				values?.npmplusMtlsCertificateId > 0
-																			) || values?.udpForwarding
-																		}
-																	/>
-
-																	<span className="form-check-label">
-																		<T id="domains.mtls-verify-client-optional" />
-																	</span>
-																</label>
-															)}
-														</Field>
-													</div>
-												</div>
+												<SSLOptionsFields color="bg-blue" forHttp={false} />
 											</div>
 											<div className="tab-pane" id="tab-advanced" role="tabpanel">
 												<NginxConfigField
@@ -530,15 +519,17 @@ const StreamModal = EasyModal.create(({ id, visible, remove }) => {
 								<Button onClick={remove} disabled={isSubmitting}>
 									<T id="cancel" />
 								</Button>
-								<Button
-									type="submit"
-									actionType="primary"
-									className="ms-auto"
-									isLoading={isSubmitting}
-									disabled={isSubmitting}
-								>
-									<T id="save" />
-								</Button>
+								<HasPermission section={STREAMS} permission={MANAGE} hideError>
+									<Button
+										type="submit"
+										actionType="primary"
+										className="ms-auto"
+										isLoading={isSubmitting}
+										disabled={isSubmitting}
+									>
+										<T id="save" />
+									</Button>
+								</HasPermission>
 							</Modal.Footer>
 						</Form>
 					)}

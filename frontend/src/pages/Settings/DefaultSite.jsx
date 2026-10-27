@@ -65,7 +65,7 @@ export default function DefaultSite() {
 	return (
 		<Formik
 			initialValues={{
-				value: data?.value || "congratulations",
+				value: data?.value,
 				redirect: data?.meta?.redirect || "",
 				html: data?.meta?.html || "",
 				status: data?.meta?.status || "",
@@ -220,8 +220,9 @@ export default function DefaultSite() {
 												type="text"
 												placeholder="https://"
 												required
+												pattern="\S+"
 												autoComplete="off"
-												className="form-control"
+												className={`form-control ${form.errors.redirect && form.touched.redirect ? "is-invalid" : ""}`}
 												{...field}
 											/>
 
@@ -237,8 +238,8 @@ export default function DefaultSite() {
 						)}
 						{values.value === "html" && (
 							<>
-								<Field name="html" validate={validateString(1)}>
-									{({ field, form }) => (
+								<Field name="html">
+									{({ field }) => (
 										<div className="mt-5 mb-3">
 											<label className="form-label" htmlFor="html">
 												<T id="settings.default-site.html" />
@@ -246,6 +247,7 @@ export default function DefaultSite() {
 											<div>
 												<textarea
 													id="html"
+													required
 													className="form-control font-monospace"
 													spellCheck={false}
 													placeholder={intl.formatMessage({
@@ -254,12 +256,6 @@ export default function DefaultSite() {
 													rows={14}
 													{...field}
 												/>
-
-												{form.errors.html ? (
-													<div className="invalid-feedback">
-														{form.touched.html ? form.errors.html : null}
-													</div>
-												) : null}
 											</div>
 										</div>
 									)}
@@ -290,8 +286,8 @@ export default function DefaultSite() {
 						<div className="btn-list justify-content-end">
 							<Button
 								type="submit"
-								actionType="primary"
-								className="ms-auto bg-teal"
+								color="teal"
+								className="ms-auto"
 								isLoading={isSubmitting}
 								disabled={isSubmitting}
 							>

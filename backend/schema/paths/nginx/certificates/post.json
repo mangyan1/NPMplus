@@ -20,6 +20,96 @@
 					"required": [
 						"provider"
 					],
+					"allOf": [
+						{
+							"if": {
+								"properties": {
+									"provider": {
+										"const": "letsencrypt"
+									}
+								}
+							},
+							"then": {
+								"required": [
+									"domain_names"
+								]
+							},
+							"else": {
+								"properties": {
+									"domain_names": false,
+									"npmplus_reuse_key": false,
+									"npmplus_dns_challenge": false,
+									"npmplus_dns_provider": false,
+									"npmplus_dns_provider_credentials": false,
+									"npmplus_propagation_seconds": false
+								}
+							}
+						},
+						{
+							"if": {
+								"properties": {
+									"npmplus_dns_challenge": {
+										"type": "boolean",
+										"const": true
+									}
+								},
+								"required": [
+									"npmplus_dns_challenge"
+								]
+							},
+							"then": {
+								"required": [
+									"npmplus_dns_provider"
+								],
+								"properties": {
+									"domain_names": {
+										"$ref": "../../../components/certificate-object.json#/properties/domain_names_dns"
+									}
+								}
+							},
+							"else": {
+								"if": {
+									"properties": {
+										"provider": {
+											"const": "letsencrypt"
+										}
+									}
+								},
+								"then": {
+									"properties": {
+										"domain_names": {
+											"$ref": "../../../components/certificate-object.json#/properties/domain_names_http"
+										}
+									}
+								}
+							}
+						},
+						{
+							"if": {
+								"properties": {
+									"provider": {
+										"enum": [
+											"other",
+											"mtls"
+										]
+									}
+								},
+								"required": [
+									"provider"
+								]
+							},
+							"then": {
+								"required": [
+									"nice_name"
+								],
+								"properties": {
+									"nice_name": {
+										"minLength": 1
+									}
+								}
+							}
+						}
+					],
 					"properties": {
 						"provider": {
 							"$ref": "../../../components/certificate-object.json#/properties/provider"

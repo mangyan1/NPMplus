@@ -1,20 +1,24 @@
 import { intl } from "src/locale";
 
-const emailPattern = /@/;
+const emailPattern = /@/u;
 const domainPattern = /^(?!.*:[0-9]+$).+$/;
-const ipv4Pattern = /^[0-9.]+$/;
+const certificateHttpDomainPattern =
+	/^(?:(?:[\p{L}\p{Mn}\p{Mc}\p{Nd}-]+\.)+[\p{L}\p{Mn}\p{Mc}\p{Nd}-]+|\[[0-9a-fA-F:]+\])$/u;
+const certificateDnsDomainPattern =
+	/^(?![0-9.]+$)(?:\*\.)?(?:[\p{L}\p{Mn}\p{Mc}\p{Nd}-]+\.)+[\p{L}\p{Mn}\p{Mc}\p{Nd}-]+$/u;
 const upstreamUrlPattern = /^https?:\/\/(([^\s/:]+|\[[a-fA-F0-9:]+\]):[0-9]+|cu_[^\s/:]+)$/;
 
 const validateString =
-	(minLength = 0, maxLength = 0) =>
+	(minLength = 0, maxLength = 0, trim = true) =>
 	(value) => {
-		if (minLength && value.length === 0) {
+		const { length } = trim ? value.trim() : value;
+		if (minLength && length === 0) {
 			return intl.formatMessage({ id: "error.required" });
 		}
-		if (value.length < minLength) {
+		if (length < minLength) {
 			return intl.formatMessage({ id: "error.min-character-length" }, { min: minLength });
 		}
-		if (maxLength && value.length > maxLength) {
+		if (maxLength && length > maxLength) {
 			return intl.formatMessage({ id: "error.max-character-length" }, { max: maxLength });
 		}
 	};
@@ -41,49 +45,37 @@ const validateEmail = () => (value) => {
 	if (!emailPattern.test(value)) {
 		return intl.formatMessage({ id: "error.invalid-email" });
 	}
+	if (value.length > 255) {
+		return intl.formatMessage({ id: "error.max-character-length" }, { max: 255 });
+	}
 };
 
-const validateDomain = (allowWildcards) => {
-	return (d) => {
-		const dom = d.trim();
-
-		if (!allowWildcards) {
-			// Block wildcards
-			if (dom.includes("*")) {
-				return false;
-			}
-		} else {
-			// Block IPv6
-			if (dom.startsWith("[") && dom.endsWith("]")) {
-				return false;
-			}
-
-			// Block IPv4
-			if (ipv4Pattern.test(dom)) {
-				return false;
-			}
-		}
-
-		// This will match *.com type domains,
-		return domainPattern.test(dom);
-	};
+const validateDomain = (input, allowWildcards, forCertificate) => {
+	const domain = input.trim();
+	if (!forCertificate) return domainPattern.test(domain);
+	return (
+		[...domain].length <= 253 &&
+		(allowWildcards ? certificateDnsDomainPattern : certificateHttpDomainPattern).test(domain)
+	);
 };
 
-const validateDomains = (allowWildcards) => {
-	const vDom = validateDomain(allowWildcards);
+const validateDomains = (value, allowWildcards, forCertificate) => {
+	const maxDomains = forCertificate ? 25 : 100;
 
-	return (value) => {
-		if (!value?.length) {
-			return intl.formatMessage({ id: "error.required" });
-		}
+	if (!value?.length) {
+		return intl.formatMessage({ id: "error.required" });
+	}
 
-		// validate each domain
-		for (const domain of value) {
-			if (!vDom(domain)) {
-				return intl.formatMessage({ id: "error.invalid-domain" }, { domain });
-			}
+	if (value.length > maxDomains) {
+		return intl.formatMessage({ id: "error.max-domains" }, { max: maxDomains });
+	}
+
+	// validate each domain
+	for (const domain of value) {
+		if (!validateDomain(domain, allowWildcards, forCertificate)) {
+			return intl.formatMessage({ id: "error.invalid-domain" }, { domain });
 		}
-	};
+	}
 };
 
 const showTabOfInvalid = ({ currentTarget }) => {

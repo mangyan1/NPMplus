@@ -31,7 +31,7 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 	const [errorMsg, setErrorMsg] = useState(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [advVisible, setAdvVisible] = useState(false);
-	const initialLocations = data?.locations.map(({ accessLists, ...location }) => ({
+	const initialLocations = data?.locations.map(({ id: locationId, proxyHostId, accessLists, ...location }) => ({
 		...location,
 		npmplusAccessListIds: accessLists.map((accessList) => accessList.id),
 	}));
@@ -53,7 +53,11 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 			...values,
 			npmplusAccessListIds: globalAclIds,
 			forwardPort: values.forwardPort || 0,
-			locations: values.locations.map((location) => ({ ...location, forwardPort: location.forwardPort || 0 })),
+			locations: values.locations.map((location) => ({
+				...location,
+				forwardPort: location.forwardPort || 0,
+				npmplusAccessListIds: location.npmplusAccessListType === "custom" ? location.npmplusAccessListIds : [],
+			})),
 		};
 
 		setProxyHost(payload, {
@@ -82,7 +86,7 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 	};
 
 	return (
-		<Modal show={visible} onHide={remove}>
+		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
 			{error && (
 				<Alert variant="danger" className="m-3">
 					{error?.message}
@@ -128,7 +132,7 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 				>
 					{({ values }) => (
 						<Form onInvalid={showTabOfInvalid}>
-							<Modal.Header closeButton>
+							<Modal.Header closeButton={!isSubmitting}>
 								<Modal.Title>
 									<T
 										id={data?.id && !isClone ? "object.edit" : "object.add"}
@@ -160,7 +164,6 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 													className="nav-link"
 													data-bs-toggle="tab"
 													aria-selected="false"
-													tabIndex={-1}
 													role="tab"
 												>
 													{<T id="column.custom-locations" />}
@@ -173,7 +176,6 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 													className="nav-link"
 													data-bs-toggle="tab"
 													aria-selected="false"
-													tabIndex={-1}
 													role="tab"
 												>
 													<T id="column.ssl" />
@@ -186,11 +188,10 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 													title="Settings"
 													data-bs-toggle="tab"
 													aria-selected="false"
-													tabIndex={-1}
 													role="tab"
 												>
 													<T id="domains.advanced" />
-													{values?.advancedConfig?.trim() ? " *" : ""}
+													{values?.advancedConfig?.trim() ? "*" : ""}
 												</a>
 											</li>
 										</ul>
@@ -198,7 +199,13 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 									<div className="card-body">
 										<div className="tab-content">
 											<div className="tab-pane active show" id="tab-details" role="tabpanel">
-												<DomainNamesField isWildcardPermitted dnsProviderWildcardSupported />
+												<DomainNamesField
+													isWildcardPermitted={
+														values.certificateId !== "new" || values.npmplusDnsChallenge
+													}
+													dnsProviderWildcardSupported
+													forCertificate={values.certificateId === "new"}
+												/>
 												<div className="row">
 													<div className="col-md-3">
 														<Field name="forwardScheme">
@@ -266,7 +273,7 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 																		className="form-control"
 																		placeholder="example.com"
 																		required={form.values.forwardScheme !== "empty"}
-																		pattern="\S{0,255}"
+																		pattern="(?=\S{0,255}$)[^\s\/]{0,253}(\/\S*)?"
 																		{...field}
 																	/>
 																</div>
@@ -403,7 +410,19 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 																		type="checkbox"
 																	>
 																		{({ field, form }) => (
-																			<span className="form-check form-check-single form-switch">
+																			<span
+																				className="form-check form-check-single form-switch"
+																				title={
+																					form.values.npmplusCrowdsecAppsec ||
+																					!["http", "https"].includes(
+																						form.values.forwardScheme,
+																					)
+																						? undefined
+																						: intl.formatMessage({
+																								id: "host.flags.disable-request-buffering.requires-appsec",
+																							})
+																				}
+																			>
 																				<input
 																					{...field}
 																					id="npmplusProxyRequestBuffering"
@@ -411,20 +430,12 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 																						"bg-lime": field.checked,
 																					})}
 																					type="checkbox"
-																					onChange={(e) => {
-																						field.onChange(e);
-																						if (e.target.checked) {
-																							form.setFieldValue(
-																								"npmplusCrowdsecAppsec",
-																								true,
-																							);
-																						}
-																					}}
 																					disabled={
-																						form.values.forwardScheme !==
-																							"http" &&
-																						form.values.forwardScheme !==
-																							"https"
+																						!form.values
+																							.npmplusCrowdsecAppsec ||
+																						!["http", "https"].includes(
+																							form.values.forwardScheme,
+																						)
 																					}
 																				/>
 																			</span>
@@ -637,7 +648,11 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 																						id="npmplusAuthRequestUpstream"
 																						type="text"
 																						className={`form-control ${form.errors.npmplusAuthRequestUpstream && form.touched.npmplusAuthRequestUpstream ? "is-invalid" : ""}`}
-																						placeholder="keep empty to reuse env value"
+																						placeholder={intl.formatMessage(
+																							{
+																								id: "host.auth-request-upstream.placeholder",
+																							},
+																						)}
 																						maxLength={255}
 																						pattern="^https?://(([^\s\/:]+|\[[a-fA-F0-9:]+\]):[0-9]+|cu_[^\s\/:]+)$"
 																						{...field}
@@ -706,7 +721,7 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 													allowNew
 												/>
 
-												<SSLOptionsFields color="bg-lime" forProxy />
+												<SSLOptionsFields color="bg-lime" forProxyHost />
 											</div>
 											<div className="tab-pane" id="tab-advanced" role="tabpanel">
 												<NginxConfigField />
@@ -731,8 +746,8 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove }) => {
 								<HasPermission section={PROXY_HOSTS} permission={MANAGE} hideError>
 									<Button
 										type="submit"
-										actionType="primary"
-										className="ms-auto bg-lime"
+										color="lime"
+										className="ms-auto"
 										isLoading={isSubmitting}
 										disabled={isSubmitting}
 									>

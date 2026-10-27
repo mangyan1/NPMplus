@@ -1,10 +1,9 @@
 import { IconAlertTriangle } from "@tabler/icons-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Field, Form, Formik } from "formik";
 import { useState } from "react";
 import { Alert } from "react-bootstrap";
 import Modal from "react-bootstrap/Modal";
-import { createCertificate, uploadCertificate, validateCertificate } from "src/api/backend";
+import { createCertificate, deleteCertificate, uploadCertificate, validateCertificate } from "src/api/backend";
 import { Button } from "src/components";
 import { T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
@@ -16,7 +15,6 @@ const showCustomCertificateModal = (cert, provider) => {
 };
 
 const CustomCertificateModal = EasyModal.create(({ visible, remove, cert, provider = "other" }) => {
-	const queryClient = useQueryClient();
 	const [errorMsg, setErrorMsg] = useState(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const isEdit = Boolean(cert);
@@ -50,7 +48,12 @@ const CustomCertificateModal = EasyModal.create(({ visible, remove, cert, provid
 				});
 
 				// Upload the certificates to the created certificate
-				await uploadCertificate(newCert.id, formData);
+				try {
+					await uploadCertificate(newCert.id, formData);
+				} catch (err) {
+					await deleteCertificate(newCert.id);
+					throw err;
+				}
 			}
 
 			// Success
@@ -60,13 +63,12 @@ const CustomCertificateModal = EasyModal.create(({ visible, remove, cert, provid
 			setErrorMsg(<T id={err.message} />);
 		}
 
-		await queryClient.invalidateQueries({ queryKey: ["certificates"] });
 		setIsSubmitting(false);
 		setSubmitting(false);
 	};
 
 	return (
-		<Modal show={visible} onHide={remove}>
+		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
 			<Formik
 				initialValues={{
 					niceName: cert?.niceName || "",
@@ -78,7 +80,7 @@ const CustomCertificateModal = EasyModal.create(({ visible, remove, cert, provid
 			>
 				{() => (
 					<Form>
-						<Modal.Header closeButton>
+						<Modal.Header closeButton={!isSubmitting}>
 							<Modal.Title>
 								<T
 									id={isEdit ? "object.edit" : "object.add"}
@@ -96,7 +98,7 @@ const CustomCertificateModal = EasyModal.create(({ visible, remove, cert, provid
 										<IconAlertTriangle size={16} className="me-1" />
 										<T id="certificates.custom.warning" />
 									</p>
-									<Field name="niceName" validate={validateString(1, 255)}>
+									<Field name="niceName" validate={isEdit ? undefined : validateString(1, 255)}>
 										{({ field, form }) => (
 											<div className="mb-3">
 												<label htmlFor="niceName" className="form-label">
@@ -109,7 +111,7 @@ const CustomCertificateModal = EasyModal.create(({ visible, remove, cert, provid
 													autoComplete="off"
 													// Disable name editing in edit mode as we only update files
 													disabled={isEdit}
-													className="form-control"
+													className={`form-control ${form.errors.niceName && form.touched.niceName ? "is-invalid" : ""}`}
 													{...field}
 												/>
 
@@ -173,8 +175,8 @@ const CustomCertificateModal = EasyModal.create(({ visible, remove, cert, provid
 							</Button>
 							<Button
 								type="submit"
-								actionType="primary"
-								className="ms-auto bg-pink"
+								color="pink"
+								className="ms-auto"
 								isLoading={isSubmitting}
 								disabled={isSubmitting}
 							>

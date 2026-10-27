@@ -61,6 +61,47 @@ and a fake GitHub CLI; no real branch or PR is created by the tests.
 
 ## Reviewing an upstream update
 
+The October 26 reconciliation incorporates upstream `a27d1f2d`. The rewritten
+history through `375418ab` repeats the eleven already integrated commits through
+`5ba8fe1c`; range-diff finds nine identical patches and two dependency refreshes.
+A history-only merge records that rewrite before the new changes are merged.
+Neither merge removes fork commits or rewrites published branches.
+
+Adopted changes include nginx 1.31.8, updated compression and native GeoIP modules,
+Alpine 3.24.3, stronger host/schema validation, regex-location quoting, mTLS HTTPS
+enforcement, UTC timestamps, paginated tables and audit history, and UI fixes.
+Audit history now returns `{ results, total }`, with server-side filtering and
+bounded pages. Existing ACL rollback, ownership checks, explicit deny-all policies,
+username control-byte rejection, bounded external fetches and template caching
+remain. The GeoIP configuration migration is described in `ADVANCED.md`.
+
+Three upstream replacements remain deliberate fork integration boundaries:
+
+- The Node 24 runtime and reviewed `better-sqlite3` driver stay. Upstream's new
+  `node:sqlite` adapter requires its Node 26 runtime and does not replace the
+  fork's established contention/cache settings and upgrade coverage.
+- Database-backed sessions and MFA challenges, the existing JWT payload/key format,
+  revocation and replay protections stay. Upstream's `jose`/Ed25519 switch is not
+  imported piecemeal. Startup must retain `keys-ec.json`; the container browser
+  gate verifies that an authenticated session survives a restart.
+- The pinned-pip runtime DNS-plugin pipeline and certificate implementation stay
+  under the owner's existing restriction. Pinned pip and Certbot receive reviewed
+  version updates, while upstream's `uv` packaging switch remains deferred.
+
+Both npm manifests and lockfiles retain fork attribution, test/typecheck commands
+and seven-day quarantine. Mature Express 5.3.0 and Undici 8.12.3 are adopted, with
+an override covering older Undici 8 transitive clients. New body-parser and multer
+security patches published October 22 stay quarantined until October 29. Encoded
+API bodies are rejected before decompression using the parser maintainer's
+workaround; upload sites keep the synchronous default file filter. Exact-version
+scanner exceptions expire October 30 and must be removed when those patches age in.
+Upstream's new Biome-only config
+rules and package-manager switch are deferred with their dependency updates. UTC
+upgrade coverage checks a populated database in a non-UTC timezone, an already-UTC
+certificate expiry, one-time migration and recovery of the pre-upgrade snapshot.
+The npmplus packaging-tool baseline is reassessed separately from auxiliary image
+exceptions; raw scans continue to include accepted findings.
+
 The October 16 reconciliation incorporates upstream `5ba8fe1c` while retaining
 the fork's reviewed dependency versions (including Objection 3 during the new
 major release's quarantine), database-backed session/MFA replay guards, and

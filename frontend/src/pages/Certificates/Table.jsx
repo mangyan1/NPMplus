@@ -1,7 +1,9 @@
 import { IconDotsVertical, IconDownload, IconEdit, IconFlask, IconRefresh, IconTrash } from "@tabler/icons-react";
 import {
 	createColumnHelper,
+	createPaginatedRowModel,
 	createSortedRowModel,
+	rowPaginationFeature,
 	rowSortingFeature,
 	sortFn_alphanumeric,
 	sortFn_datetime,
@@ -12,6 +14,7 @@ import {
 import { useMemo } from "react";
 import {
 	CertificateInUseFormatter,
+	certificateProviderTranslation,
 	DateFormatter,
 	DomainsFormatter,
 	EmptyData,
@@ -26,6 +29,8 @@ import { CERTIFICATES, MANAGE } from "src/modules/Permissions";
 const features = tableFeatures({
 	rowSortingFeature,
 	sortedRowModel: createSortedRowModel(),
+	rowPaginationFeature,
+	paginatedRowModel: createPaginatedRowModel(),
 	sortFns: {
 		alphanumeric: sortFn_alphanumeric,
 		datetime: sortFn_datetime,
@@ -96,10 +101,7 @@ export default function Table({ data, isFetching, onDelete, onRenew, onDownload,
 							}
 							return <T id="lets-encrypt" />;
 						}
-						if (r.provider === "other") {
-							return <T id="certificates.custom" />;
-						}
-						return <T id={r.provider} />;
+						return <T id={certificateProviderTranslation(r.provider)} />;
 					},
 				},
 			),
@@ -242,10 +244,13 @@ export default function Table({ data, isFetching, onDelete, onRenew, onDownload,
 		features,
 		columns: columnHelper.columns(columns),
 		data,
+		getRowId: (row) => `${row.id}`,
 		meta: {
 			isFetching,
 		},
 		enableSortingRemoval: false,
+		autoResetPageIndex: false,
+		initialState: { pagination: { pageSize: 25 } },
 	});
 
 	const customAddBtn = (

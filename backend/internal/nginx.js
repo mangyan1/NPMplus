@@ -150,6 +150,9 @@ const internalNginx = {
 			} else {
 				location.forward_upstream_name = `upstream_${host.id}_location_${idx}`;
 			}
+			if (["~ ", "~* "].includes(location.location_type)) {
+				location.path = `"${location.path.replaceAll('"', '\\"')}"`;
+			}
 			renderedLocations += await renderEngine.render(template, location);
 		}
 

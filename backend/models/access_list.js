@@ -29,6 +29,7 @@ class AccessList extends Model {
 
 	$parseDatabaseJson(json) {
 		const { is_deleted, meta, ...thisJson } = super.$parseDatabaseJson(json);
+		thisJson.proxy_host_count &&= Number(thisJson.proxy_host_count);
 		return convertIntFieldsToBool(thisJson, boolFields);
 	}
 
@@ -58,6 +59,9 @@ class AccessList extends Model {
 					from: "access_list.id",
 					to: "access_list_auth.access_list_id",
 				},
+				modify: (qb) => {
+					qb.orderBy("access_list_auth.id");
+				},
 			},
 			clients: {
 				relation: Model.HasManyRelation,
@@ -65,6 +69,9 @@ class AccessList extends Model {
 				join: {
 					from: "access_list.id",
 					to: "access_list_client.access_list_id",
+				},
+				modify: (qb) => {
+					qb.orderBy("access_list_client.id");
 				},
 			},
 			proxy_hosts: {

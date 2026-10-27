@@ -145,13 +145,13 @@ check(
 );
 
 // 8. audit trail recorded the proxy-host lifecycle
-const audit = await request("GET", "/api/audit-log?sort=object_type");
+const audit = await request("GET", "/api/audit-log?query=proxy-host&page_size=100");
 check(
 	"audit log records created and deleted proxy hosts",
 	audit.status === 200 &&
-		(audit.json ?? []).some((row) => row.action === "created" && row.object_type === "proxy-host") &&
-		(audit.json ?? []).some((row) => row.action === "deleted" && row.object_type === "proxy-host"),
-	JSON.stringify(audit.json?.slice(0, 3)),
+		(audit.json?.results ?? []).some((row) => row.action === "created" && row.object_type === "proxy-host") &&
+		(audit.json?.results ?? []).some((row) => row.action === "deleted" && row.object_type === "proxy-host"),
+	JSON.stringify(audit.json?.results?.slice(0, 3)),
 );
 
 // 9. default public site: an unmatched request reaches the default server,

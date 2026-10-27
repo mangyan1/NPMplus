@@ -1,24 +1,35 @@
-# Packaging-tool exceptions; reviewed on 2026-10-16, all expire 2026-10-23.
+# Reviewed 2026-10-26. Packaging-tool exceptions expire 2026-11-02;
+# the mitigated parser and synchronous-upload exceptions expire 2026-10-30.
 # Re-scanned with Trivy 0.74.0; Python imports and pip's vendor manifest verified:
-# ghcr.io/mangyan1/npmplus@sha256:87f65d1c9297c87d6b6eed6b740266d1835f643b5303da33a77956bd0c49fd06
+# Candidate raw scans retain every finding; exact package/version scopes only.
 vulnerabilities:
   - id: CVE-2025-47273
     purls:
       - pkg:pypi/setuptools@70.3.0
-    expired_at: 2026-10-23
-    statement: "Rechecked 2026-10-16: pip 26.2.1's vendor manifest lists setuptools 70.3.0, while importlib.metadata finds no installed setuptools distribution. PyPI still reports pip 26.2.1 as latest. This is a bundled packaging-tool inventory finding, not proof of an importable vulnerable setuptools runtime. Preserve Certbot DNS-plugin installation and reassess the vendor manifest with the next pip release or by expiry."
+    expired_at: 2026-11-02
+    statement: "Rechecked 2026-10-26: pip 26.2.2's vendor manifest lists setuptools 70.3.0, while importlib.metadata finds no installed setuptools distribution. PyPI still reports pip 26.2.2 as latest. This is a bundled packaging-tool inventory finding, not proof of an importable vulnerable setuptools runtime. Preserve Certbot DNS-plugin installation and reassess the vendor manifest with the next pip release or by expiry."
   - id: GHSA-6v7p-g79w-8964
     purls:
       - pkg:pypi/msgpack@1.1.2
-    expired_at: 2026-10-23
-    statement: "Rechecked 2026-10-16: importing pip._vendor.msgpack confirms 1.1.2; the scanner lists 1.2.1 as fixed. PyPI still reports pip 26.2.1 as latest. The packaging cache remains an accepted risk, not universally unreachable. Keep runtime Certbot DNS-plugin installation; await a reviewed pip vendor update rather than modifying bundled modules, and reassess by expiry."
+    expired_at: 2026-11-02
+    statement: "Rechecked 2026-10-26: importing pip._vendor.msgpack confirms 1.1.2; the scanner lists 1.2.1 as fixed. PyPI still reports pip 26.2.2 as latest. The packaging cache remains an accepted risk, not universally unreachable. Keep runtime Certbot DNS-plugin installation; await a reviewed pip vendor update rather than modifying bundled modules, and reassess by expiry."
   - id: CVE-2026-97687
     purls:
       - pkg:pypi/urllib3@2.7.0
-    expired_at: 2026-10-23
-    statement: "Rechecked 2026-10-16: imports confirm pip._vendor.urllib3 2.7.0 and separate Certbot urllib3 2.8.0. PyPI still reports pip 26.2.1 as latest. Accept the packaging-tool HTTPS-proxy TLS risk temporarily under the owner decision preserving runtime DNS-plugin installation; not universally unreachable. Retain suppressed findings in artifacts and reassess by expiry. Advisory: https://github.com/advisories/GHSA-8988-9cw3-xx77"
+    expired_at: 2026-11-02
+    statement: "Rechecked 2026-10-26: imports confirm pip._vendor.urllib3 2.7.0 and separate Certbot urllib3 2.8.0. PyPI still reports pip 26.2.2 as latest. Accept the packaging-tool HTTPS-proxy TLS risk temporarily under the owner decision preserving runtime DNS-plugin installation; not universally unreachable. Retain suppressed findings in artifacts and reassess by expiry. Advisory: https://github.com/advisories/GHSA-8988-9cw3-xx77"
   - id: CVE-2026-97689
     purls:
       - pkg:pypi/urllib3@2.7.0
-    expired_at: 2026-10-23
-    statement: "Rechecked 2026-10-16: imports confirm pip._vendor.urllib3 2.7.0 and separate Certbot urllib3 2.8.0; pip 26.2.1 remains latest on PyPI. Malicious chunked responses during pip downloads remain an accepted packaging-tool availability risk, not a false positive. Preserve runtime DNS-plugin installation, do not modify bundled modules, retain suppressed findings in artifacts, and reassess by expiry. Advisory: https://github.com/advisories/GHSA-vxq7-64xx-v4gw"
+    expired_at: 2026-11-02
+    statement: "Rechecked 2026-10-26: imports confirm pip._vendor.urllib3 2.7.0 and separate Certbot urllib3 2.8.0; pip 26.2.2 remains latest on PyPI. Malicious chunked responses during pip downloads remain an accepted packaging-tool availability risk, not a false positive. Preserve runtime DNS-plugin installation, do not modify bundled modules, retain suppressed findings in artifacts, and reassess by expiry. Advisory: https://github.com/advisories/GHSA-vxq7-64xx-v4gw"
+  - id: CVE-2026-111181
+    purls:
+      - pkg:npm/body-parser@2.3.0
+    expired_at: 2026-10-30
+    statement: "Mitigated 2026-10-26 using the maintainer's inflate:false workaround on both JSON and URL-encoded middleware. HTTP regression coverage rejects gzip, deflate and br with 415 before routing. Patched body-parser 2.4.0 was published October 22 and remains inside the seven-day npm quarantine; adopt it after October 29 and remove this exception. https://github.com/expressjs/body-parser/security/advisories/GHSA-27r3-jxmh-p828"
+  - id: CVE-2026-113872
+    purls:
+      - pkg:npm/multer@2.4.0
+    expired_at: 2026-10-30
+    statement: "Reviewed 2026-10-26: both upload sites use memoryStorage and multer's default synchronous fileFilter; the asynchronous fileFilter required by this advisory is not configured. Patched multer 2.5.0 was published October 22 and remains inside the seven-day npm quarantine; adopt it after October 29 and remove this exception. https://github.com/expressjs/multer/security/advisories/GHSA-q7qp-rjg7-q26m"

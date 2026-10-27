@@ -17,7 +17,9 @@ const intl = createIntl({
 	locale: currentLocale,
 	messages: {
 		...uiFiles["../../translations/ui/en.json"],
-		...uiFiles[`../../translations/ui/${currentLocale}.json`],
+		...Object.fromEntries(
+			Object.entries(uiFiles[`../../translations/ui/${currentLocale}.json`]).filter(([, value]) => value),
+		),
 	},
 });
 

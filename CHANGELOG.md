@@ -4,6 +4,12 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Reconcile upstream through October 26: update nginx to 1.31.8, Alpine to 3.24.3, compression modules and the CrowdSec Lua bouncer; adopt native GeoIP, regex-location quoting, stricter host validation, mTLS HTTPS enforcement, UTC timestamps, table pagination and searchable paginated audit history. Preserve the fork's Node 24 SQLite runtime, database-backed authentication, ACL rollback, deny-all policies and pinned-pip DNS-01 pipeline. Existing GeoIP2 configurations need the migration described in ADVANCED.md; database rollback requires the safe updater's matching snapshot.
+
+- Add regression coverage for bounded audit pagination, non-UTC database upgrades and sessions surviving container restarts. Update the pinned pip and Certbot versions while retaining runtime DNS-plugin installation; document the reviewed upstream integration boundaries in FORK.md.
+
+- Update mature Express and Undici versions and constrain older Undici 8 transitive clients. Reject compressed API request bodies before decompression to mitigate the parser advisory while its patch ages through the npm quarantine; scope the temporary parser/upload exceptions to exact versions through October 30. Reassess the unchanged pip-vendored packaging findings through November 2; raw scans retain all findings.
+
 - Adopt Anubis 1.28.1 with immutable source/runtime pins and the patched Go networking dependencies. Build its optional WASM and JavaScript fallback assets with pinned Rust tooling, preserve upstream challenge defaults, and verify the embedded baseline/SIMD assets alongside the existing non-root, honeypot and restart contracts. This satisfies the daily scanner's latest-stable compatibility guard and includes upstream's reverse-DNS verification fix.
 
 - Reconcile upstream through October 16: migrate custom locations and their ordered access lists into relational storage, adopt host hard-deletion and mTLS auth-request controls, and update navigation and translations. Keep the fork's session revocation, replay protection, ACL rollback, bounded fetches, setup gate, certificate pipeline, and reviewed dependency versions. Adapt Anubis coverage and ACL recovery to the new relations, with a populated-database upgrade and snapshot regression test. Template version 23 regenerates existing nginx configurations. Database rollback requires restoring the matching pre-upgrade snapshot.

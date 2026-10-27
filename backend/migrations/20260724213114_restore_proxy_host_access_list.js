@@ -23,7 +23,12 @@ const up = async (knex) => {
 				if (validIds.has(id)) relations.push({ proxy_host_id: row.id, access_list_id: id });
 		}
 	}
-	if (relations.length > 0) await knex("npmplus_proxy_host_access_list").insert(relations).onConflict().ignore();
+	for (let i = 0; i < relations.length; i += 500) {
+		await knex("npmplus_proxy_host_access_list")
+			.insert(relations.slice(i, i + 500))
+			.onConflict()
+			.ignore();
+	}
 
 	logger.info(`[${migrateName}] npmplus_proxy_host_access_list Table restored`);
 };

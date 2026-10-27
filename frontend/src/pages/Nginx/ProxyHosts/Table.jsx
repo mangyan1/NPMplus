@@ -1,7 +1,9 @@
 import { IconCopy, IconDotsVertical, IconEdit, IconPower, IconShieldCheck, IconTrash } from "@tabler/icons-react";
 import {
 	createColumnHelper,
+	createPaginatedRowModel,
 	createSortedRowModel,
+	rowPaginationFeature,
 	rowSortingFeature,
 	sortFn_alphanumeric,
 	sortFn_datetime,
@@ -27,6 +29,8 @@ import { MANAGE, PROXY_HOSTS } from "src/modules/Permissions";
 const features = tableFeatures({
 	rowSortingFeature,
 	sortedRowModel: createSortedRowModel(),
+	rowPaginationFeature,
+	paginatedRowModel: createPaginatedRowModel(),
 	sortFns: {
 		alphanumeric: sortFn_alphanumeric,
 		datetime: sortFn_datetime,
@@ -197,17 +201,17 @@ export default function Table({
 								<IconEdit size={16} />
 								<T id="action.edit" />
 							</button>
-							<button
-								type="button"
-								className="dropdown-item"
-								onClick={() => {
-									onClone?.(info.row.original.id);
-								}}
-							>
-								<IconCopy size={16} />
-								<T id="action.clone" />
-							</button>
 							<HasPermission section={PROXY_HOSTS} permission={MANAGE} hideError>
+								<button
+									type="button"
+									className="dropdown-item"
+									onClick={() => {
+										onClone?.(info.row.original.id);
+									}}
+								>
+									<IconCopy size={16} />
+									<T id="action.clone" />
+								</button>
 								<button
 									type="button"
 									className="dropdown-item"
@@ -245,10 +249,13 @@ export default function Table({
 		features,
 		columns: columnHelper.columns(columns),
 		data,
+		getRowId: (row) => `${row.id}`,
 		meta: {
 			isFetching,
 		},
 		enableSortingRemoval: false,
+		autoResetPageIndex: false,
+		initialState: { pagination: { pageSize: 25 } },
 		state: { sorting },
 		onSortingChange,
 	});

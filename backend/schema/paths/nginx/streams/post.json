@@ -17,10 +17,14 @@
 				"schema": {
 					"type": "object",
 					"additionalProperties": false,
+					"allOf": [
+						{
+							"$ref": "../../../common.json#/properties/stream_create_rules"
+						}
+					],
 					"required": [
 						"incoming_port",
-						"forwarding_host",
-						"forwarding_port"
+						"forwarding_host"
 					],
 					"properties": {
 						"incoming_port": {
@@ -46,6 +50,24 @@
 						},
 						"certificate_id": {
 							"$ref": "../../../components/stream-object.json#/properties/certificate_id"
+						},
+						"domain_names": {
+							"$ref": "../../../components/certificate-object.json#/properties/domain_names_dns"
+						},
+						"npmplus_reuse_key": {
+							"$ref": "../../../components/certificate-object.json#/properties/npmplus_reuse_key"
+						},
+						"npmplus_dns_challenge": {
+							"$ref": "../../../components/certificate-object.json#/properties/npmplus_dns_challenge"
+						},
+						"npmplus_dns_provider": {
+							"$ref": "../../../components/certificate-object.json#/properties/npmplus_dns_provider"
+						},
+						"npmplus_dns_provider_credentials": {
+							"$ref": "../../../components/certificate-object.json#/properties/npmplus_dns_provider_credentials"
+						},
+						"npmplus_propagation_seconds": {
+							"$ref": "../../../components/certificate-object.json#/properties/npmplus_propagation_seconds"
 						},
 						"npmplus_advanced_config": {
 							"$ref": "../../../components/stream-object.json#/properties/npmplus_advanced_config"

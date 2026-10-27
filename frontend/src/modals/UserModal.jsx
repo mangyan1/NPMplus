@@ -1,4 +1,3 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { Field, Form, Formik } from "formik";
 import { useRef, useState } from "react";
 import { Alert } from "react-bootstrap";
@@ -22,19 +21,14 @@ const UserModal = EasyModal.create(({ id, visible, remove }) => {
 	const { mutate: setUser } = useSetUser();
 	const [errorMsg, setErrorMsg] = useState(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
-	const queryClient = useQueryClient();
 	const fileInput = useRef(null);
 
 	const changeAvatar = async (fn) => {
 		setErrorMsg(null);
 		try {
 			await fn();
-			await Promise.all([
-				queryClient.invalidateQueries({ queryKey: ["user"] }),
-				queryClient.invalidateQueries({ queryKey: ["users"] }),
-			]);
 		} catch (err) {
-			setErrorMsg(err.message);
+			setErrorMsg(<T id={err.message} />);
 		}
 	};
 
@@ -52,6 +46,7 @@ const UserModal = EasyModal.create(({ id, visible, remove }) => {
 		if (data?.id === currentUser?.id) {
 			// Prevent user from locking themselves out
 			delete payload.roles;
+			delete payload.isDisabled;
 		} else if (payload.isAdmin) {
 			payload.roles = ["admin"];
 		}
@@ -60,7 +55,7 @@ const UserModal = EasyModal.create(({ id, visible, remove }) => {
 		delete payload.isAdmin;
 
 		setUser(payload, {
-			onError: (err) => setErrorMsg(err.message),
+			onError: (err) => setErrorMsg(<T id={err.message} />),
 			onSuccess: () => {
 				showObjectSuccess("user", "saved");
 				remove();
@@ -73,7 +68,7 @@ const UserModal = EasyModal.create(({ id, visible, remove }) => {
 	};
 
 	return (
-		<Modal show={visible} onHide={remove}>
+		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
 			{error && (
 				<Alert variant="danger" className="m-3">
 					{error?.message}
@@ -92,7 +87,7 @@ const UserModal = EasyModal.create(({ id, visible, remove }) => {
 				>
 					{() => (
 						<Form>
-							<Modal.Header closeButton>
+							<Modal.Header closeButton={!isSubmitting}>
 								<Modal.Title>
 									<T id={data?.id ? "object.edit" : "object.add"} tData={{ object: "user" }} />
 								</Modal.Title>
@@ -137,12 +132,13 @@ const UserModal = EasyModal.create(({ id, visible, remove }) => {
 									</div>
 								)}
 								<div className="mb-3">
-									<Field name="name" validate={validateString(1, 50)}>
+									<Field name="name" validate={validateString(1, 255)}>
 										{({ field, form }) => (
 											<div className="form-floating mb-3">
 												<input
 													id="name"
 													autoComplete="off"
+													required
 													className={`form-control ${form.errors.name && form.touched.name ? "is-invalid" : ""}`}
 													placeholder={intl.formatMessage({
 														id: "user.full-name",
@@ -170,6 +166,7 @@ const UserModal = EasyModal.create(({ id, visible, remove }) => {
 													id="email"
 													type="email"
 													autoComplete="off"
+													required
 													className={`form-control ${form.errors.email && form.touched.email ? "is-invalid" : ""}`}
 													placeholder={intl.formatMessage({
 														id: "email-address",

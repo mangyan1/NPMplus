@@ -1,4 +1,3 @@
-import { useQueryClient } from "@tanstack/react-query";
 import cn from "clsx";
 import { Field, Form, Formik } from "formik";
 import { useState } from "react";
@@ -15,7 +14,6 @@ const showDNSCertificateModal = () => {
 };
 
 const DNSCertificateModal = EasyModal.create(({ visible, remove }) => {
-	const queryClient = useQueryClient();
 	const [errorMsg, setErrorMsg] = useState(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -41,7 +39,6 @@ const DNSCertificateModal = EasyModal.create(({ visible, remove }) => {
 				setErrorMsg(<T id={err.message} />);
 			}
 		}
-		await queryClient.invalidateQueries({ queryKey: ["certificates"] });
 		setIsSubmitting(false);
 		setSubmitting(false);
 	};
@@ -50,7 +47,7 @@ const DNSCertificateModal = EasyModal.create(({ visible, remove }) => {
 	const toggleEnabled = cn(toggleClasses, "bg-cyan");
 
 	return (
-		<Modal show={visible} onHide={remove}>
+		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
 			<Formik
 				initialValues={{
 					domainNames: [],
@@ -62,7 +59,7 @@ const DNSCertificateModal = EasyModal.create(({ visible, remove }) => {
 			>
 				{() => (
 					<Form>
-						<Modal.Header closeButton>
+						<Modal.Header closeButton={!isSubmitting}>
 							<Modal.Title>
 								<T id="object.add" tData={{ object: "lets-encrypt-via-dns" }} />
 							</Modal.Title>
@@ -73,7 +70,7 @@ const DNSCertificateModal = EasyModal.create(({ visible, remove }) => {
 							</Alert>
 							<div className="card m-0 border-0">
 								<div className="card-body">
-									<DomainNamesField isWildcardPermitted dnsProviderWildcardSupported />
+									<DomainNamesField isWildcardPermitted dnsProviderWildcardSupported forCertificate />
 									<DNSProviderFields />
 									<div className="row">
 										<div className="col-6">
@@ -104,8 +101,8 @@ const DNSCertificateModal = EasyModal.create(({ visible, remove }) => {
 							</Button>
 							<Button
 								type="submit"
-								actionType="primary"
-								className="ms-auto bg-pink"
+								color="pink"
+								className="ms-auto"
 								isLoading={isSubmitting}
 								disabled={isSubmitting}
 							>

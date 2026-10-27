@@ -14,6 +14,8 @@ const context = createContext({
 	},
 });
 const exportsByPath = {
+	"node:fs/promises": { rm: async () => {} },
+	"./db.js": { default: () => ({ destroy: async () => {} }) },
 	"./app.js": {
 		default: {
 			listen(_path, callback) {

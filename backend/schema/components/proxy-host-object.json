@@ -64,6 +64,7 @@
 			"type": "integer",
 			"minimum": 0,
 			"maximum": 65535,
+			"default": 0,
 			"example": 8080
 		},
 		"npmplus_access_list_ids": {
@@ -104,6 +105,7 @@
 				"upstream",
 				"none"
 			],
+			"default": "SAMEORIGIN",
 			"example": "DENY"
 		},
 		"npmplus_auth_request": {
@@ -118,6 +120,7 @@
 				"authentik",
 				"authentik-send-basic-auth"
 			],
+			"default": "none",
 			"example": "none"
 		},
 		"npmplus_auth_request_upstream": {
@@ -129,10 +132,12 @@
 		},
 		"advanced_config": {
 			"type": "string",
+			"default": "",
 			"example": ""
 		},
 		"npmplus_location_config": {
 			"type": "string",
+			"default": "",
 			"example": ""
 		},
 		"npmplus_nginx_online": {
@@ -166,6 +171,7 @@
 				"grpc",
 				"grpcs"
 			],
+			"default": "http",
 			"example": "http"
 		},
 		"enabled": {
@@ -173,27 +179,18 @@
 		},
 		"locations": {
 			"type": "array",
-			"minItems": 0,
 			"items": {
 				"type": "object",
 				"required": [
-					"forward_scheme",
-					"forward_host",
-					"forward_port",
-					"path",
-					"npmplus_access_list_type"
+					"path"
 				],
 				"additionalProperties": false,
+				"allOf": [
+					{
+						"$ref": "../common.json#/properties/proxy_create_rules"
+					}
+				],
 				"properties": {
-					"id": {
-						"type": [
-							"integer",
-							"null"
-						]
-					},
-					"proxy_host_id": {
-						"$ref": "../common.json#/properties/id"
-					},
 					"npmplus_enabled": {
 						"$ref": "../common.json#/properties/enabled"
 					},
@@ -211,7 +208,8 @@
 							"~ ",
 							"~* ",
 							"^~ "
-						]
+						],
+						"default": ""
 					},
 					"forward_scheme": {
 						"$ref": "#/properties/forward_scheme"
@@ -250,19 +248,18 @@
 						"$ref": "#/properties/npmplus_auth_request_upstream"
 					},
 					"advanced_config": {
-						"type": "string"
+						"type": "string",
+						"default": ""
 					},
 					"npmplus_access_list_ids": {
 						"$ref": "../common.json#/properties/npmplus_access_list_ids"
 					},
 					"npmplus_access_list_type": {
 						"$ref": "../common.json#/properties/npmplus_location_access_list_type"
-					},
-					"access_lists": {
-						"$ref": "#/properties/access_lists"
 					}
 				}
 			},
+			"default": [],
 			"example": [
 				{
 					"path": "/app",
@@ -300,7 +297,6 @@
 		},
 		"access_lists": {
 			"type": "array",
-			"minItems": 0,
 			"items": {
 				"$ref": "./access-list-object.json"
 			},

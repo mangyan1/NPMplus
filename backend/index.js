@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
+import { rm } from "node:fs/promises";
 import app from "./app.js";
+import db from "./db.js";
 import internalCertificate from "./internal/certificate.js";
 import internalIpRanges from "./internal/ip_ranges.js";
 import internalNginx from "./internal/nginx.js";
@@ -16,15 +18,17 @@ async function appStart() {
 		await setup();
 		await getCompiledSchema();
 
-		if (process.env.TRUST_CLOUDFLARE === "true") {
-			logger.info("Cloudflares IPs are trusted");
-		} else {
+		await internalIpRanges.generateConfig([]);
+		if (process.env.TRUST_CLOUDFLARE !== "true") {
 			logger.info("Cloudflares IPs are NOT trusted");
-			await internalIpRanges.generateConfig([]);
+		} else {
+			logger.info("Cloudflares IPs are trusted");
 		}
 		await internalNginx.reload();
 
-		const server = app.listen("/run/npmplus.sock", () => {
+		await rm("/run/npmplus.sock", { force: true });
+		const server = app.listen("/run/npmplus.sock", (err) => {
+			if (err) throw err;
 			logger.info(`Backend PID ${process.pid} listening on unix socket...`);
 			internalCertificate.initTimer();
 			startTelemetry();
@@ -35,8 +39,9 @@ async function appStart() {
 
 			process.on("SIGTERM", () => {
 				logger.info(`PID ${process.pid} received SIGTERM`);
-				server.close(() => {
+				server.close(async () => {
 					logger.info("Stopping.");
+					await db().destroy();
 					process.exit(0);
 				});
 			});

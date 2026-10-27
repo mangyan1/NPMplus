@@ -1,31 +1,30 @@
-# syntax=docker/dockerfile:1.27.1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
-FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS nginx
+# syntax=docker/dockerfile:1.28.0@sha256:bb22d9815c728170f72750f4e5b0d672e06176142e1d602c7e66c050100b7e5b
+FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS nginx
 SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 
 ARG LUAJIT_INC=/usr/include/luajit-2.1
 ARG LUAJIT_LIB=/usr/lib
 
-ARG AWSLC_VER=fa9bc8d6f7cfb2cf849b247fb06bbbfc41ecc9d6 # v5.11.0
+ARG AWSLC_VER=cd481c207e38f06aeb5766f4a1cdfce10a4c0af8 # v5.12.0
 
-ARG NGINX_VER=aaecf65316bb4af1e4f12f6a8746da2ab278c967 # release-1.31.7
+ARG NGINX_VER=140aa942711868a8daeb95810bc9a81f272ada72 # release-1.31.8
 ARG DTR_VER=1.29.2
-ARG ORP_VER=1.31.7
+ARG ORP_VER=1.31.8
 ARG ZNP_VER=1.30.0
 
-ARG NB_VER=0b5a99975de43d0261b8fa8bb66f49e7dcaf7030 # master
-ARG NUB_VER=2a6338902ad4e54f22d58f494d99d656880c0bcf # main
-ARG ZNM_VER=53927b6408ebf166496a3d79f016563f7f720cb0 # v0.4.0
-ARG NHUZFM_VER=8137c6b05131d045619d1746d3bbc17623c9a8fb # main
-ARG NF_VER=047589e4dc0041517b8a47739fa960c430c4045e # v0.6.0
-ARG HMNM_VER=0bf283ff92017acd616814b0e5153e0ccf93e2c9 # v0.40
+ARG NB_VER=df036cc80cd4f5b0bf67b25b0a10d0ee86ba5bdb # master
+ARG NUB_VER=bce69c4295e43ae62e95a9ddff7902baf5b0cbd7 # 1.0.0
+ARG ZNM_VER=1c0d3f96708c86afeebd7d9778504f77c7893227 # 0.1.2
+ARG NHUZFM_VER=f743b0250c93ae5fa721bed6bebc4c66c5139aee # 1.0.0
+ARG NF_VER=70311f239ec1e88ff79c669d126d08532ddb8554 # v0.6.0
+ARG HMNM_VER=21066f7eed72e4de4f6ec47b93e8d5f36c38b84a # v0.41
 ARG NDK_VER=bd44d16302273052d6005d7bdb55f74e23813de3 # v0.3.4
-ARG LNM_VER=58ece96055227399bbffa5e06cb5b54ebeeacef9 # v0.10.32rc5
+ARG LNM_VER=e672520a9480524f40ee8f999ef1f182959750a9 # v0.10.32rc7
 
 ARG NJS_VER=72e6a980b9bf2a28ae2d568bbc3b6830a5d7c39e # 1.0.2
 ARG NAL_VER=241200eac8e4acae74d353291bd27f79e5ca3dc4 # master
 ARG VTS_VER=38b8612527ecb003ea15cefe934f302cf1a7c27e # v0.2.7
 ARG NNTLM_VER=3da77b0cb30e517dfee01d7e7f7d649144d24051 # master
-ARG NHG2M_VER=cbaa35461c62a99d2577e6bae3273492502d8769 # 3.4
 
 
 WORKDIR /src
@@ -70,7 +69,7 @@ RUN git-clone-commit.sh https://github.com/nginx/nginx "$NGINX_VER" /src/nginx &
     echo "0aa9c73e7515dbbd48ecc798f7894412c1a50e96e98aee25847e823059faf821  /src/nginx/3.patch" | sha256sum -c - && \
     git apply /src/nginx/3.patch && \
     wget -q https://raw.githubusercontent.com/openresty/openresty/master/patches/nginx/"$ORP_VER"/nginx-"$ORP_VER"-resolver_conf_parsing.patch -O /src/nginx/4.patch && \
-    echo "4fd457ee6aa7629bc10e24595a992f47babdc4bb78b353527c5136cd9ae0e47c  /src/nginx/4.patch" | sha256sum -c - && \
+    echo "24d6a51349551e65c16709122307a12ce84274cbbaa224adfa5853aa367608b8  /src/nginx/4.patch" | sha256sum -c - && \
     git apply /src/nginx/4.patch && \
     wget -q https://raw.githubusercontent.com/zlib-ng/patches/master/nginx/"$ZNP_VER"-zlib-ng.patch -O /src/nginx/5.patch && \
     echo "bcd0f2fb9723fc1f251f94cead8d5160e767f7d4a04365331396a72a9ba54c6b  /src/nginx/5.patch" | sha256sum -c - && \
@@ -93,7 +92,7 @@ RUN git-clone-commit.sh https://github.com/nginx/nginx "$NGINX_VER" /src/nginx &
     \
     git-clone-commit.sh https://github.com/HanadaLee/ngx_http_brotli_module "$NB_VER" /src/ngx_http_brotli_module && \
     git-clone-commit.sh https://github.com/HanadaLee/ngx_http_unbrotli_filter_module "$NUB_VER" /src/ngx_http_unbrotli_filter_module && \
-    git-clone-commit.sh https://github.com/hsw/zstd-nginx-module "$ZNM_VER" /src/zstd-nginx-module && \
+    git-clone-commit.sh https://github.com/HanadaLee/ngx_http_zstd_module "$ZNM_VER" /src/zstd-nginx-module && \
     git-clone-commit.sh https://github.com/HanadaLee/ngx_http_unzstd_filter_module "$NHUZFM_VER" /src/ngx_http_unzstd_filter_module && \
     git-clone-commit.sh https://github.com/aperezdc/ngx-fancyindex "$NF_VER" /src/ngx-fancyindex && \
     cd /src/ngx-fancyindex && \
@@ -109,8 +108,7 @@ RUN git-clone-commit.sh https://github.com/nginx/nginx "$NGINX_VER" /src/nginx &
     git-clone-commit.sh https://github.com/nginx/njs "$NJS_VER" /src/njs && \
     git-clone-commit.sh https://github.com/kvspb/nginx-auth-ldap "$NAL_VER" /src/nginx-auth-ldap && \
     git-clone-commit.sh https://github.com/vozlt/nginx-module-vts "$VTS_VER" /src/nginx-module-vts && \
-    git-clone-commit.sh https://github.com/gabihodoroaga/nginx-ntlm-module "$NNTLM_VER" /src/nginx-ntlm-module && \
-    git-clone-commit.sh https://github.com/leev/ngx_http_geoip2_module "$NHG2M_VER" /src/ngx_http_geoip2_module
+    git-clone-commit.sh https://github.com/gabihodoroaga/nginx-ntlm-module "$NNTLM_VER" /src/nginx-ntlm-module
 
 RUN cd /src/nginx && \
     /src/nginx/auto/configure \
@@ -131,6 +129,7 @@ RUN cd /src/nginx && \
     --with-stream_ssl_module \
     --with-stream_ssl_preread_module \
     --with-stream_realip_module \
+    --with-stream_geoip_module \
     --with-http_v2_module \
     --with-http_v3_module \
     --with-http_ssl_module \
@@ -139,6 +138,7 @@ RUN cd /src/nginx && \
     --with-http_gzip_static_module \
     --with-http_sub_module \
     --with-http_json_module \
+    --with-http_geoip_module \
     --with-http_addition_module \
     --with-http_stub_status_module \
     --with-http_auth_request_module \
@@ -154,8 +154,6 @@ RUN cd /src/nginx && \
     --add-dynamic-module=/src/nginx-auth-ldap \
     --add-dynamic-module=/src/nginx-module-vts \
     --add-dynamic-module=/src/nginx-ntlm-module \
-    --add-dynamic-module=/src/ngx_http_geoip2_module \
-    --with-cc-opt="-DZSTD_STATIC_LINKING_ONLY" \
     --with-ld-opt="$LDFLAGS" && \
     \
     make -j "$(nproc)" install
@@ -174,7 +172,7 @@ RUN find /usr/local/nginx/modules -name "*.so" -exec llvm-strip -s {} \; && \
     /usr/local/nginx/sbin/nginx -V
 
 
-FROM --platform="$BUILDPLATFORM" alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS frontend
+FROM --platform="$BUILDPLATFORM" alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS frontend
 SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 ARG NODE_ENV=production
 WORKDIR /app
@@ -189,7 +187,7 @@ COPY frontend /app
 RUN pnpm vite build && \
     find /app/dist -type f ! -name "*.jpg" ! -name "*.png" -print0 | xargs -r0 -P "$(nproc)" -n 1 brotli -q 11 -sf
 
-FROM --platform=$BUILDPLATFORM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS backend
+FROM --platform=$BUILDPLATFORM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS backend
 SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 ARG NODE_ENV=production
 ARG TARGETARCH
@@ -211,16 +209,16 @@ RUN apk upgrade --no-cache -a && \
 COPY backend /app
 
 
-FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 ENV NODE_ENV=production
-ARG LRC_VER=be42297c57dc2393cdbb09d4597d9d4840a7c769 # v0.1.35rc1
+ARG LRC_VER=873d072635fd408d81a0abd4187392f3f128ceb9 # v0.1.35rc2
 ARG LRL_VER=3ff6300e68b73ba20e909c7d16bd839aef2e5a4b # v0.15
-ARG LCSB_VER=ec94d512927cf70be865686e4eb928d128189633 # v1.0.19
+ARG LCSB_VER=92a8617ede3b781c33cd39e73734505597e318fd # main
 ARG COF_VER=da93e0cec7fdb1a80f4972f75b3638763d012c0e # main
 ARG NBF_VER=5cee8db2a505f2a253e24691399c828c043071fc # master
-ARG PIP_VER=26.2.1
-ARG CERTBOT_VER=5.7.0
+ARG PIP_VER=26.2.2
+ARG CERTBOT_VER=5.8.0
 # CVE-2026-97687 and CVE-2026-97689; preserve runtime DNS-plugin installation.
 ARG URLLIB3_VER=2.8.0
 
