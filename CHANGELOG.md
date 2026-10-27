@@ -4,9 +4,13 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Refresh the verified Packagecloud CrowdSec repository-helper checksum after reviewing its apt-lock retry and OS-validation changes. Installer v1.70 retains checksum enforcement; an unexpected helper still fails closed before execution.
+
+- Rebuild Caddy with digest-pinned Go 1.26.10 to include the crypto/x509 intermediate-certificate distrust fix. Keep the source dependency checks, upstream HTTP tests and candidate-image vulnerability gate enabled.
+
 - Reconcile upstream through October 26: update nginx to 1.31.8, Alpine to 3.24.3, compression modules and the CrowdSec Lua bouncer; adopt native GeoIP, regex-location quoting, stricter host validation, mTLS HTTPS enforcement, UTC timestamps, table pagination and searchable paginated audit history. Preserve the fork's Node 24 SQLite runtime, database-backed authentication, ACL rollback, deny-all policies and pinned-pip DNS-01 pipeline. Existing GeoIP2 configurations need the migration described in ADVANCED.md; database rollback requires the safe updater's matching snapshot.
 
-- Add regression coverage for bounded audit pagination, non-UTC database upgrades and sessions surviving container restarts. Update the pinned pip and Certbot versions while retaining runtime DNS-plugin installation; document the reviewed upstream integration boundaries in FORK.md.
+- Add regression coverage for bounded audit pagination, non-UTC database upgrades and sessions surviving container restarts with a persistent cookie-signing secret. Update the pinned pip and Certbot versions while retaining runtime DNS-plugin installation; document the reviewed upstream integration boundaries in FORK.md.
 
 - Update mature Express and Undici versions and constrain older Undici 8 transitive clients. Reject compressed API request bodies before decompression to mitigate the parser advisory while its patch ages through the npm quarantine; scope the temporary parser/upload exceptions to exact versions through October 30. Reassess the unchanged pip-vendored packaging findings through November 2; raw scans retain all findings.
 

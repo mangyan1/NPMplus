@@ -28,6 +28,8 @@ const start = async (kind, env) => {
 		`type=volume,source=${volume},target=/data`,
 		"-e",
 		"TZ=UTC",
+		"-e",
+		"COOKIE_SECRET=local-security-cookie-signing-fixture",
 		...env.flatMap((value) => ["-e", value]),
 		image,
 	);

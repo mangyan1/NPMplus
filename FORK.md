@@ -83,7 +83,9 @@ Three upstream replacements remain deliberate fork integration boundaries:
 - Database-backed sessions and MFA challenges, the existing JWT payload/key format,
   revocation and replay protections stay. Upstream's `jose`/Ed25519 switch is not
   imported piecemeal. Startup must retain `keys-ec.json`; the container browser
-  gate verifies that an authenticated session survives a restart.
+  gate verifies that an authenticated session survives a restart when a persistent
+  `COOKIE_SECRET` is configured. Deployments using the random per-process default
+  continue to require a fresh login after restart.
 - The pinned-pip runtime DNS-plugin pipeline and certificate implementation stay
   under the owner's existing restriction. Pinned pip and Certbot receive reviewed
   version updates, while upstream's `uv` packaging switch remains deferred.

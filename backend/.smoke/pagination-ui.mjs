@@ -29,8 +29,8 @@ try {
 		is_disabled: false,
 	}));
 	let auditPage = 0;
-	await page.route("**/api/users?*", (route) => route.fulfill({ json: users }));
-	await page.route("**/api/audit-log?*", (route) => {
+	await page.route(/\/api\/users(?:\?.*)?$/, (route) => route.fulfill({ json: users }));
+	await page.route(/\/api\/audit-log(?:\?.*)?$/, (route) => {
 		const params = new URL(route.request().url()).searchParams;
 		auditPage = Number(params.get("page") || 0);
 		const size = Number(params.get("page_size") || 25);
@@ -69,12 +69,17 @@ try {
 	await nextResponse;
 	await page.waitForLoadState("networkidle");
 	assert.equal(auditPage, 1);
+	const filterResponse = page.waitForResponse((response) => {
+		const url = new URL(response.url());
+		return url.pathname === "/api/audit-log" && url.searchParams.get("query") === "Pagination user 051";
+	});
 	await page.getByRole("textbox").fill("Pagination user 051");
-	await page.waitForLoadState("networkidle");
+	await filterResponse;
+	await page.waitForFunction(() => document.querySelectorAll("tbody tr").length === 1);
 	assert.equal(auditPage, 0);
 	assert.equal(await page.locator("tbody tr").count(), 1);
 	await page.getByRole("textbox").fill("");
-	await page.waitForLoadState("networkidle");
+	await page.waitForFunction(() => document.querySelectorAll("tbody tr").length === 25);
 	for (const width of [1280, 390, 320]) {
 		await page.setViewportSize({ width, height: 900 });
 		assert.ok(
