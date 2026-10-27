@@ -40,6 +40,8 @@ jobs:
         run: node tests/security-invariants.mjs
       - name: upstream sync contracts
         run: python3 tests/upstream-sync.py
+      - name: dependency update contracts
+        run: python3 tests/dependency-updates.py
       - name: frontend
         run: |
           cd frontend
