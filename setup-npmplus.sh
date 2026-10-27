@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.70"
+SCRIPT_VERSION="1.71"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -202,15 +202,19 @@ install_firewall_bouncer_boot_gate() {
 # being active does not mean that the LAPI is ready yet, so use a bounded gate.
 if [ -s /opt/npmplus/compose.yaml ] && \
 	docker compose -f /opt/npmplus/compose.yaml config --services 2>/dev/null | grep -qx crowdsec; then
-	docker compose -f /opt/npmplus/compose.yaml up -d crowdsec
+	timeout --kill-after=5s 30s docker compose -f /opt/npmplus/compose.yaml up -d crowdsec
 fi
-for attempt in $(seq 1 180); do
+read -r started _ </proc/uptime
+deadline=$((${started%%.*} + 180))
+while :; do
 	code=$(curl -sS --connect-timeout 1 --max-time 2 -o /dev/null -w '%{http_code}' \
 		http://127.0.0.1:8080/v1/decisions?limit=1 2>/dev/null || true)
 	case "$code" in
 		200|401|403) exit 0 ;;
 	esac
-	[ "$attempt" -eq 180 ] || sleep 1
+	read -r now _ </proc/uptime
+	[ "${now%%.*}" -lt "$deadline" ] || break
+	sleep 1
 done
 echo "npmplus: CrowdSec LAPI did not become ready within 180 seconds" >&2
 exit 1
@@ -226,6 +230,8 @@ Before=npmplus-public.service
 
 [Service]
 ExecStartPre=/usr/local/sbin/npmplus-wait-for-crowdsec-lapi
+TimeoutStartSec=240
+TimeoutStopSec=30
 Restart=on-failure
 RestartSec=5s
 EOF
@@ -353,6 +359,7 @@ adopt_legacy_installer_firewall_bouncer() {
 
 activate_installer_firewall_bouncer() {
 	[[ -f /var/lib/npmplus/installed-firewall-bouncer ]] || return 0
+	say "activating CrowdSec firewall enforcement"
 	repair_installer_firewall_bouncer
 	systemctl restart crowdsec-firewall-bouncer
 	systemctl is-active --quiet crowdsec-firewall-bouncer || {
@@ -495,7 +502,7 @@ set -euo pipefail
 COMPOSE=/opt/npmplus/compose.yaml
 
 /usr/local/sbin/npmplus-boot-guard apply
-docker compose -f "$COMPOSE" up -d crowdsec
+timeout --kill-after=5s 30s docker compose -f "$COMPOSE" up -d crowdsec
 /usr/local/sbin/npmplus-wait-for-crowdsec-lapi
 systemctl is-active --quiet crowdsec-firewall-bouncer.service
 
@@ -521,14 +528,19 @@ for service in "${configured_services[@]}"; do
 	[[ "$service" == crowdsec ]] || services+=("$service")
 done
 (( ${#services[@]} > 0 )) || { echo "npmplus: Compose has no public services" >&2; exit 1; }
-docker compose -f "$COMPOSE" up -d --no-deps "${services[@]}"
+timeout --kill-after=5s 60s docker compose -f "$COMPOSE" up -d --no-deps "${services[@]}"
 
-for _ in $(seq 1 300); do
+deadline=$((SECONDS + 300))
+while ((SECONDS < deadline)); do
 	ready=true
 	for service in "${services[@]}"; do
 		cid=$(docker compose -f "$COMPOSE" ps -a -q "$service" 2>/dev/null || true)
 		[[ -n "$cid" && "$(docker inspect --format '{{.State.Status}}' "$cid")" == running ]] || { ready=false; break; }
 		health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")
+		if [[ "$health" == unhealthy ]]; then
+			echo "npmplus: $service became unhealthy; protected startup failed, boot guard remains active" >&2
+			exit 1
+		fi
 		[[ "$health" == none || "$health" == healthy ]] || { ready=false; break; }
 	done
 	if [[ "$ready" == true ]] && \
@@ -555,6 +567,8 @@ PartOf=docker.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/sbin/npmplus-start-protected
+TimeoutStartSec=600
+TimeoutStopSec=30
 
 [Install]
 WantedBy=docker.service
@@ -719,6 +733,8 @@ Before=npmplus-public.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/sbin/npmplus-cloudflare-origin-lock start
+TimeoutStartSec=180
+TimeoutStopSec=30
 ExecStop=/usr/local/sbin/npmplus-cloudflare-origin-lock stop
 
 [Install]
@@ -2136,7 +2152,8 @@ finalize_admin_bootstrap() {
 
 pin_image() { # mutable channel -> immutable local platform repo digest
 	local channel="$1" repository short_repository docker_repository candidate digest=""
-	docker pull "$channel" >/dev/null || {
+	printf 'Pulling and pinning %s\n' "$channel" >&2
+	docker pull "$channel" >&2 || {
 		echo "could not pull $channel" >&2
 		return 1
 	}
@@ -3132,7 +3149,7 @@ if [[ -s "$DATA_DIR/setup-npmplus.sh" ]]; then
 	chmod 700 "$DATA_DIR/setup-npmplus.sh"
 	write_root_file /usr/local/bin/npmplus-safe-update 700 <<'EOF'
 #!/bin/bash
-# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=8
+# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=9
 # monthly npmplus update with a safety net: snapshots the running state,
 # runs the update, health-checks it, and reverts to the snapshot on failure
 set -euo pipefail
@@ -3141,77 +3158,188 @@ COMPOSE_FILE=/opt/npmplus/compose.yaml
 SETUP=/opt/npmplus/setup-npmplus.sh
 BACKUP=/var/backups/npmplus-last-good
 CANDIDATE=${NPMPLUS_SETUP_CANDIDATE:-}
+LAST_GOOD=$BACKUP
+SNAPSHOT_STAGE=""
+PREVIOUS_BACKUP=""
+snapshot_ready=false
+deployment_started=false
+update_complete=false
+update_pid=""
+stopped_svc=""
+UPDATE_TIMEOUT_SECONDS=${NPMPLUS_UPDATE_TIMEOUT_SECONDS:-1800}
+RECOVERY_TIMEOUT_SECONDS=${NPMPLUS_RECOVERY_TIMEOUT_SECONDS:-300}
+runtime_paths=(access nginx/proxy_host nginx/redirection_host nginx/dead_host nginx/stream npmplus/env.sha512sum crowdsec)
 
-log() { echo "$(date '+%F %T') $*"; }
+log() {
+	local message
+	message="$(date '+%F %T') $*"
+	printf '%s\n' "$message" || true
+	[[ -z "${DIAGNOSTICS:-}" ]] || printf '%s\n' "$message" >>"$DIAGNOSTICS/progress.log" || true
+}
 
 # Updates, backups and manual maintenance must not race over sqlite/config files.
 exec 9>/run/lock/npmplus-maintenance.lock
 flock -n 9 || { log "another NPMplus maintenance job is already running"; exit 1; }
+if [[ ! "$UPDATE_TIMEOUT_SECONDS" =~ ^[1-9][0-9]{0,3}$ ]] || ((UPDATE_TIMEOUT_SECONDS > 7200)); then
+	log "NPMPLUS_UPDATE_TIMEOUT_SECONDS must be between 1 and 7200"
+	exit 1
+fi
+if [[ ! "$RECOVERY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]{0,3}$ ]] || ((RECOVERY_TIMEOUT_SECONDS > 7200)); then
+	log "NPMPLUS_RECOVERY_TIMEOUT_SECONDS must be between 1 and 7200"
+	exit 1
+fi
+if ! command -v setsid >/dev/null || ! command -v timeout >/dev/null; then
+	log "safe update requires setsid and timeout"
+	exit 1
+fi
+DIAGNOSTICS=$(mktemp -d /var/log/npmplus-update.XXXXXX)
+chmod 700 "$DIAGNOSTICS"
 
 # set -e aborts on any unguarded failing command, but only the update dispatch
 # below carries a revert guard; every other phase would otherwise die silently
 # with the stack left half-maintained and no trace of why. Catch those deaths,
 # leave diagnostics, and end the run the way the phase requires.
-update_deployed=false
 on_wrapper_error() {
 	local rc=$? line=${BASH_LINENO[0]} cmd="$BASH_COMMAND"
-	trap - ERR
 	log "update ABORTED: $cmd failed with exit $rc (wrapper line $line)"
-	docker compose -f "$COMPOSE_FILE" ps -a >"$BACKUP/aborted-ps.txt" 2>&1 || true
-	docker compose -f "$COMPOSE_FILE" logs --no-color --tail 200 >"$BACKUP/aborted-logs.txt" 2>&1 || true
-	if [[ "$update_deployed" == "true" ]]; then
-		log "the update was already deployed - reverting"
-		revert
-	else
-		log "the running stack was not updated - no revert needed; diagnostics are in $BACKUP/aborted-{ps,logs}.txt"
+	exit "$rc"
+}
+
+stop_update_child() {
+	[[ -n "$update_pid" ]] || return 0
+	# The deployment owns a separate session. Stop its entire process group,
+	# including a stuck Docker/systemctl client, before restoring any files.
+	kill -TERM -- "-$update_pid" 2>/dev/null || true
+	for _ in $(seq 1 20); do
+		kill -0 -- "-$update_pid" 2>/dev/null || break
+		sleep 0.1
+	done
+	kill -KILL -- "-$update_pid" 2>/dev/null || true
+	wait "$update_pid" 2>/dev/null || true
+	update_pid=""
+}
+
+restore_file() {
+	local source="$1" target="$2" tmp
+	tmp=$(mktemp "${target}.rollback.XXXXXX") || return 1
+	if ! cp -p -- "$source" "$tmp" || ! mv -f -- "$tmp" "$target"; then
+		rm -f -- "$tmp"
+		return 1
 	fi
 }
-trap on_wrapper_error ERR
+
+restart_snapshot_service() {
+	if [[ -n "$stopped_svc" ]]; then
+		log "restarting $stopped_svc after an interrupted snapshot"
+		timeout --kill-after=5s 60s docker compose -f "$COMPOSE_FILE" start "$stopped_svc" || return 1
+		stopped_svc=""
+	fi
+}
+
+on_wrapper_exit() {
+	local rc=$? recovered=false
+	trap - ERR EXIT
+	trap '' INT TERM HUP PIPE
+	set +e
+	# A disconnected SSH session or closed tee must not break rollback commands.
+	exec 10>&1
+	exec >>"$DIAGNOSTICS/controller.log" 2>&1
+	if [[ "$update_complete" != true ]]; then
+		printf 'Recovery controller is checking the interrupted update; log: %s/controller.log\n' "$DIAGNOSTICS" >&10 || true
+	fi
+	stop_update_child
+	if ! restart_snapshot_service; then
+		log "snapshot service restart failed; closing public protection; inspect $DIAGNOSTICS"
+		[[ ! -x /usr/local/sbin/npmplus-boot-guard ]] || /usr/local/sbin/npmplus-boot-guard apply || true
+		rc=1
+	fi
+	if ((rc != 0)); then
+		timeout --kill-after=5s 30s docker compose -f "$COMPOSE_FILE" ps -a >"$DIAGNOSTICS/aborted-ps.txt" 2>&1 || true
+		timeout --kill-after=5s 30s docker compose -f "$COMPOSE_FILE" logs --no-color --tail 200 >"$DIAGNOSTICS/aborted-logs.txt" 2>&1 || true
+	fi
+	if [[ "$deployment_started" == true && "$update_complete" != true ]]; then
+		log "rollback: restoring the saved state; details: $DIAGNOSTICS/recovery.log"
+		if revert >>"$DIAGNOSTICS/recovery.log" 2>&1; then
+			recovered=true
+		else
+			log "rollback FAILED - keep public protection closed; snapshot: $LAST_GOOD; diagnostics: $DIAGNOSTICS"
+			[[ ! -x /usr/local/sbin/npmplus-boot-guard ]] || /usr/local/sbin/npmplus-boot-guard apply || true
+		fi
+		cat "$DIAGNOSTICS/recovery.log" || true
+		((rc != 0)) || rc=1
+	elif [[ "$snapshot_ready" != true && -n "$PREVIOUS_BACKUP" && -d "$PREVIOUS_BACKUP" ]]; then
+		# A signal between the two directory renames must also leave the old
+		# snapshot at its documented path. Deployment has not started yet.
+		if [[ -n "$SNAPSHOT_STAGE" && ! -e "$SNAPSHOT_STAGE" && -e "$LAST_GOOD" ]]; then
+			mv -- "$LAST_GOOD" "$SNAPSHOT_STAGE" || true
+		fi
+		[[ -e "$LAST_GOOD" ]] || mv -- "$PREVIOUS_BACKUP" "$LAST_GOOD" || true
+	fi
+	if [[ -n "$SNAPSHOT_STAGE" && -d "$SNAPSHOT_STAGE" ]]; then
+		rm -rf -- "${SNAPSHOT_STAGE:?}"
+	fi
+	if [[ -n "$PREVIOUS_BACKUP" && -d "$PREVIOUS_BACKUP" && ( "$update_complete" == true || "$recovered" == true ) ]]; then
+		rm -rf -- "${PREVIOUS_BACKUP:?}" || log "older snapshot retained at $PREVIOUS_BACKUP"
+	fi
+	if [[ "$deployment_started" != true && "$rc" != 0 ]]; then
+		log "update stopped before deployment; previous last-good snapshot preserved; diagnostics: $DIAGNOSTICS"
+	fi
+	cat "$DIAGNOSTICS/controller.log" >&10 2>/dev/null || true
+	exit "$rc"
+}
 
 revert() {
+	local unit path helper binary deadline
 	log "health check FAILED - reverting to the last good state"
-	docker compose -f "$COMPOSE_FILE" ps -a >"$BACKUP/failed-ps.txt" 2>&1 || true
-	docker compose -f "$COMPOSE_FILE" logs --no-color --tail 200 >"$BACKUP/failed-logs.txt" 2>&1 || true
-	[[ ! -x /usr/local/sbin/npmplus-cloudflare-origin-lock ]] || \
-		/usr/local/sbin/npmplus-cloudflare-origin-lock stop >/dev/null 2>&1 || true
-	[[ ! -x /usr/local/sbin/npmplus-boot-guard ]] || \
-		/usr/local/sbin/npmplus-boot-guard apply >/dev/null 2>&1 || true
-	systemctl disable --now npmplus-public.service npmplus-cloudflare-origin-lock.service \
-		npmplus-boot-guard.service >/dev/null 2>&1 || true
-	docker compose -f "$COMPOSE_FILE" down >/dev/null 2>&1 || true
-	cp -a "$BACKUP/compose.yaml" "$COMPOSE_FILE"
-	if [[ -s "$BACKUP/crowdsec-bouncer.conf" ]]; then
-		cp -a "$BACKUP/crowdsec-bouncer.conf" /opt/npmplus/crowdsec/crowdsec.conf
+	timeout --kill-after=5s 30s docker compose -f "$COMPOSE_FILE" ps -a >"$BACKUP/failed-ps.txt" 2>&1 || true
+	timeout --kill-after=5s 30s docker compose -f "$COMPOSE_FILE" logs --no-color --tail 200 >"$BACKUP/failed-logs.txt" 2>&1 || true
+	# Close public traffic before stopping protection or restoring any files.
+	[[ ! -x /usr/local/sbin/npmplus-boot-guard ]] || /usr/local/sbin/npmplus-boot-guard apply || return 1
+	for unit in npmplus-public.service npmplus-cloudflare-origin-lock.service npmplus-boot-guard.service; do
+		if systemctl cat "$unit" >/dev/null 2>&1; then
+			timeout --kill-after=5s 90s systemctl stop "$unit" || return 1
+			systemctl disable "$unit" >/dev/null || return 1
+		fi
+	done
+	timeout --kill-after=5s 90s docker compose -f "$COMPOSE_FILE" down || return 1
+	restore_file "$BACKUP/compose.yaml" "$COMPOSE_FILE" || return 1
+	if [[ -s "$BACKUP/npmplus-runtime.tar.gz" ]]; then
+		for path in "${runtime_paths[@]}"; do
+			rm -rf -- "/opt/npmplus/${path:?}" || return 1
+		done
+		tar -xzf "$BACKUP/npmplus-runtime.tar.gz" -C /opt/npmplus || return 1
+	elif [[ -s "$BACKUP/crowdsec-bouncer.conf" ]]; then
+		restore_file "$BACKUP/crowdsec-bouncer.conf" /opt/npmplus/crowdsec/crowdsec.conf || return 1
 	fi
 	if [[ -s "$BACKUP/anubis.yaml" ]]; then
-		cp -a "$BACKUP/anubis.yaml" /opt/anubis.yaml
+		restore_file "$BACKUP/anubis.yaml" /opt/anubis.yaml || return 1
 	else
-		rm -f /opt/anubis.yaml
+		rm -f /opt/anubis.yaml || return 1
 	fi
-	if [[ -d "$BACKUP/crowdsec" ]]; then
-		rm -rf /opt/crowdsec
-		cp -a "$BACKUP/crowdsec" /opt/crowdsec
-	fi
-	if [[ -d "$BACKUP/anubis-data" ]]; then
-		rm -rf /opt/anubis-data
-		cp -a "$BACKUP/anubis-data" /opt/anubis-data
-	fi
-	if [[ -s "$BACKUP/database.sqlite" ]]; then
-		cp -a "$BACKUP/database.sqlite" /opt/npmplus/npmplus/database.sqlite
-		chmod 600 /opt/npmplus/npmplus/database.sqlite
-		rm -f /opt/npmplus/npmplus/database.sqlite-wal /opt/npmplus/npmplus/database.sqlite-shm
-	fi
-	# --update refreshes these before touching images; roll them back as well.
-	[[ -s "$BACKUP/setup-npmplus.sh" ]] && cp -a "$BACKUP/setup-npmplus.sh" "$SETUP"
-	rm -f /usr/local/bin/npmplus-collect-anubis /usr/local/bin/npmplus-collect-enforcement /usr/local/bin/npmplus-safe-update /usr/local/bin/npmplus-backup \
-		/usr/local/bin/npmplus-crowdsec-heal
-	rm -f /etc/cron.d/npmplus-safe-update /etc/cron.d/npmplus-backup \
-		/etc/cron.d/npmplus-crowdsec-heal /etc/cron.d/npmplus-collect-enforcement /etc/cron.d/npmplus-collect-anubis
-	for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal npmplus-collect-enforcement npmplus-collect-anubis; do
-		[[ -s "$BACKUP/$f" ]] && cp -a "$BACKUP/$f" "/usr/local/bin/$f"
+	for path in crowdsec anubis-data; do
+		if [[ -d "$BACKUP/$path" ]]; then
+			rm -rf -- "/opt/${path:?}" || return 1
+			cp -a "$BACKUP/$path" "/opt/$path" || return 1
+		fi
 	done
-	for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal npmplus-collect-enforcement npmplus-collect-anubis; do
-		[[ -s "$BACKUP/cron-$f" ]] && cp -a "$BACKUP/cron-$f" "/etc/cron.d/$f"
+	if [[ -s "$BACKUP/database.sqlite" ]]; then
+		restore_file "$BACKUP/database.sqlite" /opt/npmplus/npmplus/database.sqlite || return 1
+		chmod 600 /opt/npmplus/npmplus/database.sqlite || return 1
+		rm -f /opt/npmplus/npmplus/database.sqlite-wal /opt/npmplus/npmplus/database.sqlite-shm || return 1
+	fi
+	# Atomic replacement also protects a wrapper still executing this old inode.
+	restore_file "$BACKUP/setup-npmplus.sh" "$SETUP" || return 1
+	for helper in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal npmplus-collect-enforcement npmplus-collect-anubis; do
+		if [[ -s "$BACKUP/$helper" ]]; then
+			restore_file "$BACKUP/$helper" "/usr/local/bin/$helper" || return 1
+		else
+			rm -f "/usr/local/bin/$helper" || return 1
+		fi
+		if [[ -s "$BACKUP/cron-$helper" ]]; then
+			restore_file "$BACKUP/cron-$helper" "/etc/cron.d/$helper" || return 1
+		else
+			rm -f "/etc/cron.d/$helper" || return 1
+		fi
 	done
 	rm -f /etc/systemd/system/npmplus-public.service \
 		/etc/systemd/system/npmplus-cloudflare-origin-lock.service \
@@ -3223,84 +3351,114 @@ revert() {
 		/var/lib/npmplus/strict-boot-protection \
 		/var/lib/npmplus/cloudflare-origin-lock \
 		/var/lib/npmplus/cloudflare-ips-v4 \
-		/var/lib/npmplus/cloudflare-ips-v6
+		/var/lib/npmplus/cloudflare-ips-v6 || return 1
 	systemctl disable --now npmplus-crs-control.socket npmplus-crs-control.service >/dev/null 2>&1 || true
 	rm -f /etc/systemd/system/npmplus-crs-control.socket /etc/systemd/system/npmplus-crs-control.service \
-		/usr/local/lib/npmplus-crs-control.py /usr/local/lib/npmplus-crs-enable
-	[[ ! -s "$BACKUP/host-security.tar.gz" ]] || tar -xzf "$BACKUP/host-security.tar.gz" -C /
-	systemctl daemon-reload >/dev/null 2>&1 || true
+		/usr/local/lib/npmplus-crs-control.py /usr/local/lib/npmplus-crs-enable || return 1
+	[[ ! -s "$BACKUP/host-security.tar.gz" ]] || tar -xzf "$BACKUP/host-security.tar.gz" -C / || return 1
+	systemctl daemon-reload || return 1
 	if [[ -f /etc/systemd/system/npmplus-crs-control.socket ]]; then
-		systemctl enable --now npmplus-crs-control.socket >/dev/null || true
+		systemctl enable --now npmplus-crs-control.socket >/dev/null || return 1
 	fi
 	if [[ -f /var/lib/npmplus/cloudflare-origin-lock ]]; then
-		systemctl enable --now npmplus-cloudflare-origin-lock.service >/dev/null || true
+		systemctl enable --now npmplus-cloudflare-origin-lock.service >/dev/null || return 1
+	fi
+	if [[ -f /var/lib/npmplus/installed-firewall-bouncer ]]; then
+		timeout --kill-after=5s 300s systemctl restart crowdsec-firewall-bouncer.service || return 1
 	fi
 	if [[ -f /var/lib/npmplus/strict-boot-protection ]]; then
-		# The restored Compose file is already digest-pinned. Use the protected
-		# starter so rollback does not create a public pre-enforcement window.
-		systemctl enable npmplus-boot-guard.service >/dev/null || true
-		systemctl enable --now npmplus-public.service >/dev/null || true
+		systemctl enable npmplus-boot-guard.service >/dev/null || return 1
+		systemctl reset-failed npmplus-public.service || return 1
+		timeout --kill-after=5s 630s systemctl enable --now npmplus-public.service || return 1
+		systemctl is-active --quiet npmplus-public.service || return 1
 	elif [[ -s "$BACKUP/override.yaml" ]]; then
-		# pin every service back to its exact pre-update image; --pull never keeps
-		# a bad :latest from sneaking back in
-		docker compose -f "$COMPOSE_FILE" -f "$BACKUP/override.yaml" up -d --pull never
+		timeout --kill-after=5s 120s docker compose -f "$COMPOSE_FILE" -f "$BACKUP/override.yaml" up -d --pull never || return 1
 	else
-		docker compose -f "$COMPOSE_FILE" up -d --pull never
+		timeout --kill-after=5s 120s docker compose -f "$COMPOSE_FILE" up -d --pull never || return 1
 	fi
-	if [[ ! -f /var/lib/npmplus/strict-boot-protection ]]; then
-		for binary in iptables ip6tables; do
-			command -v "$binary" >/dev/null || continue
-			while "$binary" -t raw -C PREROUTING -p tcp -m multiport --dports 80,443 -j NPMPLUS-BOOT >/dev/null 2>&1; do
-				"$binary" -t raw -D PREROUTING -p tcp -m multiport --dports 80,443 -j NPMPLUS-BOOT
-			done
-			while "$binary" -t raw -C PREROUTING -p udp -m multiport --dports 443 -j NPMPLUS-BOOT >/dev/null 2>&1; do
-				"$binary" -t raw -D PREROUTING -p udp -m multiport --dports 443 -j NPMPLUS-BOOT
-			done
-			"$binary" -t raw -F NPMPLUS-BOOT >/dev/null 2>&1 || true
-			"$binary" -t raw -X NPMPLUS-BOOT >/dev/null 2>&1 || true
-		done
-	fi
-	log "reverted - failure diagnostics are in $BACKUP/failed-{ps,logs}.txt"
-	exit 1
+	# Do not announce successful recovery until the restored API and services work.
+	deadline=$((SECONDS + RECOVERY_TIMEOUT_SECONDS))
+	while ((SECONDS < deadline)); do
+		if check; then
+			if [[ ! -f /var/lib/npmplus/strict-boot-protection ]]; then
+				for binary in iptables ip6tables; do
+					command -v "$binary" >/dev/null || continue
+					while "$binary" -t raw -C PREROUTING -p tcp -m multiport --dports 80,443 -j NPMPLUS-BOOT >/dev/null 2>&1; do
+						"$binary" -t raw -D PREROUTING -p tcp -m multiport --dports 80,443 -j NPMPLUS-BOOT || return 1
+					done
+					while "$binary" -t raw -C PREROUTING -p udp -m multiport --dports 443 -j NPMPLUS-BOOT >/dev/null 2>&1; do
+						"$binary" -t raw -D PREROUTING -p udp -m multiport --dports 443 -j NPMPLUS-BOOT || return 1
+					done
+					"$binary" -t raw -F NPMPLUS-BOOT >/dev/null 2>&1 || true
+					"$binary" -t raw -X NPMPLUS-BOOT >/dev/null 2>&1 || true
+				 done
+			fi
+			log "reverted - failure diagnostics are in $BACKUP/failed-{ps,logs}.txt"
+			return 0
+		fi
+		sleep 2
+	done
+	return 1
 }
 
-# snapshot the currently running (presumed good) state
-mkdir -p "$BACKUP"
-chmod 700 "$BACKUP"
-cp -a "$COMPOSE_FILE" "$BACKUP/compose.yaml"
-cp -a /opt/npmplus/crowdsec/crowdsec.conf "$BACKUP/crowdsec-bouncer.conf" 2>/dev/null || rm -f "$BACKUP/crowdsec-bouncer.conf"
-cp -a /opt/anubis.yaml "$BACKUP/anubis.yaml" 2>/dev/null || rm -f "$BACKUP/anubis.yaml"
-cp -a "$SETUP" "$BACKUP/setup-npmplus.sh"
-for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal npmplus-collect-enforcement npmplus-collect-anubis; do
-	rm -f "$BACKUP/$f" "$BACKUP/cron-$f"
-	cp -a "/usr/local/bin/$f" "$BACKUP/$f" 2>/dev/null || true
-	cp -a "/etc/cron.d/$f" "$BACKUP/cron-$f" 2>/dev/null || true
-done
-host_security_paths=(
-	etc/systemd/system/npmplus-crs-control.socket
-	etc/systemd/system/npmplus-crs-control.service
-	usr/local/lib/npmplus-crs-control.py
-	usr/local/lib/npmplus-crs-enable
-	etc/systemd/system/npmplus-public.service
-	etc/systemd/system/npmplus-cloudflare-origin-lock.service
-	etc/systemd/system/npmplus-boot-guard.service
-	usr/local/sbin/npmplus-start-protected
-	usr/local/sbin/npmplus-cloudflare-origin-lock
-	usr/local/sbin/npmplus-boot-guard
-	etc/cron.d/npmplus-cloudflare-origin-lock
-	var/lib/npmplus/strict-boot-protection
-	var/lib/npmplus/cloudflare-origin-lock
-	var/lib/npmplus/cloudflare-ips-v4
-	var/lib/npmplus/cloudflare-ips-v6
-)
-host_security_existing=()
-for path in "${host_security_paths[@]}"; do
-	[[ -e "/$path" ]] && host_security_existing+=("$path")
-done
-rm -f "$BACKUP/host-security.tar.gz"
-if [[ ${#host_security_existing[@]} -gt 0 ]]; then
-	tar -czf "$BACKUP/host-security.tar.gz" -C / "${host_security_existing[@]}"
-fi
+# Health check every configured service, Docker health where present, both
+# NPMplus listeners and CrowdSec's LAPI. The default public vhost may deny
+# unmatched requests (404/444); application health comes from the admin API.
+bouncer_http_code() {
+	printf 'header = "X-Api-Key: %s"\n' "$1" | curl -sS --connect-timeout 5 --max-time 10 \
+		-o /dev/null -w '%{http_code}' --config - 'http://127.0.0.1:8080/v1/decisions?limit=1'
+}
+machine_http_code() {
+	printf '{"machine_id":"npmplus-ui","password":"%s"}' "$1" | curl -sS --connect-timeout 5 --max-time 10 \
+		-o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data-binary @- \
+		'http://127.0.0.1:8080/v1/watchers/login'
+}
+check() {
+	local svc cid state health key machine_password services
+	services=$(timeout --kill-after=5s 20s docker compose -f "$COMPOSE_FILE" config --services) || return 1
+	[[ -n "$services" ]] || return 1
+	while read -r svc; do
+		cid=$(timeout --kill-after=5s 20s docker compose -f "$COMPOSE_FILE" ps -a -q "$svc" 2>/dev/null) || return 1
+		[[ -n "$cid" ]] || { log "$svc has no container"; return 1; }
+		state=$(timeout --kill-after=5s 20s docker inspect --format '{{.State.Status}}' "$cid") || return 1
+		[[ "$state" == "running" ]] || { log "$svc state is $state"; return 1; }
+		health=$(timeout --kill-after=5s 20s docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid") || return 1
+		[[ "$health" == "none" || "$health" == "healthy" ]] || { log "$svc health is $health"; return 1; }
+	done <<<"$services"
+	timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/443' || return 1
+	curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"' || return 1
+	if grep -q '^APPSEC_URL=.' /opt/npmplus/crowdsec/crowdsec.conf 2>/dev/null; then
+		timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/7422' || return 1
+	fi
+	if grep -qx crowdsec <<<"$services"; then
+		timeout --kill-after=5s 30s docker exec crowdsec cscli lapi status >/dev/null 2>&1 || return 1
+		key=$(cat /opt/npmplus/crowdsec/lapi-ui.key 2>/dev/null || true)
+		[[ -n "$key" ]] || return 1
+		[[ "$(bouncer_http_code "$key")" == "200" ]] || return 1
+		key=$(sed -n 's/^API_KEY=//p' /opt/npmplus/crowdsec/crowdsec.conf 2>/dev/null)
+		[[ -n "$key" ]] || return 1
+		[[ "$(bouncer_http_code "$key")" == "200" ]] || return 1
+		machine_password=$(cat /opt/npmplus/crowdsec/lapi-ui-machine.key 2>/dev/null || true)
+		[[ -n "$machine_password" ]] || return 1
+		[[ "$(machine_http_code "$machine_password")" == "200" ]] || return 1
+	fi
+	if [[ -f /var/lib/npmplus/installed-firewall-bouncer ]]; then
+		systemctl is-active --quiet crowdsec-firewall-bouncer.service || return 1
+		local rules
+		rules=$(timeout --kill-after=5s 10s iptables-save) || return 1
+		grep -Eq '^-A INPUT .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules" || return 1
+		grep -Eq '^-A FORWARD .*--match-set crowdsec-blacklists src.* -j (DROP|REJECT)$' <<<"$rules" || return 1
+	fi
+}
+
+trap on_wrapper_error ERR
+trap on_wrapper_exit EXIT
+trap 'log "update interrupted (SIGINT) - recovering"; exit 130' INT
+trap 'log "update interrupted (SIGTERM) - recovering"; exit 143' TERM
+trap 'exec >>"$DIAGNOSTICS/disconnected.log" 2>&1; log "update disconnected (SIGHUP) - recovering"; exit 129' HUP
+trap 'exec >>"$DIAGNOSTICS/disconnected.log" 2>&1; log "update output closed (SIGPIPE) - recovering"; exit 141' PIPE
+log "diagnostics: $DIAGNOSTICS"
+log "preflight: checking the running stack before touching the previous snapshot"
 
 # Never update a stack that is already incomplete; it would produce an unsafe
 # rollback baseline and could bring an intentionally stopped service online.
@@ -3339,6 +3497,58 @@ if grep -q '^APPSEC_URL=.' /opt/npmplus/crowdsec/crowdsec.conf 2>/dev/null && \
 	log "pre-update check failed: AppSec is configured but its listener is not healthy"
 	exit 1
 fi
+check || { log "pre-update check failed: service, credential or enforcement health is not ready"; exit 1; }
+
+# Build a complete snapshot beside the last good one; never overwrite it in place.
+mkdir -p /var/backups
+SNAPSHOT_STAGE=$(mktemp -d /var/backups/npmplus-update.XXXXXX)
+BACKUP=$SNAPSHOT_STAGE
+log "snapshot: building $BACKUP; previous last-good remains untouched"
+chmod 700 "$BACKUP"
+cp -a "$COMPOSE_FILE" "$BACKUP/compose.yaml"
+cp -a /opt/npmplus/crowdsec/crowdsec.conf "$BACKUP/crowdsec-bouncer.conf" 2>/dev/null || rm -f "$BACKUP/crowdsec-bouncer.conf"
+cp -a /opt/anubis.yaml "$BACKUP/anubis.yaml" 2>/dev/null || rm -f "$BACKUP/anubis.yaml"
+cp -a "$SETUP" "$BACKUP/setup-npmplus.sh"
+for f in npmplus-safe-update npmplus-backup npmplus-crowdsec-heal npmplus-collect-enforcement npmplus-collect-anubis; do
+	rm -f "$BACKUP/$f" "$BACKUP/cron-$f"
+	cp -a "/usr/local/bin/$f" "$BACKUP/$f" 2>/dev/null || true
+	cp -a "/etc/cron.d/$f" "$BACKUP/cron-$f" 2>/dev/null || true
+done
+host_security_paths=(
+	etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+	etc/systemd/system/crowdsec-firewall-bouncer.service.d/10-npmplus-container-lapi.conf
+	usr/local/sbin/npmplus-wait-for-crowdsec-lapi
+	etc/systemd/system/npmplus-crs-control.socket
+	etc/systemd/system/npmplus-crs-control.service
+	usr/local/lib/npmplus-crs-control.py
+	usr/local/lib/npmplus-crs-enable
+	etc/systemd/system/npmplus-public.service
+	etc/systemd/system/npmplus-cloudflare-origin-lock.service
+	etc/systemd/system/npmplus-boot-guard.service
+	usr/local/sbin/npmplus-start-protected
+	usr/local/sbin/npmplus-cloudflare-origin-lock
+	usr/local/sbin/npmplus-boot-guard
+	etc/cron.d/npmplus-cloudflare-origin-lock
+	var/lib/npmplus/strict-boot-protection
+	var/lib/npmplus/cloudflare-origin-lock
+	var/lib/npmplus/cloudflare-ips-v4
+	var/lib/npmplus/cloudflare-ips-v6
+)
+host_security_existing=()
+for path in "${host_security_paths[@]}"; do
+	[[ -e "/$path" ]] && host_security_existing+=("$path")
+done
+rm -f "$BACKUP/host-security.tar.gz"
+if [[ ${#host_security_existing[@]} -gt 0 ]]; then
+	tar -czf "$BACKUP/host-security.tar.gz" -C / "${host_security_existing[@]}"
+fi
+runtime_existing=()
+for path in "${runtime_paths[@]}"; do
+	[[ ! -e "/opt/npmplus/$path" && ! -L "/opt/npmplus/$path" ]] || runtime_existing+=("$path")
+done
+if [[ ${#runtime_existing[@]} -gt 0 ]]; then
+	tar -czf "$BACKUP/npmplus-runtime.tar.gz" -C /opt/npmplus "${runtime_existing[@]}"
+fi
 
 # Take an online sqlite backup before a new image can run migrations. Refuse to
 # call an update safe when the rollback database cannot be created.
@@ -3371,40 +3581,41 @@ fi
 # are stopped. The brief stop occurs before any image changes and each service
 # is restarted immediately after its snapshot.
 rm -rf "$BACKUP/crowdsec" "$BACKUP/anubis-data"
-stopped_svc=""
-restart_snapshot_service() {
-	if [[ -n "$stopped_svc" ]]; then
-		log "restarting $stopped_svc after an interrupted snapshot"
-		docker compose -f "$COMPOSE_FILE" start "$stopped_svc" >/dev/null 2>&1 || true
-	fi
-}
-trap restart_snapshot_service EXIT
 for spec in "crowdsec:/opt/crowdsec:crowdsec" "anubis:/opt/anubis-data:anubis-data"; do
 	IFS=: read -r svc source name <<<"$spec"
 	if docker compose -f "$COMPOSE_FILE" config --services | grep -qx "$svc" && [[ -d "$source" ]]; then
-		docker compose -f "$COMPOSE_FILE" stop "$svc"
 		stopped_svc="$svc"
+		docker compose -f "$COMPOSE_FILE" stop "$svc"
 		rm -rf "$BACKUP/${name:?}"
 		if ! cp -a "$source" "$BACKUP/$name"; then
-			docker compose -f "$COMPOSE_FILE" start "$svc" || true
-			stopped_svc=""
+			log "snapshot copy failed for $svc; restarting its writer before exiting"
 			exit 1
 		fi
 		docker compose -f "$COMPOSE_FILE" start "$svc"
 		stopped_svc=""
 	fi
 done
-trap - EXIT
-{
-	echo "services:"
-	while read -r svc id; do
-		echo "  $svc:"
-		echo "    image: \"$id\""
-	done < <(for s in $(docker compose -f "$COMPOSE_FILE" config --services); do
-		cid=$(docker compose -f "$COMPOSE_FILE" ps -q "$s" 2>/dev/null || true)
-		[[ -n "$cid" ]] && echo "$s $(docker inspect --format '{{.Image}}' "$cid")"
-	done)
-} >"$BACKUP/override.yaml"
+snapshot_services=$(docker compose -f "$COMPOSE_FILE" config --services)
+[[ -n "$snapshot_services" ]] || { log "cannot snapshot an empty Compose service list"; exit 1; }
+printf 'services:\n' >"$BACKUP/override.yaml"
+while read -r svc; do
+	cid=$(docker compose -f "$COMPOSE_FILE" ps -q "$svc")
+	[[ -n "$cid" ]] || { log "snapshot lost container $svc; refusing deployment"; exit 1; }
+	id=$(docker inspect --format '{{.Image}}' "$cid")
+	[[ -n "$id" ]] || { log "snapshot lost image for $svc; refusing deployment"; exit 1; }
+	printf '  %s:\n    image: "%s"\n' "$svc" "$id" >>"$BACKUP/override.yaml"
+done <<<"$snapshot_services"
+printf 'complete\n' >"$BACKUP/complete"
+if [[ -e "$LAST_GOOD" ]]; then
+	PREVIOUS_BACKUP=$(mktemp -d /var/backups/npmplus-last-good.previous.XXXXXX)
+	rmdir "$PREVIOUS_BACKUP"
+	mv -- "$LAST_GOOD" "$PREVIOUS_BACKUP"
+fi
+mv -- "$SNAPSHOT_STAGE" "$LAST_GOOD"
+BACKUP=$LAST_GOOD
+snapshot_ready=true
+SNAPSHOT_STAGE=""
+log "snapshot: complete; retained previous snapshot until recovery or update is verified"
 
 log "running update"
 if [[ -n "$CANDIDATE" && "$CANDIDATE" != "$SETUP" ]]; then
@@ -3420,15 +3631,25 @@ if [[ -n "$CANDIDATE" && "$CANDIDATE" != "$SETUP" ]]; then
 		echo "the running stack is untouched; set NPMPLUS_FORCE_DOWNGRADE=true to override" >&2
 		exit 1
 	fi
-	cp -a "$CANDIDATE" "$SETUP" || revert
-	chmod 700 "$SETUP" || revert
+	deployment_started=true
+	restore_file "$CANDIDATE" "$SETUP"
+	chmod 700 "$SETUP"
 fi
-NPMPLUS_SAFE_UPDATE_ACTIVE=true "$SETUP" --update || revert
-update_deployed=true
+deployment_started=true
+log "deployment: starting supervised update (deadline ${UPDATE_TIMEOUT_SECONDS}s)"
+setsid timeout --signal=TERM --kill-after=5s "${UPDATE_TIMEOUT_SECONDS}s" \
+	env NPMPLUS_SAFE_UPDATE_ACTIVE=true "$SETUP" --update &
+update_pid=$!
+wait "$update_pid"
+stop_update_child
 
 # crowdsec hub: refresh the detection signatures (parsers/scenarios/collections);
 # a container image update alone never touches them and they live outside the image
 if docker compose -f "$COMPOSE_FILE" ps --status running --format '{{.Name}}' 2>/dev/null | grep -qx crowdsec; then
+	(
+	# Scope the deadline to these advisory Docker calls. Keep the repair and hub
+	# commands together so the read-only datafile repair always precedes refresh.
+	docker() { timeout --kill-after=5s 120s "$(type -P docker)" "$@"; }
 	# the image entrypoint bridges its preloaded datafiles into the data dir as
 	# absolute symlinks into /staging. Our read_only rootfs makes that target
 	# unwritable, so hub upgrade follows the link into an EROFS and aborts the
@@ -3436,56 +3657,21 @@ if docker compose -f "$COMPOSE_FILE" ps --status running --format '{{.Name}}' 2>
 	# links with real files; the entrypoint's own -e guard then leaves them be.
 	# A linked directory (trace) becomes a real one for the same reason: anything
 	# writing into it would hit the read-only target.
+	# The variables below belong to the shell inside CrowdSec.
+	# shellcheck disable=SC2016
 	docker exec crowdsec sh -c 'cd /var/lib/crowdsec/data && for f in *; do [ -L "$f" ] || continue; if [ -d "$f" ]; then rm -f "$f" && mkdir -p -m 0700 "$f"; else cp -Lpf "$f" "$f.tmp" && mv -f "$f.tmp" "$f"; fi; done' 2>/dev/null || true
 	# a hub refresh is advisory and this wrapper runs under set -e: an unreachable
 	# hub or an offline box must not fail a healthy update, nor skip the health
 	# check below
 	docker exec crowdsec cscli hub update || true
 	docker exec crowdsec cscli hub upgrade || log "cscli hub upgrade reported failures (kept, check: docker exec crowdsec cscli hub list)"
+	)
 fi
 
-# Health check every configured service, Docker health where present, both
-# NPMplus listeners and CrowdSec's LAPI. The default public vhost may deny
-# unmatched requests (404/444); application health comes from the admin API.
-bouncer_http_code() {
-	printf 'header = "X-Api-Key: %s"\n' "$1" | curl -sS --connect-timeout 5 --max-time 10 \
-		-o /dev/null -w '%{http_code}' --config - 'http://127.0.0.1:8080/v1/decisions?limit=1'
-}
-machine_http_code() {
-	printf '{"machine_id":"npmplus-ui","password":"%s"}' "$1" | curl -sS --connect-timeout 5 --max-time 10 \
-		-o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' --data-binary @- \
-		'http://127.0.0.1:8080/v1/watchers/login'
-}
-check() {
-	local svc cid state health key machine_password
-	while read -r svc; do
-		cid=$(docker compose -f "$COMPOSE_FILE" ps -a -q "$svc" 2>/dev/null)
-		[[ -n "$cid" ]] || { log "$svc has no container"; return 1; }
-		state=$(docker inspect --format '{{.State.Status}}' "$cid")
-		[[ "$state" == "running" ]] || { log "$svc state is $state"; return 1; }
-		health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")
-		[[ "$health" == "none" || "$health" == "healthy" ]] || { log "$svc health is $health"; return 1; }
-	done < <(docker compose -f "$COMPOSE_FILE" config --services)
-	timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/443' || return 1
-	curl -fkSs --connect-timeout 5 --max-time 10 https://127.0.0.1:81/api | grep -qE '"status"[[:space:]]*:[[:space:]]*"OK"' || return 1
-	if grep -q '^APPSEC_URL=.' /opt/npmplus/crowdsec/crowdsec.conf 2>/dev/null; then
-		timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/7422' || return 1
-	fi
-	if docker compose -f "$COMPOSE_FILE" config --services | grep -qx crowdsec; then
-		docker exec crowdsec cscli lapi status >/dev/null 2>&1 || return 1
-		key=$(cat /opt/npmplus/crowdsec/lapi-ui.key 2>/dev/null || true)
-		[[ -n "$key" ]] || return 1
-		[[ "$(bouncer_http_code "$key")" == "200" ]] || return 1
-		key=$(sed -n 's/^API_KEY=//p' /opt/npmplus/crowdsec/crowdsec.conf 2>/dev/null)
-		[[ -n "$key" ]] || return 1
-		[[ "$(bouncer_http_code "$key")" == "200" ]] || return 1
-		machine_password=$(cat /opt/npmplus/crowdsec/lapi-ui-machine.key 2>/dev/null || true)
-		[[ -n "$machine_password" ]] || return 1
-		[[ "$(machine_http_code "$machine_password")" == "200" ]] || return 1
-	fi
-}
+
 sleep 30
-check || { sleep 60; check || revert; }
+check || { log "health check not ready; retrying in 60 seconds"; sleep 60; check; }
+update_complete=true
 log "update healthy - last good snapshot kept in $BACKUP"
 EOF
 	printf '37 4 1 * * root /usr/local/bin/npmplus-safe-update >>/var/log/npmplus-update.log 2>&1\n' >/etc/cron.d/npmplus-safe-update
@@ -4054,7 +4240,7 @@ if [[ "${1:-}" == "--update" ]]; then
 		# overwrite themselves in place during a nested tooling refresh. Replace
 		# them before delegation; this also repairs a missing execute bit.
 		if [[ ! -x /usr/local/bin/npmplus-safe-update ]] || \
-			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=8' /usr/local/bin/npmplus-safe-update; then
+			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=9' /usr/local/bin/npmplus-safe-update; then
 			install_host_tooling
 		fi
 		# Repair the v1.6 root-owned Anubis bind mount before the wrapper checks
@@ -4232,13 +4418,15 @@ if [[ "${1:-}" == "--update" ]]; then
 	activate_installer_firewall_bouncer
 	if [[ -f /var/lib/npmplus/cloudflare-origin-lock ]]; then
 		if systemctl is-active --quiet npmplus-cloudflare-origin-lock.service; then
-			/usr/local/sbin/npmplus-cloudflare-origin-lock refresh
+			say "refreshing the Cloudflare origin lock (deadline 180 seconds)"
+			timeout --kill-after=5s 180s /usr/local/sbin/npmplus-cloudflare-origin-lock refresh
 		else
 			systemctl start npmplus-cloudflare-origin-lock.service
 		fi
 		systemctl is-active --quiet npmplus-cloudflare-origin-lock.service
 	fi
 	if [[ -f /var/lib/npmplus/strict-boot-protection ]]; then
+		say "waiting for protected startup; an unhealthy container triggers rollback"
 		systemctl restart npmplus-public.service
 		systemctl is-active --quiet npmplus-public.service
 	fi

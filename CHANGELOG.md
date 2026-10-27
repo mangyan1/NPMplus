@@ -4,6 +4,10 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Fix startup regeneration for existing proxy, redirect, dead and stream hosts after the upstream refactor. Add populated-database and real-container restart regressions so a healthy fresh installation cannot hide a broken upgrade path.
+
+- Harden installer v1.71 recovery for cancellation, disconnection, stalled deployment and failed startup. Stage complete snapshots before replacement, restore configuration and credentials with the database, verify recovered health and enforcement, show download progress, and exercise failure recovery on disposable hosts.
+
 - Refresh the verified Packagecloud CrowdSec repository-helper checksum after reviewing its apt-lock retry and OS-validation changes. Installer v1.70 retains checksum enforcement; an unexpected helper still fails closed before execution.
 
 - Rebuild Caddy with digest-pinned Go 1.26.10 to include the crypto/x509 intermediate-certificate distrust fix and a targeted chi 5.4.0 replacement for its client-IP middleware advisory. Keep the source dependency checks, upstream HTTP tests and candidate-image vulnerability gate enabled.

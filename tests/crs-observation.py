@@ -89,7 +89,7 @@ COMPOSE_FILE="$DATA_DIR/compose.yaml"
     def test_safe_update_snapshots_and_restores_the_bouncer_choice(self):
         wrapper = re.search(r"write_root_file /usr/local/bin/npmplus-safe-update \d+ <<'EOF'\n(.*?)\nEOF", SOURCE, re.S).group(1)
         self.assertIn('cp -a /opt/npmplus/crowdsec/crowdsec.conf "$BACKUP/crowdsec-bouncer.conf"', wrapper)
-        self.assertIn('cp -a "$BACKUP/crowdsec-bouncer.conf" /opt/npmplus/crowdsec/crowdsec.conf', wrapper)
+        self.assertIn('restore_file "$BACKUP/crowdsec-bouncer.conf" /opt/npmplus/crowdsec/crowdsec.conf', wrapper)
         self.assertLess(wrapper.index('"$BACKUP/crowdsec-bouncer.conf"'), wrapper.index("up -d --pull never"))
 
 
