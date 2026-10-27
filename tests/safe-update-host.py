@@ -7,6 +7,7 @@ import re
 import signal
 import ssl
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
@@ -21,6 +22,24 @@ WRAPPER = "/usr/local/bin/npmplus-safe-update"
 BACKUP = Path("/var/backups/npmplus-last-good")
 context = ssl._create_unverified_context()
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
+
+
+def show_failure(kind, error, traceback):
+    # Only disposable CI hosts can reach this driver. Retain the controller's
+    # real error even when SIGHUP moved its output away from the original log.
+    directories = sorted(Path("/var/log").glob("npmplus-update.*"), key=lambda p: p.stat().st_mtime)
+    for directory in directories[-2:]:
+        for name in ["progress.log", "controller.log", "recovery.log", "disconnected.log"]:
+            path = directory / name
+            if path.is_file():
+                print(f"--- {path} ---\n{path.read_text(errors='replace')[-30000:]}", flush=True)
+    subprocess.run(["systemctl", "list-jobs", "--no-pager"], check=False)
+    subprocess.run(["journalctl", "-u", "npmplus-public.service", "-u", "crowdsec-firewall-bouncer.service",
+                    "-u", "npmplus-cloudflare-origin-lock.service", "--since", "10 minutes ago", "-n", "120", "--no-pager"], check=False)
+    sys.__excepthook__(kind, error, traceback)
+
+
+sys.excepthook = show_failure
 
 
 def run(*args):
