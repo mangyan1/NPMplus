@@ -11,7 +11,7 @@ set -euo pipefail
 
 # bump this on every meaningful change - the script compares it against the
 # copy on github at startup and tells the operator when theirs is stale
-SCRIPT_VERSION="1.71"
+SCRIPT_VERSION="1.72"
 
 DATA_DIR="/opt/npmplus"
 CROWDSEC_DIR="/opt/crowdsec"
@@ -3149,7 +3149,7 @@ if [[ -s "$DATA_DIR/setup-npmplus.sh" ]]; then
 	chmod 700 "$DATA_DIR/setup-npmplus.sh"
 	write_root_file /usr/local/bin/npmplus-safe-update 700 <<'EOF'
 #!/bin/bash
-# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=9
+# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=10
 # monthly npmplus update with a safety net: snapshots the running state,
 # runs the update, health-checks it, and reverts to the snapshot on failure
 set -euo pipefail
@@ -3295,6 +3295,12 @@ revert() {
 	timeout --kill-after=5s 30s docker compose -f "$COMPOSE_FILE" logs --no-color --tail 200 >"$BACKUP/failed-logs.txt" 2>&1 || true
 	# Close public traffic before stopping protection or restoring any files.
 	[[ ! -x /usr/local/sbin/npmplus-boot-guard ]] || /usr/local/sbin/npmplus-boot-guard apply || return 1
+	if [[ -f /var/lib/npmplus/installed-firewall-bouncer ]]; then
+		# Its ExecStartPre gate can recreate CrowdSec. Stop pending activation
+		# and automatic restarts before shutting down any database writer.
+		log "rollback: stopping firewall-bouncer activation before database restoration"
+		timeout --kill-after=5s 60s systemctl stop crowdsec-firewall-bouncer.service || return 1
+	fi
 	for unit in npmplus-public.service npmplus-cloudflare-origin-lock.service npmplus-boot-guard.service; do
 		if systemctl cat "$unit" >/dev/null 2>&1; then
 			timeout --kill-after=5s 90s systemctl stop "$unit" || return 1
@@ -3364,6 +3370,7 @@ revert() {
 		systemctl enable --now npmplus-cloudflare-origin-lock.service >/dev/null || return 1
 	fi
 	if [[ -f /var/lib/npmplus/installed-firewall-bouncer ]]; then
+		systemctl reset-failed crowdsec-firewall-bouncer.service || return 1
 		timeout --kill-after=5s 300s systemctl restart crowdsec-firewall-bouncer.service || return 1
 	fi
 	if [[ -f /var/lib/npmplus/strict-boot-protection ]]; then
@@ -4248,7 +4255,7 @@ if [[ "${1:-}" == "--update" ]]; then
 		# overwrite themselves in place during a nested tooling refresh. Replace
 		# them before delegation; this also repairs a missing execute bit.
 		if [[ ! -x /usr/local/bin/npmplus-safe-update ]] || \
-			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=9' /usr/local/bin/npmplus-safe-update; then
+			! grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=10' /usr/local/bin/npmplus-safe-update; then
 			install_host_tooling
 		fi
 		# Repair the v1.6 root-owned Anubis bind mount before the wrapper checks

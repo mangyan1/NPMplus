@@ -62,7 +62,12 @@ if [[ $1 == compose ]]; then
     *'ps --status running --format'*) : ;;
     *'ps '*'-q npmplus'*) echo fixture ;;
     *'ps -q npmplus'*) echo fixture ;;
-    *' down'*) touch "$FIXTURE_ROOT/stopped" ;;
+    *' down'*)
+      if [[ $FIXTURE_CASE == bouncer-race && ! -f "$FIXTURE_ROOT/bouncer-stopped" ]]; then
+        echo 'bouncer startup gate recreated CrowdSec during shutdown' >&2
+        exit 15
+      fi
+      touch "$FIXTURE_ROOT/stopped" ;;
     *' up -d'*)
       [[ $FIXTURE_CASE != rollback-fails ]] || exit 7
       rm -f "$FIXTURE_ROOT/stopped"
@@ -234,6 +239,23 @@ exec /bin/cp "$@"
 
     def test_failed_startup_restores_database_configs_and_credentials(self):
         code, output = self.run_wrapper()
+        self.assertNotEqual(code, 0, output)
+        self.assert_restored()
+        self.assertIn("reverted - failure diagnostics are in", output)
+
+    def test_bouncer_activation_cannot_race_with_database_restoration(self):
+        marker = self.root / "var/lib/npmplus/installed-firewall-bouncer"
+        marker.parent.mkdir(parents=True)
+        marker.touch()
+        self.write_tool("systemctl", '''#!/bin/bash
+printf '%s\\n' "$*" >>"$FIXTURE_ROOT/systemctl.calls"
+if [[ $* == 'stop crowdsec-firewall-bouncer.service' ]]; then touch "$FIXTURE_ROOT/bouncer-stopped"; fi
+''')
+        self.write_tool("iptables-save", '''#!/bin/sh
+echo '-A INPUT -m set --match-set crowdsec-blacklists src -j DROP'
+echo '-A FORWARD -m set --match-set crowdsec-blacklists src -j DROP'
+''')
+        code, output = self.run_wrapper("bouncer-race")
         self.assertNotEqual(code, 0, output)
         self.assert_restored()
         self.assertIn("reverted - failure diagnostics are in", output)
