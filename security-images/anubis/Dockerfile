@@ -2,12 +2,12 @@
 FROM rust:1.99.0-alpine3.23@sha256:42c2519fdf75d9e34cc61a1aaf34b1a684da9bfd65fe5daefef98d92a801b001 AS rust
 RUN rustup target add wasm32-unknown-unknown
 
-FROM golang:1.27.3-alpine3.23@sha256:8a5046497cda39860b832ffdbe8dd66018a0f05bb01352f533a36e7e2ced66a0 AS builder
+FROM golang:1.27.4-alpine3.23@sha256:f70850ef6ce341e8b6427f677049145d63c0b7ce002d4d7e3d464828b1b96dcd AS builder
 
 ARG ANUBIS_COMMIT=a1384fbf42e331652b6f5cc89fdbcdc255d25b8e
-ARG ANUBIS_VERSION=v1.28.2-mangyan1.security.1
-ARG X_TEXT_VERSION=v0.42.0
-ARG X_NET_VERSION=v0.60.0
+ARG ANUBIS_VERSION=v1.28.2-mangyan1.security.2
+ARG X_TEXT_VERSION=v0.43.0
+ARG X_NET_VERSION=v0.62.0
 ARG GRPC_VERSION=v1.84.0
 ARG CEL_GO_VERSION=v0.32.0
 
@@ -39,7 +39,7 @@ COPY --from=builder /out/anubis /ko-app/anubis
 COPY --from=builder /src/LICENSE /licenses/anubis/LICENSE
 LABEL org.opencontainers.image.source="https://github.com/mangyan1/NPMplus" \
 	org.opencontainers.image.title="Anubis security build for NPMplus" \
-	org.opencontainers.image.version="v1.28.2-mangyan1.security.1" \
+	org.opencontainers.image.version="v1.28.2-mangyan1.security.2" \
 	org.opencontainers.image.licenses="MIT" \
 	io.npmplus.upstream.source="https://github.com/TecharoHQ/anubis" \
 	io.npmplus.upstream.revision="a1384fbf42e331652b6f5cc89fdbcdc255d25b8e"

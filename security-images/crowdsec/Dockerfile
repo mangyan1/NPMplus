@@ -1,15 +1,16 @@
 # syntax=docker/dockerfile:1.27.1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
-FROM golang:1.26.10-alpine3.23@sha256:34414731924cf2263160f0021f5cf6e1807382d85248f7cb419d4187b96d5e43 AS builder
+FROM golang:1.26.11-alpine3.23@sha256:23f198931d4bd83b4f5a613bd75656257ae8bf832dcbc2db80e1050b5219ca2a AS builder
 
 ARG CROWDSEC_COMMIT=909b5157986a2b2c2163300fdaef5ed01289f7d2
 ARG RE2_COMMIT=241e2e430836e80f93d704d1f06cd3e7fe3100f5
 ARG GRPC_VERSION=v1.83.2
-ARG X_CRYPTO_VERSION=v0.57.0
+ARG X_CRYPTO_VERSION=v0.58.0
 ARG PGX_VERSION=v5.11.0
 ARG YQ_VERSION=v4.50.1
-ARG X_NET_VERSION=v0.60.0
+ARG X_NET_VERSION=v0.62.0
+ARG OTEL_VERSION=v1.47.0
 ARG KIN_OPENAPI_VERSION=v0.149.0
-ARG X_TEXT_VERSION=v0.42.0
+ARG X_TEXT_VERSION=v0.43.0
 ENV CGO_CFLAGS=-D_LARGEFILE64_SOURCE
 
 RUN apk upgrade --no-cache -a && apk add --no-cache git g++ gcc libc-dev make bash gettext binutils-gold coreutils pkgconfig
@@ -28,7 +29,11 @@ COPY parser-security_test.go pkg/database/parser_security_test.go
 RUN git apply /tmp/postgres-v5.patch && go mod edit -droprequire github.com/jackc/pgx/v4 && \
 	go get "google.golang.org/grpc@$GRPC_VERSION" "golang.org/x/crypto@$X_CRYPTO_VERSION" \
 	"github.com/jackc/pgx/v5@$PGX_VERSION" "golang.org/x/net@$X_NET_VERSION" \
-	"github.com/getkin/kin-openapi@$KIN_OPENAPI_VERSION" && go mod tidy && go mod verify
+	"github.com/getkin/kin-openapi@$KIN_OPENAPI_VERSION" \
+	"go.opentelemetry.io/otel@$OTEL_VERSION" "go.opentelemetry.io/otel/trace@$OTEL_VERSION" \
+	"go.opentelemetry.io/otel/sdk@$OTEL_VERSION" "go.opentelemetry.io/otel/metric@$OTEL_VERSION" \
+	"go.opentelemetry.io/otel/log@$OTEL_VERSION" "go.opentelemetry.io/otel/sdk/log@$OTEL_VERSION" && \
+	go mod tidy && go mod verify
 RUN TEST_LOCAL_ONLY=1 go test -timeout 3m \
 	-tags netgo,osusergo,expr_debug,nomsgpack,sqlite_omit_load_extension,re2_cgo \
 	./pkg/database/... ./pkg/apiserver/... ./pkg/appsec/... ./pkg/exprhelpers/... ./pkg/csconfig/... ./pkg/hubtest/...
@@ -40,21 +45,21 @@ RUN go mod init npmplus.tools/yq && go get "github.com/mikefarah/yq/v4@$YQ_VERSI
 	"golang.org/x/net@$X_NET_VERSION" "golang.org/x/text@$X_TEXT_VERSION" && \
 	CGO_ENABLED=0 go build -mod=readonly -trimpath -o /out/yq github.com/mikefarah/yq/v4
 WORKDIR /src
-RUN make -j2 build BUILD_VERSION=v1.8.1 BUILD_TAG=909b515-mangyan1.security.2 \
+RUN make -j2 build BUILD_VERSION=v1.8.1 BUILD_TAG=909b515-mangyan1.security.3 \
 	BUILD_TIMESTAMP=2026-10-27T00:00:00Z DOCKER_BUILD=1 BUILD_STATIC=1 && \
 	mkdir -p /out/plugins && cp cmd/crowdsec/crowdsec cmd/crowdsec-cli/cscli /out/ && \
 	find cmd -name 'notification-*' -type f -executable -exec cp '{}' /out/plugins/ \;
 
 FROM docker.io/crowdsecurity/crowdsec:latest@sha256:0f2523fa61ef507f15d953045cface490cc880670c62f2755ced17524107f71a
 # CVE-2026-85091: invalidate older runtime layers and require the patched zlib.
-RUN apk upgrade --no-cache -a && apk add --no-cache "zlib>=1.3.2-r1"
+RUN apk upgrade --no-cache -a && apk add --no-cache "rsync>=3.5.2-r0" "zlib>=1.4-r0"
 COPY --from=builder /out/crowdsec /out/cscli /usr/local/bin/
 COPY --from=builder /out/yq /usr/local/bin/yq
 COPY --from=builder /out/plugins/ /usr/local/lib/crowdsec/plugins/
 COPY --from=builder /src/LICENSE /licenses/crowdsec/LICENSE
 LABEL org.opencontainers.image.source="https://github.com/mangyan1/NPMplus" \
 	org.opencontainers.image.title="CrowdSec security build for NPMplus" \
-	org.opencontainers.image.version="v1.8.1-mangyan1.security.2" \
+	org.opencontainers.image.version="v1.8.1-mangyan1.security.3" \
 	org.opencontainers.image.licenses="MIT" \
 	io.npmplus.upstream.source="https://github.com/crowdsecurity/crowdsec" \
 	io.npmplus.upstream.revision="909b5157986a2b2c2163300fdaef5ed01289f7d2"
