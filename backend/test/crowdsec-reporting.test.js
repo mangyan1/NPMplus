@@ -191,10 +191,8 @@ it("cursor exploration reaches beyond 500 alerts without duplicates or growing r
 		assert.equal(result.scan_mode, true);
 		assert.ok(result.items.length <= 25);
 		ids.push(...result.items.map((item) => item.id));
-		if (!result.has_next) {
-			assert.equal(result.truncated, false);
-			break;
-		}
+		assert.ok(result.has_next || result.truncated === false);
+		if (!result.has_next) break;
 		cursor = result.next_cursor;
 	}
 	assert.deepEqual(
@@ -232,8 +230,8 @@ it("dense timestamp ties stop explicitly instead of skipping unseen alerts", asy
 	for (let i = 0; i < 8; i++) {
 		const result = await request("/history/alerts", { cursor });
 		ids.push(...result.items.map((item) => item.id));
+		assert.ok(result.has_next || result.truncated === true);
 		if (!result.has_next) {
-			assert.equal(result.truncated, true);
 			stopped = true;
 			break;
 		}

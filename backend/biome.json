@@ -92,10 +92,12 @@
 					},
 					"suspicious": {
 						"noReturnAssign": "off",
-						"useAwait": "off"
+						"useAwait": "off",
+						"noConditionalExpect": "off"
 					},
 					"performance": {
-						"useTopLevelRegex": "off"
+						"useTopLevelRegex": "off",
+						"useDomNodeTextContent": "off"
 					}
 				}
 			}

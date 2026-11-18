@@ -14,7 +14,7 @@ try {
 		if (!signedIn && event.text().includes("status of 401")) return;
 		if (event.type() === "error" && !event.text().includes("status of 400")) errors.push(event.text());
 	});
-	await page.goto(`${base}/login`, { waitUntil: "networkidle" });
+	await page.goto(`${base}/login`, { waitUntil: "load" });
 	await page.getByLabel(/email/iu).fill(process.env.SMOKE_ADMIN_EMAIL || "admin@example.test");
 	await page.getByLabel(/password/iu).fill(process.env.SMOKE_ADMIN_PASSWORD || "rc5-smoke-password");
 	await page.getByRole("button", { name: /sign in|log in/iu }).click();
@@ -49,7 +49,7 @@ try {
 			body: JSON.stringify(new URL(route.request().url()).pathname.endsWith("900001") ? fixture : [fixture]),
 		});
 	});
-	await page.goto(`${base}/access`, { waitUntil: "networkidle" });
+	await page.goto(`${base}/access`, { waitUntil: "load" });
 	const row = page.getByRole("row").filter({ hasText: fixture.name });
 	await row.locator("button.dropdown-toggle").click();
 	await row.getByRole("button", { name: "Edit", exact: true }).click();
@@ -101,7 +101,7 @@ try {
 	await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0);
 	fixture.items = [];
 	fixture.clients = [{ directive: "deny", address: "all" }];
-	await page.reload({ waitUntil: "networkidle" });
+	await page.reload({ waitUntil: "load" });
 	await row.locator("button.dropdown-toggle").click();
 	await row.getByRole("button", { name: "Edit", exact: true }).click();
 	const denyAllSave = page.waitForResponse(

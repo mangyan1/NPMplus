@@ -47,7 +47,7 @@ page.on("pageerror", (error) => {
 
 // 1. login with the seeded admin; the app swaps to the authenticated shell
 //    on auth state, the url itself stays /login, so wait for the site menu
-await page.goto(`${BASE_URL}/login`, { waitUntil: "networkidle" });
+await page.goto(`${BASE_URL}/login`, { waitUntil: "load" });
 await page.getByLabel(/email/iu).first().fill(EMAIL);
 await page
 	.getByLabel(/password/iu)
@@ -58,14 +58,14 @@ await page.waitForFunction(() => document.querySelector('a[href="/nginx/proxy"]'
 check("seeded admin logs into the real UI", true, page.url());
 
 // 2. hosts page renders the real (empty) inventory
-await page.goto(`${BASE_URL}/nginx/proxy`, { waitUntil: "networkidle" });
+await page.goto(`${BASE_URL}/nginx/proxy`, { waitUntil: "load" });
 await page
 	.getByRole("heading", { name: /proxy hosts/iu })
 	.first()
 	.waitFor({ timeout: 15000 });
 
 // 2. hosts page renders the real (empty) inventory
-await page.waitForLoadState("networkidle");
+await page.waitForLoadState("load");
 check(
 	"hosts page shows an empty inventory",
 	(await page.getByText(/no.*hosts?|there are no hosts/iu).count()) >= 1 ||
@@ -77,13 +77,13 @@ check(
 );
 
 // 3. certificate and stream pages render without errors
-await page.goto(`${BASE_URL}/certificates`, { waitUntil: "networkidle" });
+await page.goto(`${BASE_URL}/certificates`, { waitUntil: "load" });
 check("certificates page renders", (await page.locator("body").innerText()).length > 100);
-await page.goto(`${BASE_URL}/nginx/stream`, { waitUntil: "networkidle" });
+await page.goto(`${BASE_URL}/nginx/stream`, { waitUntil: "load" });
 check("streams page renders", (await page.locator("body").innerText()).length > 100);
 
 // 4. the crowdsec dashboard renders its honest not-wired states instead of crashing
-await page.goto(`${BASE_URL}/crowdsec`, { waitUntil: "networkidle" });
+await page.goto(`${BASE_URL}/crowdsec`, { waitUntil: "load" });
 await page
 	.getByRole("heading", { name: /security overview|crowdsec/iu })
 	.first()
@@ -100,12 +100,12 @@ check(
 check("crowdsec dashboard exposes its five tabs", (await page.getByRole("tab").count()) === 5);
 for (const tabName of ["Attack activity", "Active bans", "WAF", "System"]) {
 	await page.getByRole("tab", { name: tabName }).click();
-	await page.waitForTimeout(300);
+	await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 check("every crowdsec tab opens without a page error", true);
 
 // 5. users page renders the admin
-await page.goto(`${BASE_URL}/users`, { waitUntil: "networkidle" });
+await page.goto(`${BASE_URL}/users`, { waitUntil: "load" });
 check("users page lists the admin", (await page.locator("body").innerText()).includes(EMAIL));
 
 check("real-container UI walkthrough has no browser errors", browserErrors.length === 0, browserErrors.join(" | "));

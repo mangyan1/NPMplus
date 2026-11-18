@@ -70,7 +70,7 @@ try {
 				// Recover immediately, not after the five-minute refresh interval.
 				await page.getByLabel(/password/iu).waitFor({ timeout: 5000 });
 				assert.equal(await page.evaluate(() => localStorage.getItem("auth")), null);
-				await page.waitForTimeout(1000);
+				await new Promise((resolve) => setTimeout(resolve, 1000));
 				assert.ok(refreshes <= 3, `session checks looped: ${refreshes}`);
 				assert.ok(navigations <= 3, `page reloads looped: ${navigations}`);
 				console.log(`PASS ${scenario} returns to login immediately without a reload loop`);

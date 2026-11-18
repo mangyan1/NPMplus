@@ -572,7 +572,22 @@ page.on("pageerror", (error) => {
 await page.route("**/api/**", (route) => api(route));
 await page.addInitScript((expires) => localStorage.setItem("auth", expires), iso(86400 * 1000));
 const baseUrl = process.env.SMOKE_BASE_URL || "http://localhost:5173";
-await page.goto(`${baseUrl}/crowdsec`, { waitUntil: "networkidle" });
+
+// networkidle is discouraged and flaky; wait for the dashboard's initial data
+// requests instead. Insights always loads on mount; metrics usually follows in
+// the same batch, with a bounded fallback for states where it is not requested.
+const settleDashboard = async (action) => {
+	const insights = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/crowdsec/insights");
+	const metrics = page
+		.waitForResponse((response) => new URL(response.url()).pathname === "/api/crowdsec/metrics")
+		.catch(() => {});
+	await action();
+	await insights;
+	await Promise.race([metrics, new Promise((resolve) => setTimeout(resolve, 2000))]);
+};
+const reloadDashboard = () => settleDashboard(() => page.reload({ waitUntil: "load" }));
+const gotoDashboard = (url) => settleDashboard(() => page.goto(url, { waitUntil: "load" }));
+await gotoDashboard(`${baseUrl}/crowdsec`);
 
 await page.getByRole("heading", { name: "Security overview" }).waitFor({ timeout: 15000 });
 check("security dashboard has one sticky toolbar", (await page.locator(".sticky-top").count()) === 1);
@@ -1033,7 +1048,7 @@ check(
 await page.screenshot({ path: "backend/.smoke/ui-security-dashboard-waf.png", fullPage: true });
 
 appsecConfigured = false;
-await page.reload({ waitUntil: "networkidle" });
+await reloadDashboard();
 await page.getByRole("tab", { name: "WAF" }).click();
 const disabledWafText = await page.locator("#crowdsec-tab-panel").innerText();
 check(
@@ -1046,7 +1061,7 @@ check(
 	!(await page.getByRole("region", { name: "OWASP CRS observations" }).innerText()).includes("SQL injection pattern"),
 );
 appsecConfigured = true;
-await page.reload({ waitUntil: "networkidle" });
+await reloadDashboard();
 
 await page.getByRole("tab", { name: "System" }).click();
 await page.getByText("Service active; INPUT and FORWARD drop rules present", { exact: true }).waitFor();
@@ -1223,7 +1238,7 @@ await page.screenshot({
 	animations: "disabled",
 });
 await page.getByRole("tab", { name: "Active bans", exact: true }).click();
-await page.waitForTimeout(250);
+await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 await page.screenshot({ path: "backend/.smoke/ui-security-bans-dark-320.png", fullPage: true, animations: "disabled" });
 await page.setViewportSize({ width: 1280, height: 900 });
 await page.screenshot({ path: "backend/.smoke/ui-security-bans-dark.png", fullPage: true, animations: "disabled" });
@@ -1245,7 +1260,7 @@ expectedManualBanError = false;
 await page.setViewportSize({ width: 1280, height: 900 });
 metricsMissing = true;
 countsTruncated = true;
-await page.reload({ waitUntil: "networkidle" });
+await reloadDashboard();
 await page.getByRole("tab", { name: "Overview", exact: true }).click();
 check(
 	"capped local counts are visibly lower bounds",
@@ -1260,7 +1275,7 @@ check(
 await page.screenshot({ path: "backend/.smoke/ui-security-dashboard-missing-metrics.png", fullPage: true });
 metricsMissing = false;
 countsTruncated = false;
-await page.reload({ waitUntil: "networkidle" });
+await reloadDashboard();
 metricsFailure = true;
 await page.getByRole("button", { name: "Refresh", exact: true }).click();
 await page.getByText("Displayed data stale", { exact: true }).first().waitFor({ timeout: 20000 });
@@ -1268,7 +1283,7 @@ check(
 	"a failed metrics refresh marks cached WAF data stale",
 	(await page.getByText("AppSec metrics available", { exact: true }).count()) === 0,
 );
-await page.reload({ waitUntil: "networkidle" });
+await reloadDashboard();
 await page.getByText("AppSec metrics unavailable", { exact: true }).first().waitFor({ timeout: 20000 });
 await page.getByRole("tab", { name: "WAF" }).click();
 check(
@@ -1276,7 +1291,7 @@ check(
 	/CrowdSec metrics are unavailable/u.test(await page.locator("#crowdsec-tab-panel").innerText()),
 );
 metricsFailure = false;
-await page.reload({ waitUntil: "networkidle" });
+await reloadDashboard();
 check(
 	"WAF state recovers when metrics return",
 	(await page.getByText("AppSec metrics available", { exact: true }).count()) >= 1,
@@ -1311,7 +1326,7 @@ check(
 	(await enforcement.getByText("—", { exact: true }).count()) === 0,
 );
 telemetryState = "observed";
-await page.goto(`${baseUrl}/nginx/proxy`, { waitUntil: "networkidle" });
+await page.goto(`${baseUrl}/nginx/proxy`, { waitUntil: "load" });
 await page.getByRole("heading", { name: "Proxy Hosts", exact: true }).waitFor();
 check("proxy-host list shows when Anubis is enabled", (await page.getByText("Anubis enabled").count()) === 1);
 await page.getByRole("button", { name: "Add Proxy Host" }).click();
@@ -1396,7 +1411,7 @@ check(
 	"HTML 401 clears the expired session and shows login",
 	(await expiredPage.evaluate(() => localStorage.getItem("auth"))) === null,
 );
-await expiredPage.waitForTimeout(1000);
+await new Promise((resolve) => setTimeout(resolve, 1000));
 check("rejected session recovery does not loop", rejectedRefreshes <= 2);
 await expiredPage.close();
 sessionRejected = false;

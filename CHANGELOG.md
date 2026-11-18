@@ -4,6 +4,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Clear the remaining Biome warnings: use a deterministic comparator in the environment hash, move assertions out of conditionals, replace Playwright `networkidle` and fixed timeouts with explicit dashboard/response waits, and scope rendered-text plus scenario-driven assertions to the browser harness. All browser suites were re-run locally; only non-blocking informational diagnostics remain.
+
 - Constrain the open dependency advisories: decode-uri-component 0.5.1, qs 6.16.1, and minimatch 11 (frontend override plus readdir-glob 4 for the backend). Archiver was exercised against the new glob reader before adopting it.
 
 - Restore the login gate on the nginx auth subrequest, the `/api/` health alias, the version and report route gates, and startup retention of the fork's EC signing key after the November reconciliation. Correct report counts for access lists and certificates, remove the unimplemented `expires_in` token contract, adopt patched body-parser 2.4.0 and multer 2.5.0, update pip to 26.3, and rebuild Caddy with Go 1.26.11 plus the currently reachable module fixes (x/net, compress, smallstep crypto/go-jose v4, otel). The browser security job is pinned to Ubuntu 24.04 until Playwright supports the newer runner image.
