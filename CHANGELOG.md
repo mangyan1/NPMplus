@@ -4,6 +4,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Rebuild the CrowdSec and Anubis security images with Go 1.26.11 / 1.27.4, golang.org/x/net 0.62.0, x/crypto 0.58.0, x/text 0.43.0 and otel 1.47.0, and pin the CrowdSec runtime rsync/zlib fixes. Both rebuilt candidates scan clean at MEDIUM/HIGH/CRITICAL.
+
 - Clear the remaining Biome warnings: use a deterministic comparator in the environment hash, move assertions out of conditionals, replace Playwright `networkidle` and fixed timeouts with explicit dashboard/response waits, and scope rendered-text plus scenario-driven assertions to the browser harness. All browser suites were re-run locally; only non-blocking informational diagnostics remain.
 
 - Constrain the open dependency advisories: decode-uri-component 0.5.1, qs 6.16.1, and minimatch 11 (frontend override plus readdir-glob 4 for the backend). Archiver was exercised against the new glob reader before adopting it.
