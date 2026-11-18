@@ -66,7 +66,7 @@ try {
 	assert.equal(writes, 0, "blank-password rename must be rejected before the API request");
 	await page.screenshot({ path: "backend/.smoke/security-access-list-validation.png", animations: "disabled" });
 	await dialog.locator('a[href="#tab-rules"]').click();
-	const clientAddress = dialog.locator('#tab-rules input[name="clients[0].address"]');
+	const clientAddress = dialog.locator('#tab-rules input[name="clients.0.address"]');
 	await clientAddress.fill("allowed.example.test");
 	assert.ok(await clientAddress.evaluate((input) => input.validity.valid), "ordinary hostnames may contain l");
 	await clientAddress.fill("");
@@ -80,7 +80,9 @@ try {
 	await unchanged;
 	assert.equal(writes, 1, "unchanged masked credentials must reach the API");
 	await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-	await dialog.waitFor({ state: "hidden" });
+	const discard1 = page.getByRole("dialog").filter({ hasText: "Unsaved changes" });
+	if (await discard1.count()) await discard1.getByRole("button", { name: "Discard", exact: true }).click();
+	await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0);
 	await page.getByRole("button", { name: "Add Access List", exact: true }).click();
 	await dialog.getByLabel("Name", { exact: true }).fill("Synthetic rejected create");
 	await dialog.locator('a[href="#tab-auth"]').click();
@@ -94,7 +96,9 @@ try {
 	await dialog.getByText(message, { exact: true }).waitFor();
 	assert.equal(await dialog.getByRole("button", { name: "Save", exact: true }).isEnabled(), true);
 	await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-	await dialog.waitFor({ state: "hidden" });
+	const discard2 = page.getByRole("dialog").filter({ hasText: "Unsaved changes" });
+	if (await discard2.count()) await discard2.getByRole("button", { name: "Discard", exact: true }).click();
+	await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0);
 	fixture.items = [];
 	fixture.clients = [{ directive: "deny", address: "all" }];
 	await page.reload({ waitUntil: "networkidle" });
@@ -110,7 +114,9 @@ try {
 	assert.deepEqual(denyAllResponse.request().postDataJSON().clients, [{ directive: "deny", address: "all" }]);
 	await dialog.getByText(message, { exact: true }).waitFor();
 	await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-	await dialog.waitFor({ state: "hidden" });
+	const discard3 = page.getByRole("dialog").filter({ hasText: "Unsaved changes" });
+	if (await discard3.count()) await discard3.getByRole("button", { name: "Discard", exact: true }).click();
+	await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0);
 	assert.deepEqual(errors, [], "rejected creates must not raise a rollback TypeError");
 	console.log(
 		"PASS access-list browser validation, masked credentials, deny-all policy and rejected-create recovery",

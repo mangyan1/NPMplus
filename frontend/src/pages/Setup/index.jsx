@@ -118,7 +118,7 @@ export default function Setup() {
 										</Field>
 									</div>
 									<div className="mb-3">
-										<Field name="email" validate={validateEmail()}>
+										<Field name="email" validate={(value) => validateEmail(value)}>
 											{({ field, form }) => (
 												<div className="form-floating mb-3">
 													<input
@@ -175,7 +175,10 @@ export default function Setup() {
 										</div>
 									</div>
 									<div className="mb-3">
-										<Field name="password" validate={(value) => validateString(value, 8, 100, false)}>
+										<Field
+											name="password"
+											validate={(value) => validateString(value, 8, 100, false)}
+										>
 											{({ field, form }) => (
 												<div className="input-group input-group-flat">
 													<div className="form-floating">

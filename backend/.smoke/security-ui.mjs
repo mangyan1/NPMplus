@@ -45,7 +45,7 @@ try {
 	assert.equal(backupCodes.length, 8);
 	await page.getByRole("button", { name: "I have saved my backup codes" }).click();
 	await page.getByText("Enabled", { exact: true }).waitFor();
-	await page.getByRole("button", { name: "Close", exact: true }).click();
+	await page.getByRole("button", { name: "Close", exact: true }).last().click();
 	console.log("PASS MFA enrollment and backup-code acknowledgement");
 	await page.getByRole("link", { name: "Open user menu" }).click();
 	await page.getByRole("link", { name: "Logout", exact: true }).click();

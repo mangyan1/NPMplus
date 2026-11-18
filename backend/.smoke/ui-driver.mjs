@@ -1318,7 +1318,7 @@ await page.getByRole("button", { name: "Add Proxy Host" }).click();
 const proxyModal = page.getByRole("dialog");
 const appsecToggle = proxyModal.getByRole("checkbox", { name: /Disable CrowdSec AppSec/iu });
 check("new proxy hosts leave AppSec enabled by default", !(await appsecToggle.isChecked()));
-const authRequest = proxyModal.getByLabel(/Authentication \/ Bot Protection/iu);
+const authRequest = proxyModal.locator("#npmplusAuthRequest");
 check("new proxy hosts leave Anubis off by default", (await authRequest.inputValue()) === "none");
 await authRequest.selectOption("anubis");
 check("Anubis can be selected per proxy host", (await authRequest.inputValue()) === "anubis");

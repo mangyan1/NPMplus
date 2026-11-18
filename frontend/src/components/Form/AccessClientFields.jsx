@@ -54,7 +54,7 @@ export function AccessClientFields({ name = "clients" }) {
 													type="text"
 													className="form-control"
 													autoComplete="off"
-													pattern="[^\slL]{1,255}"
+													pattern="[^\s]{1,255}"
 													{...field}
 													placeholder={intl.formatMessage({
 														id: "access-list.rule-source.placeholder",
