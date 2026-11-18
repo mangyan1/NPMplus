@@ -838,6 +838,7 @@
 	"user.login-as": "Sign in as {name}",
 	"user.logout": "Logout",
 	"user.logout-everywhere": "Logout everywhere",
+	"user.menu": "Open user menu",
 	"user.mfa": "MFA",
 	"user.new-password": "New Password",
 	"user.nickname": "Nickname",
