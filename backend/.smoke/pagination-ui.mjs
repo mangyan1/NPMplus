@@ -59,7 +59,7 @@ try {
 	await page.getByRole("button", { name: "First page", exact: true }).first().click();
 	await page.getByLabel("Rows per page").first().selectOption("50");
 	assert.equal(await page.locator("tbody tr").count(), 50);
-	await page.getByRole("textbox").fill("Pagination user 051");
+	await page.getByRole("searchbox").fill("Pagination user 051");
 	assert.equal(await page.locator("tbody tr").count(), 1);
 	console.log("PASS user-table pagination, page size and filtering use the retained table dependency");
 	await page.goto(`${base}/audit-log`, { waitUntil: "networkidle" });
@@ -73,12 +73,12 @@ try {
 		const url = new URL(response.url());
 		return url.pathname === "/api/audit-log" && url.searchParams.get("query") === "Pagination user 051";
 	});
-	await page.getByRole("textbox").fill("Pagination user 051");
+	await page.getByRole("searchbox").fill("Pagination user 051");
 	await filterResponse;
 	await page.waitForFunction(() => document.querySelectorAll("tbody tr").length === 1);
 	assert.equal(auditPage, 0);
 	assert.equal(await page.locator("tbody tr").count(), 1);
-	await page.getByRole("textbox").fill("");
+	await page.getByRole("searchbox").fill("");
 	await page.waitForFunction(() => document.querySelectorAll("tbody tr").length === 25);
 	for (const width of [1280, 390, 320]) {
 		await page.setViewportSize({ width, height: 900 });

@@ -19,9 +19,10 @@ export default function DefaultSite() {
 			id: "default-site",
 			value: values.value,
 			meta: {
-				redirect: values.value === "redirect" ? values.redirect : undefined,
-				html: values.value === "html" ? values.html : undefined,
-				status: (values.value === "html" && values.status) || undefined,
+				// keep the other choices so switching back does not discard them
+				redirect: values.redirect || undefined,
+				html: values.html || undefined,
+				status: values.status || undefined,
 			},
 		};
 

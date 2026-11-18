@@ -45,6 +45,7 @@ const start = async (kind, env) => {
 	}
 	throw new Error(`${kind} container did not become healthy`);
 };
+const failures = [];
 const run = (script, base) => {
 	const result = spawnSync(process.execPath, [`backend/.smoke/${script}`], {
 		stdio: "inherit",
@@ -58,7 +59,11 @@ const run = (script, base) => {
 		},
 		timeout: 180000,
 	});
-	if (result.error || result.status !== 0) throw new Error(`${script} failed`, { cause: result.error });
+	if (result.error || result.status !== 0) {
+		// Keep going: one broken selector must not hide every later regression.
+		console.error(`FAIL ${script}${result.error ? `: ${result.error.message}` : ""}`);
+		failures.push(script);
+	}
 };
 try {
 	const api = await start("api", [
@@ -74,6 +79,7 @@ try {
 	run("session-restart.mjs", api);
 	const setup = await start("setup", ["INITIAL_SETUP_TOKEN=local-security-setup-token-20260919-only"]);
 	run("security-ui.mjs", setup);
+	if (failures.length > 0) throw new Error(`browser scripts failed: ${failures.join(", ")}`);
 	console.log("PASS Docker security and browser integration");
 } finally {
 	for (const name of containers) {

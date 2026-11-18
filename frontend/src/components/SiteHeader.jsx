@@ -47,7 +47,12 @@ export function SiteHeader() {
 					</div>
 					<div className="nav-item d-md-flex">
 						<div className="nav-item dropdown">
-							<a href="/" className="nav-link d-flex lh-1" data-bs-toggle="dropdown">
+							<a
+								href="/"
+								className="nav-link d-flex lh-1"
+								aria-label={intl.formatMessage({ id: "user.menu" })}
+								data-bs-toggle="dropdown"
+							>
 								<span
 									className="avatar avatar-square avatar-sm"
 									title={currentUser?.name}

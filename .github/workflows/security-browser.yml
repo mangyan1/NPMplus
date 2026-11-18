@@ -27,10 +27,13 @@ jobs:
         working-directory: backend
         run: |
           pnpm install --frozen-lockfile
-          pnpm exec playwright install --with-deps chromium
       - name: Build the exact checkout
         run: docker build -t npmplus:security-ci .
       - name: Exercise security APIs and browser forms
+        env:
+          # Use the runner preinstalled Chrome instead of the Playwright CDN,
+          # whose browser downloads have stalled on hosted runners.
+          PLAYWRIGHT_CHROMIUM: /usr/bin/google-chrome
         run: node backend/.smoke/docker-security.mjs
       - name: Retain synthetic non-secret screenshots
         if: always()

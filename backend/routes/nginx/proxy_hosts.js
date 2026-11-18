@@ -12,7 +12,7 @@ const listSchema = {
 	properties: {
 		expand: {
 			$ref: "common#/properties/expand",
-			items: { enum: ["owner", "access_lists", "certificate"] },
+			items: { enum: ["owner", "access_lists", "certificate", "mtls_certificate"] },
 		},
 	},
 };

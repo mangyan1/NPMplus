@@ -595,6 +595,9 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove, close, 
 															>
 																<span className="col">
 																	<T id="host.auth-request" />
+																	<span className="form-hint">
+																		<T id="host.auth-request-help" />
+																	</span>
 																</span>
 																<span className="col-auto">
 																	<Field name="npmplusAuthRequest">
