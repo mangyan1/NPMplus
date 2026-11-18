@@ -15,8 +15,8 @@ const internalReport = {
 		redirection: await internalRedirectionHost.getCount(access),
 		stream: await internalStream.getCount(access),
 		dead: await internalDeadHost.getCount(access),
-		access_list: await internalAccessList.getCount(access),
-		certificate: await internalCertificate.getCount(access),
+		access_list: await internalAccessList.getCount(access.token.getUserId(1), access.visibility),
+		certificate: await internalCertificate.getCount(access.token.getUserId(1), access.visibility),
 	}),
 };
 

@@ -255,6 +255,27 @@ it("admin reads the settings list", async () => {
 	assert.ok(Array.isArray(res.body));
 });
 
+it("health, the nginx auth subrequest and report gates keep their contracts", async () => {
+	for (const path of ["/api", "/api/"]) {
+		const health = await api("GET", path);
+		assert.equal(health.status, 200, `${path}: ${health.text}`);
+		assert.equal(health.body.status, "OK");
+	}
+
+	// nginx uses /api/auth as its auth_request gate for avatar files: anonymous
+	// sessions must not get a 2xx, or the login check is bypassed.
+	assert.equal((await api("GET", "/api/auth")).status, 403);
+	assert.equal((await api("GET", "/api/auth", { cookie: adminCookie })).status, 200);
+
+	assert.equal((await api("GET", "/api/version/check")).status, 403);
+	assert.equal((await api("GET", "/api/reports/hosts")).status, 403);
+	const report = await api("GET", "/api/reports/hosts", { cookie: adminCookie });
+	assert.equal(report.status, 200, report.text);
+	for (const key of ["proxy", "redirection", "stream", "dead", "access_list", "certificate"]) {
+		assert.equal(typeof report.body[key], "number", key);
+	}
+});
+
 it("admin updates a setting and reads it back", async (t) => {
 	// updating default-site regenerates the nginx default config and reloads
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));

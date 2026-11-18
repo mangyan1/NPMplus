@@ -1,6 +1,7 @@
 import express from "express";
 import errs from "../lib/error.js";
 import jwtdecode from "../lib/express/jwt-decode.js";
+import requireLogin from "../lib/express/require-login.js";
 import validate from "../lib/express/validate.js";
 import { readSecret } from "../lib/helpers.js";
 import { isSetup } from "../setup.js";
@@ -35,9 +36,9 @@ const isOIDCenabled = Boolean(
 
 /**
  * Health Check
- * GET /api
+ * GET /api and /api/
  */
-router.get("/api", validate, async (_, res /*, next*/) => {
+router.get(["/api", "/api/"], async (_, res /*, next*/) => {
 	res.status(200).send({
 		status: "OK",
 		setup: await isSetup(),
@@ -50,7 +51,7 @@ router.get("/api", validate, async (_, res /*, next*/) => {
  * Auth Check, used by the nginx auth_request directive
  * GET /api/auth
  */
-router.get("/api/auth", jwtdecode, validate, (_, res) => {
+router.get("/api/auth", requireLogin(), (_, res) => {
 	res.sendStatus(200);
 });
 

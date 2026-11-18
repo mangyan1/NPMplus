@@ -4,6 +4,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Restore the login gate on the nginx auth subrequest, the `/api/` health alias, the version and report route gates, and startup retention of the fork's EC signing key after the November reconciliation. Correct report counts for access lists and certificates, remove the unimplemented `expires_in` token contract, adopt patched body-parser 2.4.0 and multer 2.5.0, update pip to 26.3, and rebuild Caddy with Go 1.26.11 plus the currently reachable module fixes (x/net, compress, smallstep crypto/go-jose v4, otel). The browser security job is pinned to Ubuntu 24.04 until Playwright supports the newer runner image.
+
 - Reconcile upstream through November 17: adopt Caddy 2.11.9 (source build without the obsolete module replacements), the nginx 1.31.8 module bumps and checked-in patch layout, the `npmplus_is_admin` permission model with schema-key renames, the relocated frontend Swagger page and table/modal refactors, and the renamed per-host disable flags with their forward migration. Preserve the fork's JWT/session revocation format, pinned-pip Certbot DNS pipeline, CrowdSec/Anubis telemetry and installer hardening, ACL ownership scoping, nginx-syntax neutralization, upstream-sync guard, and no-store admin UI. Existing databases migrate through the new `user_is_admin`, `proxy_buffering` and `disable_columns` migrations; roll back with the safe updater's matching database and image snapshot.
 
 - Return to login when an update leaves a rejected or missing admin session cookie. Validate saved browser sessions immediately, preserve genuine permission denials and temporary outage handling, and cover stale sessions in API and browser regressions.
