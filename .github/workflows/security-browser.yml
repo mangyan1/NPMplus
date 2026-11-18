@@ -27,7 +27,9 @@ jobs:
         working-directory: backend
         run: |
           pnpm install --frozen-lockfile
-          pnpm exec playwright install --with-deps chromium
+          # The full Chrome for Testing download has stalled on hosted runners; the
+          # headless shell is all this job needs and is far smaller.
+          pnpm exec playwright install --with-deps --only-shell chromium
       - name: Build the exact checkout
         run: docker build -t npmplus:security-ci .
       - name: Exercise security APIs and browser forms
