@@ -618,7 +618,7 @@
 	"host.flags.cache-assets": "Cache Assets",
 	"host.flags.crowdsec-appsec": "CrowdSec AppSec protection",
 	"host.flags.crowdsec-appsec-help": "Use WAF inspection for this host when AppSec is enabled globally. Turn it off only for a confirmed compatibility problem.",
-	"host.flags.disable-crowdsec-appsec": "Disable Crowdsec Appsec",
+	"host.flags.disable-crowdsec-appsec": "Disable CrowdSec AppSec",
 	"host.flags.disable-request-buffering": "Disable Request Buffering",
 	"host.flags.disable-request-buffering.requires-appsec": "Requires Crowdsec Appsec to be disabled",
 	"host.flags.disable-response-buffering": "Disable Response Buffering",

@@ -90,7 +90,7 @@ export default function Setup() {
 								<hr />
 								<div className="card-body">
 									<div className="mb-3">
-										<Field name="name" validate={validateString(1, 50)}>
+										<Field name="name" validate={(value) => validateString(value, 1, 50)}>
 											{({ field, form }) => (
 												<div className="form-floating mb-3">
 													<input
@@ -147,7 +147,7 @@ export default function Setup() {
 										</Field>
 									</div>
 									<div className="mb-3">
-										<Field name="setupToken" validate={validateString(32, 256)}>
+										<Field name="setupToken" validate={(value) => validateString(value, 32, 256)}>
 											{({ field, form }) => (
 												<div className="form-floating mb-3">
 													<input
@@ -175,7 +175,7 @@ export default function Setup() {
 										</div>
 									</div>
 									<div className="mb-3">
-										<Field name="password" validate={validateString(8, 100)}>
+										<Field name="password" validate={(value) => validateString(value, 8, 100, false)}>
 											{({ field, form }) => (
 												<div className="input-group input-group-flat">
 													<div className="form-floating">

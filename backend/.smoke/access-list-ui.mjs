@@ -55,7 +55,7 @@ try {
 	await row.getByRole("button", { name: "Edit", exact: true }).click();
 	const dialog = page.getByRole("dialog");
 	const message = "Enter a password for each new or renamed authorization user";
-	await dialog.getByRole("link", { name: "Authorizations", exact: true }).click();
+	await dialog.locator('a[href="#tab-auth"]').click();
 	await dialog.locator('#tab-auth input[type="text"]').fill("renamed");
 	await dialog.getByRole("button", { name: "Save", exact: true }).click();
 	assert.ok(
@@ -65,12 +65,12 @@ try {
 	);
 	assert.equal(writes, 0, "blank-password rename must be rejected before the API request");
 	await page.screenshot({ path: "backend/.smoke/security-access-list-validation.png", animations: "disabled" });
-	await dialog.getByRole("link", { name: "Rules", exact: true }).click();
+	await dialog.locator('a[href="#tab-rules"]').click();
 	const clientAddress = dialog.locator('#tab-rules input[name="clients[0].address"]');
 	await clientAddress.fill("allowed.example.test");
 	assert.ok(await clientAddress.evaluate((input) => input.validity.valid), "ordinary hostnames may contain l");
 	await clientAddress.fill("");
-	await dialog.getByRole("link", { name: "Authorizations", exact: true }).click();
+	await dialog.locator('a[href="#tab-auth"]').click();
 	await dialog.locator('#tab-auth input[type="text"]').fill("original");
 	const unchanged = page.waitForResponse(
 		(response) =>
@@ -83,7 +83,7 @@ try {
 	await dialog.waitFor({ state: "hidden" });
 	await page.getByRole("button", { name: "Add Access List", exact: true }).click();
 	await dialog.getByLabel("Name", { exact: true }).fill("Synthetic rejected create");
-	await dialog.getByRole("link", { name: "Authorizations", exact: true }).click();
+	await dialog.locator('a[href="#tab-auth"]').click();
 	await dialog.locator('#tab-auth input[type="text"]').fill("new-user");
 	await dialog.locator('#tab-auth input[type="password"]').fill("Synthetic-Fixture-Password-1");
 	const rejected = page.waitForResponse(

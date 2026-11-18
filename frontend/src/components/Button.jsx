@@ -20,8 +20,8 @@ function Button({
 	const cns = cn(
 		"btn",
 		className,
-		actionType && `btn-${actionType}`,
-		variant && `btn-${variant}`,
+		actionType && `btn-${variant === "outline" ? `outline-${actionType}` : actionType}`,
+		variant && variant !== "outline" && `btn-${variant}`,
 		size && `btn-${size}`,
 		color && `btn-${color}`,
 		fullWidth && "w-100",
