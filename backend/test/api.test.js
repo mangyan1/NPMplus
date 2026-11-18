@@ -267,6 +267,21 @@ it("health, the nginx auth subrequest and report gates keep their contracts", as
 	assert.equal((await api("GET", "/api/auth")).status, 403);
 	assert.equal((await api("GET", "/api/auth", { cookie: adminCookie })).status, 200);
 
+	// the frontend requests these expands on every host inventory page; a
+	// narrower server enum makes the page 400 and hides the Add button
+	for (const path of [
+		"/api/nginx/proxy-hosts",
+		"/api/nginx/redirection-hosts",
+		"/api/nginx/dead-hosts",
+		"/api/nginx/streams",
+	]) {
+		const list = await api("GET", `${path}?expand=owner,certificate,mtls_certificate`, {
+			cookie: adminCookie,
+		});
+		assert.equal(list.status, 200, `${path}: ${list.text}`);
+		assert.ok(Array.isArray(list.body), path);
+	}
+
 	assert.equal((await api("GET", "/api/version/check")).status, 403);
 	assert.equal((await api("GET", "/api/reports/hosts")).status, 403);
 	const report = await api("GET", "/api/reports/hosts", { cookie: adminCookie });
