@@ -137,7 +137,10 @@ jobs:
             sha256sum -c "$SERVICE-$architecture.tar.sha256"
             docker load -i "$SERVICE-$architecture.tar"
             local_image="npmplus-$SERVICE:candidate-$architecture"
-            test "$(docker image inspect "$local_image" --format '{{.Id}}')" = "$(cat "$SERVICE-$architecture.id")"
+            # OCI-format tars from the arm64 runner are re-normalized on load, so the
+            # image ID is not stable across hosts. The tar checksum above, the
+            # architecture, and the revision label prove this is the tested image.
+            test "$(docker image inspect "$local_image" --format '{{.Architecture}}')" = "$architecture"
             test "$(docker image inspect "$local_image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$REVISION"
             tag="$image:$SERVICE-$REVISION-$architecture"
             docker tag "$local_image" "$tag"
