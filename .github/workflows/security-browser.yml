@@ -27,12 +27,13 @@ jobs:
         working-directory: backend
         run: |
           pnpm install --frozen-lockfile
-          # The full Chrome for Testing download has stalled on hosted runners; the
-          # headless shell is all this job needs and is far smaller.
-          pnpm exec playwright install --with-deps --only-shell chromium
       - name: Build the exact checkout
         run: docker build -t npmplus:security-ci .
       - name: Exercise security APIs and browser forms
+        env:
+          # Use the runner preinstalled Chrome instead of the Playwright CDN,
+          # whose browser downloads have stalled on hosted runners.
+          PLAYWRIGHT_CHROMIUM: /usr/bin/google-chrome
         run: node backend/.smoke/docker-security.mjs
       - name: Retain synthetic non-secret screenshots
         if: always()
