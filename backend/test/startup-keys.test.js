@@ -7,8 +7,5 @@ import test from "node:test";
 // session at each container restart, so pin the fork behaviour.
 test("startup keeps the fork's EC signing key file", () => {
 	const script = readFileSync(new URL("../../rootfs/usr/local/bin/start.sh", import.meta.url), "utf8");
-	assert.ok(
-		!script.includes("/data/npmplus/keys-ec.json"),
-		"start.sh must not delete /data/npmplus/keys-ec.json",
-	);
+	assert.ok(!script.includes("/data/npmplus/keys-ec.json"), "start.sh must not delete /data/npmplus/keys-ec.json");
 });
