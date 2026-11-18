@@ -10,7 +10,7 @@ process.env.COOKIE_SECRET ||= "api-test-cookie-secret";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { after, test } from "node:test";
+import { after, test as it } from "node:test";
 import internalAuditLog from "../internal/audit-log.js";
 import crsControl from "../internal/crs-control.js";
 
@@ -54,11 +54,15 @@ const ADMIN_PASSWORD = "Correct-Horse-1";
 const PEON_EMAIL = "peon@example.com";
 const PEON_PASSWORD = "Peon-Pass-1";
 
-const insertUser = async ({ email, password, roles }) => {
-	const user = await userModel.query().insertAndFetch({ email, name: "Test", nickname: "tester", avatar: "", roles });
-	// models/auth.js hashes the secret on insert, so pass it in plain
-	await authModel.query().insert({ user_id: user.id, type: "password", secret: password, meta: {} });
-	const isAdmin = roles.includes("admin");
+const insertUser = async ({ email, password, roles = [], npmplus_is_admin }) => {
+	const isAdmin = roles.includes("admin") || npmplus_is_admin === 1 || npmplus_is_admin === true;
+	const user = await userModel
+		.query()
+		.insertAndFetch({ email, name: "Test", nickname: "tester", avatar: "", npmplus_is_admin: isAdmin ? 1 : 0 });
+	await authModel
+		.query()
+		// models/auth.js hashes the secret on insert, so pass it in plain
+		.insert({ user_id: user.id, type: "password", secret: password, meta: {} });
 	await userPermissionModel.query().insert({
 		user_id: user.id,
 		visibility: isAdmin ? "all" : "user",
@@ -71,8 +75,8 @@ const insertUser = async ({ email, password, roles }) => {
 	});
 };
 
-await insertUser({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD, roles: ["admin"] });
-await insertUser({ email: PEON_EMAIL, password: PEON_PASSWORD, roles: [] });
+await insertUser({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD, npmplus_is_admin: 1 });
+await insertUser({ email: PEON_EMAIL, password: PEON_PASSWORD, npmplus_is_admin: 0 });
 
 const server = app.listen(0, "127.0.0.1");
 const listening = new Promise((resolve, reject) => {
@@ -122,7 +126,7 @@ after(async () => {
 	await new Promise((resolve) => server.close(resolve));
 });
 
-test("CRS disable requires admin, audits before acting, and shares the control cooldown", async () => {
+it("CRS disable requires admin, audits before acting, and shares the control cooldown", async () => {
 	const originalDisable = crsControl.disable;
 	const originalAudit = internalAuditLog.add;
 	let calls = 0;
@@ -139,7 +143,7 @@ test("CRS disable requires admin, audits before acting, and shares the control c
 			.createHmac("sha256", "api-test-cookie-secret")
 			.update("invalid")
 			.digest("base64")
-			.replace(/[=]+$/, "");
+			.replace(/[=]+$/u, "");
 		assert.equal(
 			(await api("DELETE", "/api/crowdsec/crs", { cookie: `__Host-Http-token=s:invalid.${invalidMac}` })).status,
 			401,

@@ -8,21 +8,17 @@ import { Button, Loading } from "src/components";
 import { useUser } from "src/hooks";
 import { T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
-import { isAdmin } from "src/modules/Permissions";
 import { showObjectSuccess } from "src/notifications";
 
-const showPermissionsModal = (id) => {
-	void EasyModal.show(PermissionsModal, { id });
+const showPermissionsModal = (id, name) => {
+	void EasyModal.show(PermissionsModal, { id, name });
 };
 
-const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
+const PermissionsModal = EasyModal.create(({ id, name, visible, remove, close, formRef }) => {
 	const [errorMsg, setErrorMsg] = useState(null);
 	const { data, isPending, error } = useUser(id);
-	const [isSubmitting, setIsSubmitting] = useState(false);
 
-	const onSubmit = async (values, { setSubmitting }) => {
-		if (isSubmitting) return;
-		setIsSubmitting(true);
+	const onSubmit = async (values) => {
 		setErrorMsg(null);
 		try {
 			await setPermissions(id, values);
@@ -31,8 +27,6 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 		} catch (err) {
 			setErrorMsg(<T id={err.message} />);
 		}
-		setSubmitting(false);
-		setIsSubmitting(false);
 	};
 
 	const getClasses = (active) =>
@@ -129,7 +123,12 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 	};
 
 	return (
-		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
+		<Modal show={visible} backdrop="static" onHide={close}>
+			<Modal.Header closeButton>
+				<Modal.Title>
+					<T id="user.set-permissions" data={{ name }} />
+				</Modal.Title>
+			</Modal.Header>
 			{error && (
 				<Alert variant="danger" className="m-3">
 					{error?.message}
@@ -138,6 +137,7 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 			{isPending && <Loading noLogo />}
 			{data && (
 				<Formik
+					innerRef={formRef}
 					initialValues={{
 						visibility: data.permissions?.visibility ?? "user",
 						accessLists: data.permissions?.accessLists ?? "hidden",
@@ -151,11 +151,6 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 				>
 					{() => (
 						<Form>
-							<Modal.Header closeButton={!isSubmitting}>
-								<Modal.Title>
-									<T id="user.set-permissions" data={{ name: data?.name }} />
-								</Modal.Title>
-							</Modal.Header>
 							<Modal.Body>
 								<Alert variant="danger" show={errorMsg} onClose={() => setErrorMsg(null)} dismissible>
 									{errorMsg}
@@ -205,7 +200,7 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 										)}
 									</Field>
 								</div>
-								{!isAdmin(data?.roles) && (
+								{!data?.npmplusIsAdmin && (
 									<>
 										<div className="mb-3">
 											<div className="form-label">
@@ -259,15 +254,10 @@ const PermissionsModal = EasyModal.create(({ id, visible, remove }) => {
 								)}
 							</Modal.Body>
 							<Modal.Footer>
-								<Button onClick={remove} disabled={isSubmitting}>
+								<Button onClick={close}>
 									<T id="cancel" />
 								</Button>
-								<Button
-									type="submit"
-									className="ms-auto btn-orange"
-									isLoading={isSubmitting}
-									disabled={isSubmitting}
-								>
+								<Button type="submit" className="ms-auto btn-orange">
 									<T id="save" />
 								</Button>
 							</Modal.Footer>

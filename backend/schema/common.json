@@ -188,23 +188,31 @@
 			"default": false,
 			"example": false
 		},
-		"npmplus_crowdsec_appsec": {
+		"npmplus_disable_crowdsec_appsec": {
 			"description": "Disable Crowdsec Appsec",
 			"type": "boolean",
 			"default": false,
 			"example": false
 		},
-		"npmplus_proxy_request_buffering": {
+		"npmplus_disable_proxy_request_buffering": {
 			"description": "Disable Request Buffering",
 			"type": "boolean",
 			"default": false,
 			"example": false
 		},
 		"npmplus_proxy_response_buffering": {
-			"description": "Disable Response Buffering",
-			"type": "boolean",
-			"default": false,
-			"example": false
+			"description": "Response Buffering",
+			"type": "string",
+			"enum": [
+				"on_auto",
+				"on_forced",
+				"ram_only_auto",
+				"ram_only_forced",
+				"off_auto",
+				"off_forced"
+			],
+			"default": "on_auto",
+			"example": "on_auto"
 		},
 		"npmplus_upstream_compression": {
 			"description": "Enable compression by upstream",
@@ -223,6 +231,7 @@
 			"type": "string",
 			"pattern": "@",
 			"minLength": 3,
+			"maxLength": 255,
 			"example": "me@example.com"
 		},
 		"directive": {
@@ -254,8 +263,8 @@
 					"username": {
 						"type": "string",
 						"minLength": 1,
-						"maxLength": 255,
-						"pattern": "^[^:\\u0000-\\u001f\\u007f]+$"
+						"pattern": "^[^:\\p{Cc}]+$",
+						"maxLength": 255
 					},
 					"password": {
 						"type": "string"
@@ -586,7 +595,10 @@
 											"properties": {
 												"npmplus_auth_request": {
 													"not": {
-														"const": "none"
+														"enum": [
+															"none",
+															"global"
+														]
 													}
 												}
 											}
@@ -795,7 +807,10 @@
 												"properties": {
 													"npmplus_auth_request": {
 														"not": {
-															"const": "none"
+															"enum": [
+																"none",
+																"global"
+															]
 														}
 													}
 												}
@@ -920,13 +935,13 @@
 					},
 					"then": {
 						"properties": {
-							"npmplus_proxy_request_buffering": {
+							"npmplus_disable_proxy_request_buffering": {
 								"type": "boolean",
 								"const": false
 							},
 							"npmplus_proxy_response_buffering": {
-								"type": "boolean",
-								"const": false
+								"type": "string",
+								"const": "on_auto"
 							}
 						}
 					}
@@ -976,21 +991,21 @@
 				{
 					"if": {
 						"properties": {
-							"npmplus_proxy_request_buffering": {
+							"npmplus_disable_proxy_request_buffering": {
 								"type": "boolean",
 								"const": true
 							}
 						},
 						"required": [
-							"npmplus_proxy_request_buffering"
+							"npmplus_disable_proxy_request_buffering"
 						]
 					},
 					"then": {
 						"required": [
-							"npmplus_crowdsec_appsec"
+							"npmplus_disable_crowdsec_appsec"
 						],
 						"properties": {
-							"npmplus_crowdsec_appsec": {
+							"npmplus_disable_crowdsec_appsec": {
 								"type": "boolean",
 								"const": true
 							}
@@ -1001,7 +1016,10 @@
 					"if": {
 						"properties": {
 							"npmplus_auth_request": {
-								"const": "none"
+								"enum": [
+									"none",
+									"global"
+								]
 							}
 						}
 					},
@@ -1095,13 +1113,13 @@
 					},
 					"then": {
 						"properties": {
-							"npmplus_proxy_request_buffering": {
+							"npmplus_disable_proxy_request_buffering": {
 								"type": "boolean",
 								"const": false
 							},
 							"npmplus_proxy_response_buffering": {
-								"type": "boolean",
-								"const": false
+								"type": "string",
+								"const": "on_auto"
 							}
 						}
 					}
@@ -1154,18 +1172,18 @@
 				{
 					"if": {
 						"properties": {
-							"npmplus_proxy_request_buffering": {
+							"npmplus_disable_proxy_request_buffering": {
 								"type": "boolean",
 								"const": true
 							}
 						},
 						"required": [
-							"npmplus_proxy_request_buffering"
+							"npmplus_disable_proxy_request_buffering"
 						]
 					},
 					"then": {
 						"properties": {
-							"npmplus_crowdsec_appsec": {
+							"npmplus_disable_crowdsec_appsec": {
 								"type": "boolean",
 								"const": true
 							}

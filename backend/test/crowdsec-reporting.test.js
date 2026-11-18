@@ -1,7 +1,7 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
-import test from "node:test";
+import it from "node:test";
 
 process.env.CROWDSEC_LAPI_KEY_FILE = "/data/crowdsec/test.key";
 process.env.CROWDSEC_LAPI_MACHINE_KEY_FILE = "/data/crowdsec/test.key";
@@ -65,7 +65,7 @@ const fixture = (t, { decisions = [], alerts = [], fallback = false } = {}) => {
 	});
 };
 
-test("decision pagination reports the whole bounded match count without false truncation", async (t) => {
+it("decision pagination reports the whole bounded match count without false truncation", async (t) => {
 	fixture(t, { decisions: Array.from({ length: 60 }, (_, index) => decision(index + 1)) });
 	for (const search of ["", "203.0.113."]) {
 		const page = await request("/decisions", { page: "1", page_size: "25", search });
@@ -76,7 +76,7 @@ test("decision pagination reports the whole bounded match count without false tr
 	}
 });
 
-test("the decision cap never offers a next page that the API refuses", async (t) => {
+it("the decision cap never offers a next page that the API refuses", async (t) => {
 	fixture(t, { decisions: Array.from({ length: 501 }, (_, index) => decision(index + 1)) });
 	const page = await request("/decisions", { page: "20", page_size: "25" });
 	assert.equal(page.items.length, 25);
@@ -85,7 +85,7 @@ test("the decision cap never offers a next page that the API refuses", async (t)
 	assert.equal(page.has_next, false);
 });
 
-test("the per-address alert list admits when the cap hides older alerts", async (t) => {
+it("the per-address alert list admits when the cap hides older alerts", async (t) => {
 	fixture(t, { alerts: Array.from({ length: 9 }, (_, index) => alert(index + 1)) });
 	const page = await request("/alerts", { scope: "Ip", value: "203.0.113.7" });
 	// the LAPI page has no total, so the sixth row is the only evidence that
@@ -95,7 +95,7 @@ test("the per-address alert list admits when the cap hides older alerts", async 
 	assert.equal(page.truncated, true);
 });
 
-test("a per-address alert list shorter than the cap is reported as complete", async (t) => {
+it("a per-address alert list shorter than the cap is reported as complete", async (t) => {
 	fixture(t, { alerts: [alert(1), alert(2)] });
 	const page = await request("/alerts", { scope: "Ip", value: "203.0.113.7" });
 	assert.equal(page.items.length, 2);
@@ -103,7 +103,7 @@ test("a per-address alert list shorter than the cap is reported as complete", as
 	assert.equal(page.truncated, false);
 });
 
-test("bookkeeping alerts do not prematurely end attack-history pagination", async (t) => {
+it("bookkeeping alerts do not prematurely end attack-history pagination", async (t) => {
 	fixture(t, {
 		alerts: [
 			...Array.from({ length: 30 }, (_, i) => alert(i + 1, { scenario: "update : +1/-0 IPs" })),
@@ -117,7 +117,7 @@ test("bookkeeping alerts do not prematurely end attack-history pagination", asyn
 	assert.equal(page.truncated, false);
 });
 
-test("fallback samples are always marked incomplete and cannot emit spike signals", async (t) => {
+it("fallback samples are always marked incomplete and cannot emit spike signals", async (t) => {
 	fixture(t, { fallback: true, alerts: Array.from({ length: 25 }, (_, i) => alert(i + 1)) });
 	const insights = await request("/insights", { window_hours: "6" });
 	assert.equal(insights.sampled, true);
@@ -129,7 +129,7 @@ test("fallback samples are always marked incomplete and cannot emit spike signal
 	assert.equal(page.truncated, true);
 });
 
-test("rolling activity buckets include the oldest part of a one-hour window", async (t) => {
+it("rolling activity buckets include the oldest part of a one-hour window", async (t) => {
 	fixture(t, {
 		alerts: [
 			alert(1, { created_at: new Date(Date.now() - 59 * 60_000).toISOString() }),
@@ -146,7 +146,7 @@ test("rolling activity buckets include the oldest part of a one-hour window", as
 	);
 });
 
-test("local and honeypot counts exclude simulations and surface count and row caps separately", async (t) => {
+it("local and honeypot counts exclude simulations and surface count and row caps separately", async (t) => {
 	fixture(t, {
 		decisions: Array.from({ length: 60 }, (_, i) =>
 			decision(i + 1, { scenario: "anubis-honeypot", simulated: i === 0 }),
@@ -161,14 +161,14 @@ test("local and honeypot counts exclude simulations and surface count and row ca
 	assert.equal(insights.local_active_decisions, 0);
 });
 
-test("a successful HTTP response without CrowdSec metrics is unavailable, not healthy", async (t) => {
+it("a successful HTTP response without CrowdSec metrics is unavailable, not healthy", async (t) => {
 	t.mock.method(globalThis, "fetch", async () => new Response("<html>wrong endpoint</html>"));
 	const metrics = await request("/metrics");
 	assert.equal(metrics.available, false);
 	assert.equal(metrics.error, "crowdsec.metrics-unavailable");
 });
 
-test("history and charts use the alert start time used by LAPI's since filter", async (t) => {
+it("history and charts use the alert start time used by LAPI's since filter", async (t) => {
 	fixture(t, { alerts: [alert(1, { start_at: new Date(Date.now() - 2 * 3600_000).toISOString() }), alert(2)] });
 	const insights = await request("/insights", { window_hours: "1" });
 	const history = await request("/history/alerts", { window_hours: "1" });
@@ -181,7 +181,7 @@ test("history and charts use the alert start time used by LAPI's since filter", 
 	assert.equal(history.items[0].id, 2);
 });
 
-test("cursor exploration reaches beyond 500 alerts without duplicates or growing request limits", async (t) => {
+it("cursor exploration reaches beyond 500 alerts without duplicates or growing request limits", async (t) => {
 	const alerts = Array.from({ length: 650 }, (_, i) => alert(i + 1));
 	fixture(t, { alerts });
 	let cursor = "";
@@ -203,7 +203,7 @@ test("cursor exploration reaches beyond 500 alerts without duplicates or growing
 	);
 });
 
-test("empty filtered batches keep their older cursor, including IPv6 offenders", async (t) => {
+it("empty filtered batches keep their older cursor, including IPv6 offenders", async (t) => {
 	const alerts = Array.from({ length: 35 }, (_, i) =>
 		alert(i + 1, { source: { ip: i === 30 ? "2001:db8::1234" : "203.0.113.1" } }),
 	);
@@ -215,15 +215,15 @@ test("empty filtered batches keep their older cursor, including IPv6 offenders",
 	assert.equal(next.items[0].source.ip, "2001:db8::1234");
 	await assert.rejects(
 		request("/history/alerts", { cursor: first.next_cursor, search: "changed" }),
-		/cursor-invalid/,
+		/cursor-invalid/u,
 	);
 	await assert.rejects(
 		request("/history/alerts", { cursor: `${first.next_cursor}x`, search: "ip:2001:db8::1234" }),
-		/cursor-invalid/,
+		/cursor-invalid/u,
 	);
 });
 
-test("dense timestamp ties stop explicitly instead of skipping unseen alerts", async (t) => {
+it("dense timestamp ties stop explicitly instead of skipping unseen alerts", async (t) => {
 	const created_at = new Date(Date.now() - 60_000).toISOString();
 	fixture(t, { alerts: Array.from({ length: 150 }, (_, i) => alert(150 - i, { created_at })) });
 	let cursor = "";
@@ -244,14 +244,14 @@ test("dense timestamp ties stop explicitly instead of skipping unseen alerts", a
 	assert.equal(ids.length, 101);
 });
 
-test("cursor fallback stays bounded and malformed recording times fail visibly", async (t) => {
+it("cursor fallback stays bounded and malformed recording times fail visibly", async (t) => {
 	fixture(t, { alerts: Array.from({ length: 30 }, (_, i) => alert(i + 1)), fallback: true });
 	const result = await request("/history/alerts", { cursor: "" });
 	assert.equal(result.items.length, 25);
 	assert.equal(result.has_next, true);
 });
 
-test("cursor preserves nanosecond recording order and expires after one hour", async (t) => {
+it("cursor preserves nanosecond recording order and expires after one hour", async (t) => {
 	const base = new Date(Date.now() - 60_000).toISOString().slice(0, 19);
 	const alerts = Array.from({ length: 30 }, (_, i) =>
 		alert(i + 1, { created_at: `${base}.${String(99999 - i).padStart(9, "0")}Z` }),
@@ -270,7 +270,7 @@ test("cursor preserves nanosecond recording order and expires after one hour", a
 	});
 });
 
-test("attacker timeline requests one IP and rejects unrelated or community decisions", async (t) => {
+it("attacker timeline requests one IP and rejects unrelated or community decisions", async (t) => {
 	const calls = [];
 	t.mock.method(globalThis, "fetch", async (input) => {
 		const url = new URL(input);
@@ -302,7 +302,7 @@ test("attacker timeline requests one IP and rejects unrelated or community decis
 	assert.equal(calls.find((url) => url.pathname.endsWith("/decisions")).searchParams.get("ip"), "192.0.2.1");
 });
 
-test("attacker events paginate retained sanitized evidence and flag missing records", async (t) => {
+it("attacker events paginate retained sanitized evidence and flag missing records", async (t) => {
 	t.mock.method(globalThis, "fetch", async (input) => {
 		if (new URL(input).pathname.endsWith("/login")) return Response.json({ token: "fixture" });
 		return Response.json(
@@ -323,7 +323,7 @@ test("attacker events paginate retained sanitized evidence and flag missing reco
 	assert.equal(result.alert.events[0].meta[0].value, "/path-25");
 });
 
-test("cursor rejects malformed recording times rather than inventing a boundary", async (t) => {
+it("cursor rejects malformed recording times rather than inventing a boundary", async (t) => {
 	fixture(t, { alerts: [alert(1, { created_at: "invalid" })] });
 	// Preserve the malformed fixture through the fake upstream time filter.
 	t.mock.method(globalThis, "fetch", async () => Response.json([alert(1, { created_at: "invalid" })]));

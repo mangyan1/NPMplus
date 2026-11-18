@@ -1,10 +1,10 @@
 import { IconSearch } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import { deleteProxyHost, toggleProxyHost } from "src/api/backend";
 import { Button, HasPermission, LoadingPage } from "src/components";
 import { getDirectory, useProxyHosts } from "src/hooks";
-import { T } from "src/locale";
+import { intl, T } from "src/locale";
 import { showDeleteConfirmModal, showProxyHostModal } from "src/modals";
 import { forwardSummary } from "src/modules/Forward";
 import { MANAGE, PROXY_HOSTS } from "src/modules/Permissions";
@@ -14,25 +14,22 @@ import Table from "./Table";
 export default function TableWrapper() {
 	const [search, setSearch] = useState("");
 	const [sorting, setSorting] = useState([{ id: "enabled", desc: false }]);
-	const { isFetching, isPending, isError, error, data } = useProxyHosts(["owner", "access_lists", "certificate"]);
+	const { isFetching, isPending, isError, error, data } = useProxyHosts([
+		"owner",
+		"access_lists",
+		"certificate",
+		"mtls_certificate",
+	]);
 
-	useEffect(() => {
-		// this can happen if someone deletes the last item while searching
-		if (search !== "" && !data?.length) {
-			setSearch("");
-		}
-	});
+	// this can happen if someone deletes the last item while searching
+	if (search !== "" && !data?.length) setSearch("");
 
 	if (isPending) {
 		return <LoadingPage />;
 	}
 
 	if (isError) {
-		return (
-			<Alert variant="danger">
-				<T id={error?.message || "error.unknown"} />
-			</Alert>
-		);
+		return <Alert variant="danger">{error?.message}</Alert>;
 	}
 
 	const handleDisableToggle = async (id, enabled) => {
@@ -102,7 +99,8 @@ export default function TableWrapper() {
 											<IconSearch size={16} />
 										</span>
 										<input
-											type="text"
+											type="search"
+											placeholder={intl.formatMessage({ id: "action.search" })}
 											className="form-control form-control-sm"
 											autoComplete="off"
 											onChange={(e) => setSearch(e.target.value.toLowerCase().trim())}

@@ -51,7 +51,7 @@ router
 	 * We also piggy back on to this method, allowing admins to get tokens
 	 * for services like Job board and Worker.
 	 */
-	.get(jwtdecode(), async (req, res, next) => {
+	.get(jwtdecode, async (req, res, next) => {
 		// Session discovery is anonymous by design; jwt-decode lets cookieless
 		// requests through as an anonymous access, so answer 401 here instead
 		// of letting getFreshToken hit its invalid-user-data assertion. These

@@ -15,9 +15,9 @@ try {
 		if (event.type() === "error" && !event.text().includes("status of 400")) errors.push(event.text());
 	});
 	await page.goto(`${base}/login`, { waitUntil: "networkidle" });
-	await page.getByLabel(/email/i).fill(process.env.SMOKE_ADMIN_EMAIL || "admin@example.test");
-	await page.getByLabel(/password/i).fill(process.env.SMOKE_ADMIN_PASSWORD || "rc5-smoke-password");
-	await page.getByRole("button", { name: /sign in|log in/i }).click();
+	await page.getByLabel(/email/iu).fill(process.env.SMOKE_ADMIN_EMAIL || "admin@example.test");
+	await page.getByLabel(/password/iu).fill(process.env.SMOKE_ADMIN_PASSWORD || "rc5-smoke-password");
+	await page.getByRole("button", { name: /sign in|log in/iu }).click();
 	await page.getByRole("link", { name: "Open user menu" }).waitFor();
 	signedIn = true;
 	const fixture = {
@@ -34,7 +34,7 @@ try {
 		clients: [],
 	};
 	let writes = 0;
-	await page.route(/\/api\/nginx\/access-lists(?:\/900001)?(?:\?.*)?$/, (route) => {
+	await page.route(/\/api\/nginx\/access-lists(?:\/900001)?(?:\?.*)?$/u, (route) => {
 		if (route.request().method() !== "GET") {
 			writes++;
 			return route.fulfill({

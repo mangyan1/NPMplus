@@ -13,11 +13,88 @@ const __dirname = dirname(__filename);
 
 const nodeExecFilePromises = promisify(nodeExecFile);
 
+/**
+ * @param   {String} cmd
+ * @param   {Array}  args
+ * @param   {Boolean} [silent]
+ * @returns {Promise}
+ */
+const execFile = async (cmd, args, silent) => {
+	if (!silent) debug(logger, `CMD: ${cmd} ${args ? args.join(" ") : ""}`);
+
+	try {
+		const { stdout, stderr } = await nodeExecFilePromises(cmd, args);
+		return `${stdout || ""}${stderr || ""}`.trim();
+	} catch (err) {
+		throw new errs.CommandError(`${err.stdout || ""}${err.stderr || ""}`.trim(), { cause: err });
+	}
+};
+
+const controlCharPattern = /\p{Cc}/u;
+const tokenBreakPattern = /[\s;{\\]/u;
+const tokenStartPattern = /^[}#"']/u;
+const quoteEscapePattern = /["\\]/gu;
+
+const assertNginxValue = (value, quoted = false) => {
+	if (
+		controlCharPattern.test(value) ||
+		(!quoted && (tokenBreakPattern.test(value) || tokenStartPattern.test(value)))
+	) {
+		throw new errs.ValidationError(`${JSON.stringify(value)} can not be used in the nginx config`);
+	}
+	return value;
+};
+
+const nginxQuote = (value) => `"${assertNginxValue(value, true).replaceAll(quoteEscapePattern, "\\$&")}"`;
+
+const quotedPattern = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/gu;
+const commentPattern = /(?:^|\s)#.*/u;
+
+const reindent = (text) => {
+	let depth = 0;
+	return text
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line, index, lines) => line !== "" || lines[index - 1] !== "")
+		.map((line) => {
+			const code = line.replace(quotedPattern, "").replace(commentPattern, "");
+			const net = code.split("{").length - code.split("}").length;
+			depth += net;
+			return line && "  ".repeat(Math.max(0, depth - Math.max(0, net))) + line;
+		})
+		.join("\n");
+};
+
+const renderEngine = new Liquid({
+	root: `${import.meta.dirname}/../templates/`,
+	outputEscape: assertNginxValue,
+	cache: true,
+});
+
+/**
+ * nginxAccessRule expects the object given to have 2 properties:
+ *
+ * directive  string
+ * address    string
+ */
+renderEngine.registerFilter("nginxAccessRule", {
+	raw: true,
+	handler: (v) => {
+		if (v.directive && v.address) {
+			// legacy rows may carry nginx syntax; drop the rule instead of
+			// failing the whole config regeneration (deny-all stays in effect)
+			if (accessRuleSyntaxPattern.test(v.address)) return "";
+			return `${assertNginxValue(v.directive)} ${assertNginxValue(v.address)};`;
+		}
+		return "";
+	},
+});
+
 // nginx metacharacters (incl. whitespace) must never survive into an
 // allow/deny address or an auth-request upstream: both render into
 // generated nginx configs
-const accessRuleSyntaxPattern = /[\s;{}$#"'\\]/;
-const authRequestUpstreamPattern = /^https?:\/\/([^/:]+|\[[a-fA-F0-9:]+\]):[0-9]+$/;
+const accessRuleSyntaxPattern = /[\s;{}$#"'\\]/u;
+const authRequestUpstreamPattern = /^https?:\/\/([^/:]+|\[[a-fA-F0-9:]+\]):[0-9]+$/u;
 
 /**
  * Auth-request upstreams must be a bare scheme://host:port - the same shape
@@ -34,46 +111,17 @@ const writeHash = async () => {
 	await writeFile("/data/npmplus/env.sha512sum", await getEnvironmentHash());
 };
 
-/**
- * @param   {String} cmd
- * @param   {Array}  args
- * @returns {Promise}
- */
-const execFile = async (cmd, args) => {
-	debug(logger, `CMD: ${cmd} ${args ? args.join(" ") : ""}`);
-
-	try {
-		const { stdout, stderr } = await nodeExecFilePromises(cmd, args);
-		return `${stdout || ""}${stderr || ""}`.trim();
-	} catch (err) {
-		if (err && typeof err === "object") {
-			throw new errs.CommandError(`${err.stdout || ""}${err.stderr || ""}`.trim(), err);
-		}
-		throw err;
-	}
-};
-
-/**
- * @returns {Object} Liquid render engine
- */
+// The fork renders pre-parsed templates through a shared engine. The upstream
+// renderEngine above stays for internals that call renderFile directly.
 let sharedRenderEngine = null;
 const parsedTemplates = new Map();
 
 const getRenderEngine = () => {
-	// The engine is stateless across renders and its templates never change at
-	// runtime, so one shared instance avoids rebuilding it (and re-registering
-	// its filter) for every config generation, list update, and bulk rebuild.
 	if (sharedRenderEngine === null) {
 		sharedRenderEngine = new Liquid({
 			root: `${__dirname}/../templates/`,
 		});
 
-		/**
-		 * nginxAccessRule expects the object given to have 2 properties:
-		 *
-		 * directive  string
-		 * address    string
-		 */
 		sharedRenderEngine.registerFilter("nginxAccessRule", (v) => {
 			if (typeof v.directive !== "undefined" && typeof v.address !== "undefined" && v.directive && v.address) {
 				// addresses render into generated nginx configs; a row stored
@@ -91,10 +139,6 @@ const getRenderEngine = () => {
 };
 
 /**
- * Reads a template once and keeps its parsed representation. Rendering a
- * pre-parsed template is an order of magnitude cheaper than re-parsing it on
- * every host update, and bulk operations render the same templates repeatedly.
- *
  * @param   {String}  templatePath
  * @returns {Promise<Object>} parsed Liquid template
  */
@@ -108,9 +152,13 @@ const getParsedTemplate = async (templatePath) => {
 };
 
 export default {
-	writeHash,
+	assertNginxValue,
 	execFile,
-	getRenderEngine,
 	getParsedTemplate,
+	getRenderEngine,
 	isValidAuthRequestUpstream,
+	nginxQuote,
+	reindent,
+	renderEngine,
+	writeHash,
 };

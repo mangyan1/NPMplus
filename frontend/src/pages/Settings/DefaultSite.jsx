@@ -1,4 +1,4 @@
-import { Field, Form, Formik } from "formik";
+import { ErrorMessage, Field, Form, Formik } from "formik";
 import { useState } from "react";
 import { Alert } from "react-bootstrap";
 import { Button, Loading } from "src/components";
@@ -9,35 +9,28 @@ import { showObjectSuccess } from "src/notifications";
 
 export default function DefaultSite() {
 	const { data, isPending, error } = useSetting("default-site");
-	const { mutate: setSetting } = useSetSetting();
+	const { mutateAsync: setSetting } = useSetSetting();
 	const [errorMsg, setErrorMsg] = useState(null);
-	const [isSubmitting, setIsSubmitting] = useState(false);
 
-	const onSubmit = (values, { setSubmitting }) => {
-		if (isSubmitting) return;
-		setIsSubmitting(true);
+	const onSubmit = async (values) => {
 		setErrorMsg(null);
 
 		const payload = {
 			id: "default-site",
 			value: values.value,
 			meta: {
-				redirect: values.redirect,
-				html: values.html,
-				status: values.status || undefined,
+				redirect: values.value === "redirect" ? values.redirect : undefined,
+				html: values.value === "html" ? values.html : undefined,
+				status: (values.value === "html" && values.status) || undefined,
 			},
 		};
 
-		setSetting(payload, {
-			onError: (err) => setErrorMsg(<T id={err.message} />),
-			onSuccess: () => {
-				showObjectSuccess("setting", "saved");
-			},
-			onSettled: () => {
-				setIsSubmitting(false);
-				setSubmitting(false);
-			},
-		});
+		try {
+			await setSetting(payload);
+			showObjectSuccess("setting", "saved");
+		} catch (err) {
+			setErrorMsg(<T id={err.message} />);
+		}
 	};
 
 	if (error) {
@@ -208,8 +201,8 @@ export default function DefaultSite() {
 							</p>
 						)}
 						{values.value === "redirect" && (
-							<Field name="redirect" validate={validateString(1, 255)}>
-								{({ field, form }) => (
+							<Field name="redirect" validate={(value) => validateString(value, 1, 255)}>
+								{({ field, meta }) => (
 									<div className="mt-5 mb-3">
 										<label className="form-label" htmlFor="redirect">
 											<T id="settings.default-site.redirect" />
@@ -222,15 +215,15 @@ export default function DefaultSite() {
 												required
 												pattern="\S+"
 												autoComplete="off"
-												className={`form-control ${form.errors.redirect && form.touched.redirect ? "is-invalid" : ""}`}
+												className={`form-control ${meta.touched && meta.error ? "is-invalid" : ""}`}
 												{...field}
 											/>
 
-											{form.errors.redirect ? (
-												<div className="invalid-feedback">
-													{form.touched.redirect ? form.errors.redirect : null}
-												</div>
-											) : null}
+											<ErrorMessage
+												name="redirect"
+												component="div"
+												className="invalid-feedback"
+											/>
 										</div>
 									</div>
 								)}
@@ -284,13 +277,7 @@ export default function DefaultSite() {
 					</div>
 					<div className="card-footer bg-transparent mt-auto">
 						<div className="btn-list justify-content-end">
-							<Button
-								type="submit"
-								color="teal"
-								className="ms-auto"
-								isLoading={isSubmitting}
-								disabled={isSubmitting}
-							>
+							<Button type="submit" color="teal" className="ms-auto">
 								<T id="save" />
 							</Button>
 						</div>

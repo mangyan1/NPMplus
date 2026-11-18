@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import it from "node:test";
 import {
 	crowdsecAlertTarget,
 	filterCrowdsecAlerts,
@@ -14,10 +14,10 @@ import {
 	validateManualBan,
 } from "../lib/crowdsec-contract.js";
 
-const notArrayPattern = /not an array/;
-const missingIdPattern = /missing its id/;
+const notArrayPattern = /not an array/u;
+const missingIdPattern = /missing its id/u;
 
-test("CrowdSec decisions are reduced to the stable public contract", () => {
+it("CrowdSec decisions are reduced to the stable public contract", () => {
 	const decisions = normalizeCrowdsecDecisions([
 		{
 			id: 42,
@@ -51,7 +51,7 @@ test("CrowdSec decisions are reduced to the stable public contract", () => {
 	]);
 });
 
-test("CrowdSec alerts keep attacker details while stripping sensitive payloads", () => {
+it("CrowdSec alerts keep attacker details while stripping sensitive payloads", () => {
 	const alerts = normalizeCrowdsecAlerts([
 		{
 			id: 9,
@@ -141,7 +141,7 @@ test("CrowdSec alerts keep attacker details while stripping sensitive payloads",
 	]);
 });
 
-test("Go-formatted event timestamps become parseable RFC3339", () => {
+it("Go-formatted event timestamps become parseable RFC3339", () => {
 	// The browser renders these with date-fns, which rejects Go's layout and
 	// falls back to echoing the raw string: one instant then appeared as
 	// "2026-09-20 03:02:35 +0000 UTC" beside a window rendered "Sep 19, 2026".
@@ -171,7 +171,7 @@ test("Go-formatted event timestamps become parseable RFC3339", () => {
 	assert.equal(Number.isNaN(Date.parse(alert.events[0].timestamp)), false);
 });
 
-test("CrowdSec alert history can be searched and filtered without exposing raw events", () => {
+it("CrowdSec alert history can be searched and filtered without exposing raw events", () => {
 	const alerts = normalizeCrowdsecAlerts([
 		{
 			id: 1,
@@ -205,7 +205,7 @@ test("CrowdSec alert history can be searched and filtered without exposing raw e
 	);
 });
 
-test("Prometheus metrics are parsed and summarized", () => {
+it("Prometheus metrics are parsed and summarized", () => {
 	const samples = parsePrometheusText(`
 # HELP cs_parser_hits_total parser hits
 cs_parser_hits_total{source="nginx"} 10
@@ -252,7 +252,7 @@ not valid
 	});
 });
 
-test("parser node counters are used when source-level parser metrics are absent", () => {
+it("parser node counters are used when source-level parser metrics are absent", () => {
 	const summary = summarizeCrowdsecMetrics(
 		parsePrometheusText(`
 cs_node_hits_total{type="parser",name="crowdsecurity/nginx-logs"} 10
@@ -263,14 +263,14 @@ cs_node_hits_ok_total{type="parser",name="crowdsecurity/nginx-logs"} 8
 	assert.equal(summary.parser_success_rate, 0.8);
 });
 
-test("decision origin totals degrade safely when an older metric has no origin label", () => {
+it("decision origin totals degrade safely when an older metric has no origin label", () => {
 	const summary = summarizeCrowdsecMetrics(parsePrometheusText("cs_active_decisions 7"));
 	assert.equal(summary.active_decisions, 7);
 	assert.equal(summary.local_active_decisions, null);
 	assert.equal(summary.community_active_decisions, null);
 });
 
-test("community blocklist sync alerts are separated from attacker alerts", () => {
+it("community blocklist sync alerts are separated from attacker alerts", () => {
 	const alerts = normalizeCrowdsecAlerts([
 		{ id: 1, scenario: "crowdsecurity/http-probing", source: { ip: "192.0.2.10" } },
 		{ id: 2, scenario: "update : +15000/-0 IPs", source: {} },
@@ -291,7 +291,7 @@ test("community blocklist sync alerts are separated from attacker alerts", () =>
 	assert.equal(isBlocklistSyncAlert(normalizeCrowdsecAlerts([{ id: 7, scenario: "" }])[0]), false);
 });
 
-test("appsec rule hits are grouped per rule name and ranked", () => {
+it("appsec rule hits are grouped per rule name and ranked", () => {
 	const summary = summarizeAppsecRules(
 		parsePrometheusText(`
 cs_appsec_rule_hits{rule_name="crowdsecurity/vpatch-CVE-2017-9841",type="inband",appsec_engine="default",source="npmplus"} 38
@@ -308,11 +308,11 @@ cs_parser_hits_total{source="nginx"} 10
 	]);
 });
 
-test("appsec rule summary is empty without rule hits", () => {
+it("appsec rule summary is empty without rule hits", () => {
 	assert.deepEqual(summarizeAppsecRules(parsePrometheusText("cs_appsec_reqs_total 12")), []);
 });
 
-test("the other-rules list does not duplicate CRS observations or diagnostics", () => {
+it("the other-rules list does not duplicate CRS observations or diagnostics", () => {
 	assert.deepEqual(
 		summarizeAppsecRules(
 			parsePrometheusText(`
@@ -329,7 +329,7 @@ cs_appsec_rule_hits{rule_name="crowdsecurity/vpatch-test",type="inband"} 3
 	);
 });
 
-test("CRS observations remain separate from in-band matches and unrelated rules", () => {
+it("CRS observations remain separate from in-band matches and unrelated rules", () => {
 	const summary = summarizeCrsRules(
 		parsePrometheusText(`
 cs_appsec_rule_hits{rule_name="942100",type="outofband",source="one"} 3
@@ -352,14 +352,14 @@ cs_appsec_reqs_total{rule_name="942100",type="outofband"} 99
 	assert.deepEqual(summarizeCrsRules([]), { crs_observation_hits: 0, crs_inband_hits: 0, crs_rules: [] });
 });
 
-test("CrowdSec payload validation rejects malformed upstream responses", () => {
+it("CrowdSec payload validation rejects malformed upstream responses", () => {
 	assert.deepEqual(normalizeCrowdsecDecisions(null), []);
 	assert.deepEqual(normalizeCrowdsecAlerts(null), []);
 	assert.throws(() => normalizeCrowdsecDecisions({ items: [] }), notArrayPattern);
 	assert.throws(() => normalizeCrowdsecAlerts([{ id: 0 }]), missingIdPattern);
 });
 
-test("CrowdSec decision IDs must be positive safe integers", () => {
+it("CrowdSec decision IDs must be positive safe integers", () => {
 	assert.equal(parseCrowdsecDecisionId(7), 7);
 	assert.equal(parseCrowdsecDecisionId("8"), 8);
 	assert.equal(parseCrowdsecDecisionId("8.5"), null);
@@ -367,7 +367,7 @@ test("CrowdSec decision IDs must be positive safe integers", () => {
 	assert.equal(parseCrowdsecDecisionId("not-a-number"), null);
 });
 
-test("manual ban input accepts ips, cidr ranges, and valid durations", () => {
+it("manual ban input accepts ips, cidr ranges, and valid durations", () => {
 	assert.deepEqual(validateManualBan({ value: "192.0.2.10", duration: "4h" }), []);
 	assert.deepEqual(validateManualBan({ value: "2001:db8::1", duration: "1h" }), []);
 	assert.deepEqual(validateManualBan({ value: "192.0.2.0/24", duration: "7d" }), []);
@@ -376,7 +376,7 @@ test("manual ban input accepts ips, cidr ranges, and valid durations", () => {
 	assert.deepEqual(validateManualBan({ value: "192.0.2.10", duration: "4h", reason: "" }), []);
 });
 
-test("manual ban input rejects hostile or malformed values", () => {
+it("manual ban input rejects hostile or malformed values", () => {
 	for (const value of [
 		"999.999.999.999",
 		"192.0.2.1/99",
@@ -404,7 +404,7 @@ test("manual ban input rejects hostile or malformed values", () => {
 	assert.deepEqual(validateManualBan({ value: null, duration: "0h", type: "nope" }), ["value", "duration", "type"]);
 });
 
-test("missing telemetry remains unknown and explicit zeros stay zero", () => {
+it("missing telemetry remains unknown and explicit zeros stay zero", () => {
 	const absent = summarizeCrowdsecMetrics([]);
 	assert.equal(absent.active_decisions, null);
 	assert.equal(absent.appsec_requests, null);
@@ -419,7 +419,7 @@ test("missing telemetry remains unknown and explicit zeros stay zero", () => {
 	assert.equal(summarizeCrowdsecMetrics(parsePrometheusText("cs_node_wl_hits_total 40")).whitelist_hits, null);
 });
 
-test("parser families are neither mixed nor double counted", () => {
+it("parser families are neither mixed nor double counted", () => {
 	const result = summarizeCrowdsecMetrics(
 		parsePrometheusText(
 			"cs_parser_hits_total 10\ncs_parser_hits_ok_total 0\ncs_node_hits_total 30\ncs_node_hits_ok_total 25",
@@ -430,13 +430,13 @@ test("parser families are neither mixed nor double counted", () => {
 	assert.equal(result.parser_metric_scope, "events");
 });
 
-test("out-of-range alert coordinates are not plotted", () => {
+it("out-of-range alert coordinates are not plotted", () => {
 	const [alert] = normalizeCrowdsecAlerts([{ id: 1, source: { latitude: 91, longitude: -181 } }]);
 	assert.equal(alert.source.latitude, null);
 	assert.equal(alert.source.longitude, null);
 });
 
-test("target grouping prefers hosts over URI metadata and ASN search matches numbers", () => {
+it("target grouping prefers hosts over URI metadata and ASN search matches numbers", () => {
 	const alerts = normalizeCrowdsecAlerts([
 		{
 			id: 1,
@@ -456,7 +456,7 @@ test("target grouping prefers hosts over URI metadata and ASN search matches num
 	assert.equal(filterCrowdsecAlerts(alerts, { search: "64500" }).length, 1);
 });
 
-test("preserves bounded AppSec rule evidence without query credentials or payloads", () => {
+it("preserves bounded AppSec rule evidence without query credentials or payloads", () => {
 	const [alert] = normalizeCrowdsecAlerts([
 		{
 			id: 1,

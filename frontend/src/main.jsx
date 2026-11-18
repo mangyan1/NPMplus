@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "src/App.jsx";
 import { Page } from "src/components";
 import installDeploymentRecovery from "src/fork/deployment-recovery";
+import { intl } from "src/locale";
 
 import "@tabler/core";
 
@@ -15,11 +16,15 @@ installDeploymentRecovery();
 await (document.dir === "rtl"
 	? import("@tabler/core/dist/css/tabler.rtl.min.css")
 	: import("@tabler/core/dist/css/tabler.min.css"));
+await import("@tabler/core/dist/css/tabler-themes.min.css");
+await import("@tabler/core/dist/css/tabler-flags.min.css");
+await import("src/main.css");
 
 const root = ReactDOM.createRoot(document.querySelector("#root"), {
 	onUncaughtError: (error) =>
 		root.render(
 			<Page className="page-center">
+				<title>{`NPMplus – ${intl.formatMessage({ id: "error" })}`}</title>
 				<div className="container-tight py-4">
 					<div className="empty">
 						<div className="empty-img">

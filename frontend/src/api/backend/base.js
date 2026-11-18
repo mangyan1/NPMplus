@@ -3,12 +3,14 @@ import queryString from "query-string";
 import AuthStore from "src/modules/AuthStore";
 import { camelizeKeys, decamelizeKeys } from "./caseConvert";
 import { deleteToken } from "./deleteToken";
-export const queryClient = new QueryClient();
+export const queryClient = new QueryClient({
+	defaultOptions: { queries: { retry: (failureCount, error) => !error.payload?.error && failureCount < 3 } },
+});
 const contentTypeHeader = "Content-Type";
 // call sites pass either an AbortController or a bare AbortSignal
 const getAbortSignal = (source) => (source && "signal" in source ? source.signal : source);
 function buildUrl({ url, params }) {
-	const endpoint = url.replace(/^\/|\/$/g, "");
+	const endpoint = url.replace(/^\/|\/$/gu, "");
 	const baseUrl = `/api/${endpoint}`;
 	const apiUrl = queryString.stringifyUrl({
 		url: baseUrl,
@@ -23,7 +25,15 @@ function buildBody(data) {
 }
 async function processWrite(url, response) {
 	const payload = await processResponse(response);
-	if (!url.startsWith("/tokens") && !["/users/setup", "/users/me/sessions"].includes(url)) {
+	if (
+		!url.startsWith("/tokens") &&
+		![
+			"/users/setup",
+			"/users/me/sessions",
+			"/nginx/certificates/validate",
+			"/nginx/certificates/test-http",
+		].includes(url)
+	) {
 		await queryClient.invalidateQueries();
 	}
 	return payload;

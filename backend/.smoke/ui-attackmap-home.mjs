@@ -14,7 +14,7 @@ if (!existsSync(playwrightEntry)) {
 	console.error("playwright is not installed globally. Install it with: npm i -g playwright");
 	process.exit(1);
 }
-const { chromium } = await import(`file://${playwrightEntry.replace(/\\/g, "/")}`);
+const { chromium } = await import(`file://${playwrightEntry.replace(/\\/gu, "/")}`);
 
 const iso = (ms) => new Date(Date.now() + ms).toISOString();
 const user = {
@@ -26,8 +26,8 @@ const user = {
 	name: "Smoke Admin",
 	nickname: "",
 	avatar: "",
-	roles: ["admin"],
-	permissions: { visibility: "enabled", roles: ["admin"] },
+	npmplus_is_admin: 1,
+	permissions: { visibility: "enabled", npmplus_is_admin: 1 },
 };
 
 let failures = 0;
@@ -66,7 +66,7 @@ const api = async (route) => {
 	const request = route.request();
 	const url = new URL(request.url());
 	if (url.pathname.startsWith("/src/")) return route.continue();
-	const apiPath = url.pathname.replace(/^\/api/, "");
+	const apiPath = url.pathname.replace(/^\/api/u, "");
 	const respond = (data) =>
 		route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(data) });
 

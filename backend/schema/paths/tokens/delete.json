@@ -2,8 +2,10 @@
 	"operationId": "deleteToken",
 	"summary": "Clear the token cookie",
 	"tags": [
-		"tokens"
+		"tokens",
+		"public"
 	],
+	"security": [],
 	"responses": {
 		"200": {
 			"description": "200 response",

@@ -47,7 +47,7 @@ const createUser = async (label) => {
 	const result = await admin.request("POST", "/users", {
 		email,
 		name: label,
-		roles: [],
+		npmplus_is_admin: 0,
 		auth: { type: "password", secret: "Security-Smoke-Password-1" },
 	});
 	check(`${label} created`, result.status, 201);

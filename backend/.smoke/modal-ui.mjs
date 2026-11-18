@@ -16,18 +16,18 @@ try {
 		console.error(error.stack);
 	});
 	page.on("console", (message) => {
-		if (message.type() === "error" && !/status of (400|401|403|503)/.test(message.text()))
+		if (message.type() === "error" && !/status of (400|401|403|503)/u.test(message.text()))
 			errors.push(message.text());
 	});
 	await page.goto(`${base}/login`, { waitUntil: "networkidle" });
-	await page.getByLabel(/email/i).fill("admin@example.test");
-	await page.getByLabel(/password/i).fill("rc5-smoke-password");
-	await page.getByRole("button", { name: /sign in|log in/i }).click();
+	await page.getByLabel(/email/iu).fill("admin@example.test");
+	await page.getByLabel(/password/iu).fill("rc5-smoke-password");
+	await page.getByRole("button", { name: /sign in|log in/iu }).click();
 	await page.getByRole("link", { name: "Open user menu" }).waitFor();
 	const dialog = page.getByRole("dialog");
 	const cancel = async (name) => {
 		await dialog
-			.getByRole("button", { name: /^(Cancel|Close)$/ })
+			.getByRole("button", { name: /^(Cancel|Close)$/u })
 			.last()
 			.click();
 		try {
@@ -69,7 +69,7 @@ try {
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.getByRole("button", { name: "Add User", exact: true }).click();
 	await dialog.getByLabel("Full Name", { exact: true }).fill("Modal Fixture");
-	await dialog.getByLabel(/email/i).fill(fixtureEmail);
+	await dialog.getByLabel(/email/iu).fill(fixtureEmail);
 	const userSaved = page.waitForResponse(
 		(response) => response.request().method() === "POST" && response.url().endsWith("/api/users"),
 	);
@@ -90,7 +90,7 @@ try {
 	await action("Set Password");
 	await invalid("empty set-password form");
 	await action("Set Password");
-	await dialog.getByLabel(/new password/i).fill("Modal-Fixture-Password-1");
+	await dialog.getByLabel(/new password/iu).fill("Modal-Fixture-Password-1");
 	await dialog.getByRole("button", { name: "Save", exact: true }).click();
 	await dialog.waitFor({ state: "hidden" });
 	console.log("PASS set-password save");
@@ -111,7 +111,7 @@ try {
 		await invalid(`empty ${name} form`);
 	}
 	await page.goto(`${base}/certificates`, { waitUntil: "networkidle" });
-	for (const name of [/Certbot.*HTTP/i, /Certbot.*DNS/i, /^Custom Certificate$/, /^mTLS$/]) {
+	for (const name of [/Certbot.*HTTP/iu, /Certbot.*DNS/iu, /^Custom Certificate$/u, /^mTLS$/u]) {
 		await page.getByRole("button", { name: "Add Certificate", exact: true }).click();
 		await page.getByRole("button", { name }).click();
 		await invalid(`empty certificate ${name}`);
@@ -121,7 +121,7 @@ try {
 	await cancel("audit event details");
 	// Renewal begins immediately on opening. Intercept only this synthetic
 	// certificate so the browser tests error/close without contacting an ACME CA.
-	const certificateRoutes = /\/api\/nginx\/certificates(?:\/900001(?:\/renew)?)?(?:\?.*)?$/;
+	const certificateRoutes = /\/api\/nginx\/certificates(?:\/900001(?:\/renew)?)?(?:\?.*)?$/u;
 	const certificate = {
 		id: 900001,
 		owner_user_id: 1,
@@ -158,7 +158,7 @@ try {
 	await page.goto(`${base}/certificates`, { waitUntil: "networkidle" });
 	const certRow = page.getByRole("row").filter({ hasText: "renewal.example.test" });
 	await certRow.locator("button.dropdown-toggle").click();
-	await certRow.getByRole("button", { name: /renew/i }).click();
+	await certRow.getByRole("button", { name: /renew/iu }).click();
 	await dialog.getByText("Synthetic renewal failure", { exact: true }).waitFor();
 	await cancel("failed certificate renewal fixture");
 	assert.equal(renewalRequests, 1);

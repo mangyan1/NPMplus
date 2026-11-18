@@ -11,3 +11,10 @@ minimumReleaseAgeExclude:
 minimumReleaseAgeExcludePrune: true
 allowBuilds:
   '@parcel/watcher': false
+  '@scarf/scarf': false
+  '@tree-sitter-grammars/tree-sitter-yaml': false
+  core-js-pure: false
+  tree-sitter: false
+  tree-sitter-json: false
+skills:
+  dirs: []

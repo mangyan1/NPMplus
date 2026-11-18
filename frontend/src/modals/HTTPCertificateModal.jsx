@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Alert } from "react-bootstrap";
 import Modal from "react-bootstrap/Modal";
 import { createCertificate, testHttpCertificate } from "src/api/backend";
-import { Button, DomainNamesField } from "src/components";
+import { Button, CommandOutput, DomainNamesField } from "src/components";
 import { T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
 import { showObjectSuccess } from "src/notifications";
@@ -14,16 +14,12 @@ const showHTTPCertificateModal = () => {
 	void EasyModal.show(HTTPCertificateModal);
 };
 
-const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {
+const HTTPCertificateModal = EasyModal.create(({ visible, remove, close, formRef }) => {
 	const [errorMsg, setErrorMsg] = useState(null);
-	const [isSubmitting, setIsSubmitting] = useState(false);
-	const [domains, setDomains] = useState([]);
 	const [isTesting, setIsTesting] = useState(false);
 	const [testResults, setTestResults] = useState(null);
 
-	const onSubmit = async (values, { setSubmitting }) => {
-		if (isSubmitting) return;
-		setIsSubmitting(true);
+	const onSubmit = async (values) => {
 		setErrorMsg(null);
 
 		try {
@@ -32,22 +28,14 @@ const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {
 			remove();
 		} catch (err) {
 			if (err.payload?.error?.output) {
-				setErrorMsg(
-					<div className="w-100">
-						<pre>
-							<code>{err.payload.error.output}</code>
-						</pre>
-					</div>,
-				);
+				setErrorMsg(<CommandOutput output={err.payload.error.output} />);
 			} else {
 				setErrorMsg(<T id={err.message} />);
 			}
 		}
-		setIsSubmitting(false);
-		setSubmitting(false);
 	};
 
-	const handleTest = async () => {
+	const handleTest = async (domains) => {
 		setIsTesting(true);
 		setErrorMsg(null);
 		setTestResults(null);
@@ -59,9 +47,6 @@ const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {
 		}
 		setIsTesting(false);
 	};
-
-	const toggleClasses = "form-check-input";
-	const toggleEnabled = cn(toggleClasses, "bg-cyan");
 
 	const parseTestResults = () => (
 		<>
@@ -102,8 +87,9 @@ const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {
 	);
 
 	return (
-		<Modal show={visible} onHide={isSubmitting || isTesting ? undefined : remove}>
+		<Modal show={visible} backdrop="static" onHide={isTesting ? undefined : close}>
 			<Formik
+				innerRef={formRef}
 				initialValues={{
 					domainNames: [],
 					provider: "letsencrypt",
@@ -111,9 +97,9 @@ const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {
 				}}
 				onSubmit={onSubmit}
 			>
-				{() => (
+				{({ values }) => (
 					<Form>
-						<Modal.Header closeButton={!(isSubmitting || isTesting)}>
+						<Modal.Header closeButton>
 							<Modal.Title>
 								<T id="object.add" tData={{ object: "lets-encrypt-via-http" }} />
 							</Modal.Title>
@@ -128,24 +114,19 @@ const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {
 										<IconAlertTriangle size={16} className="me-1" />
 										<T id="certificates.http.warning" />
 									</p>
-									<DomainNamesField
-										forCertificate
-										onChange={(doms) => {
-											setDomains(doms);
-											setTestResults(null);
-										}}
-									/>
+									<DomainNamesField forCertificate onChange={() => setTestResults(null)} />
 
 									<div className="row">
 										<div className="col-6">
-											<Field name="npmplusReuseKey">
+											<Field name="npmplusReuseKey" type="checkbox">
 												{({ field }) => (
 													<label className="form-check form-switch mt-1">
 														<input
 															{...field}
-															className={field.value ? toggleEnabled : toggleClasses}
 															type="checkbox"
-															checked={field.value}
+															className={cn("form-check-input", {
+																"bg-cyan": field.checked,
+															})}
 														/>
 
 														<span className="form-check-label">
@@ -168,26 +149,23 @@ const HTTPCertificateModal = EasyModal.create(({ visible, remove }) => {
 							</div>
 						</Modal.Body>
 						<Modal.Footer>
-							<Button onClick={remove} disabled={isSubmitting || isTesting}>
+							<Button onClick={close} disabled={isTesting}>
 								<T id="cancel" />
 							</Button>
 							<div className="ms-auto">
-								<Button
-									type="button"
-									actionType="secondary"
-									className="me-3"
-									isLoading={isTesting}
-									disabled={isSubmitting || domains.length === 0}
-									onClick={handleTest}
-								>
-									<T id="test" />
-								</Button>
-								<Button
-									type="submit"
-									color="pink"
-									isLoading={isSubmitting}
-									disabled={isSubmitting || isTesting}
-								>
+								{values.domainNames.length <= 25 && (
+									<Button
+										type="button"
+										actionType="secondary"
+										className="me-3"
+										isSubmitting={isTesting}
+										disabled={values.domainNames.length === 0}
+										onClick={() => handleTest(values.domainNames)}
+									>
+										<T id="test" />
+									</Button>
+								)}
+								<Button type="submit" color="pink" disabled={isTesting}>
 									<T id="save" />
 								</Button>
 							</div>

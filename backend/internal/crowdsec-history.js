@@ -10,7 +10,7 @@ const encode = (value) => {
 	return `${text}.${sign(text)}`;
 };
 // Preserve sub-millisecond CreatedAt ordering from the LAPI's RFC3339 timestamps.
-const SUB_SECOND = /\.(\d+)(?:Z|[+-]\d\d:\d\d)$/;
+const SUB_SECOND = /\.(\d+)(?:Z|[+-]\d\d:\d\d)$/u;
 const timestamp = (value) => {
 	const millis = Date.parse(value);
 	if (!Number.isFinite(millis)) throw publicError("crowdsec.invalid-response", 502);

@@ -1,16 +1,15 @@
 import { rename, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-import { domainToASCII, fileURLToPath } from "node:url";
 import { Client, fetch } from "undici";
 import errs from "../lib/error.js";
+import { toAsciiDomain } from "../lib/helpers.js";
+import updateOcspStaples from "../lib/ocsp.js";
 import utils from "../lib/utils.js";
-import { debug, nginx as logger } from "../logger.js";
+import { nginx as logger } from "../logger.js";
 import internalProxyHostAccessList from "./proxy-host-access-list.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const controlApi = new Client("http://localhost", { connect: { socketPath: "/run/nginx-control.sock" } });
 const authRequestProviders = ["anubis", "tinyauth", "oauth2proxy", "voidauth", "authelia", "authentik"];
+const rawPlaceholderPattern = /^[ \t]*npmplus#raw#(?<index>\d+);$/gmu;
 
 const internalNginx = {
 	/**
@@ -27,7 +26,7 @@ const internalNginx = {
 	 * @param   {Object}         host
 	 * @returns {Promise}
 	 */
-	configure: async (model, host_type, host, { skipReload = false } = {}) => {
+	configure: async (model, host_type, host, { skipReload = false, trx } = {}) => {
 		let status = {};
 
 		// skip disabled hosts
@@ -35,14 +34,15 @@ const internalNginx = {
 
 		await internalProxyHostAccessList.build(host_type, host);
 		await internalNginx.deleteConfig(host_type, host);
-		await internalNginx.generateConfig(host_type, host);
 
 		try {
+			await internalNginx.generateConfig(host_type, host);
 			await (skipReload ? internalNginx.test() : internalNginx.reload());
 			status = { npmplus_nginx_online: true, npmplus_nginx_err: "" };
 
-			await model.query().where("id", host.id).patch(status);
+			await model.query(trx).where("id", host.id).patch(status);
 		} catch (err) {
+			if (trx) throw err;
 			logger.error(err.message);
 
 			// config is bad, update status and rename config
@@ -66,31 +66,10 @@ const internalNginx = {
 	 * @returns {Promise}
 	 */
 	reload: async () => {
-		if (process.env.ACME_OCSP_STAPLING === "true") {
-			try {
-				await utils.execFile("certbot-ocsp-fetcher.sh", [
-					"-c",
-					"/data/tls/certbot/live",
-					"-o",
-					"/data/tls/certbot/live",
-					"--no-reload-webserver",
-					"--quiet",
-				]);
-			} catch {}
-		}
-
-		if (process.env.CUSTOM_OCSP_STAPLING === "true") {
-			try {
-				await utils.execFile("certbot-ocsp-fetcher.sh", [
-					"-c",
-					"/data/tls/custom",
-					"-o",
-					"/data/tls/custom",
-					"--no-reload-webserver",
-					"--quiet",
-				]);
-			} catch {}
-		}
+		const promises = [];
+		if (process.env.ACME_OCSP_STAPLING === "true") promises.push(updateOcspStaples("/data/tls/certbot/live"));
+		if (process.env.CUSTOM_OCSP_STAPLING === "true") promises.push(updateOcspStaples("/data/tls/custom"));
+		await Promise.all(promises);
 
 		const res = await fetch("http://localhost/1/control/config", { method: "PATCH", dispatcher: controlApi });
 		const logs = (await res.json()).logs.join("").trim();
@@ -107,7 +86,7 @@ const internalNginx = {
 	 */
 	getConfigName: (host_type, host_id) => {
 		if (host_type === "default") {
-			return "/usr/local/nginx/conf/conf.d/default.conf";
+			return "/data/nginx/default.conf";
 		}
 		return `/data/nginx/${host_type}/${host_id}.conf`;
 	},
@@ -118,15 +97,6 @@ const internalNginx = {
 	 * @returns {Promise}
 	 */
 	renderLocations: async (host) => {
-		let template;
-		try {
-			template = await utils.getParsedTemplate(`${__dirname}/../templates/_proxy_host_custom_location.conf`);
-		} catch (err) {
-			// a broken template load is a config problem the user must see, not a 500
-			throw new errs.ConfigurationError(err.message);
-		}
-
-		const renderEngine = utils.getRenderEngine();
 		let renderedLocations = "";
 
 		for (const [idx, location] of (host.locations || []).entries()) {
@@ -150,10 +120,14 @@ const internalNginx = {
 			} else {
 				location.forward_upstream_name = `upstream_${host.id}_location_${idx}`;
 			}
-			if (["~ ", "~* "].includes(location.location_type)) {
-				location.path = `"${location.path.replaceAll('"', '\\"')}"`;
+			if (["~", "~*"].includes(location.location_type)) {
+				location.path = utils.nginxQuote(`${location.location_type}${location.path}`);
+			} else if (["@", "=", "~", "~*", "^~", "$"].some((prefix) => location.path.startsWith(prefix))) {
+				throw new errs.ValidationError(`${JSON.stringify(location.path)} can not be used as a location path`);
+			} else {
+				location.path = `${utils.assertNginxValue(location.location_type)}${utils.assertNginxValue(location.path)}`;
 			}
-			renderedLocations += await renderEngine.render(template, location);
+			renderedLocations += await utils.renderEngine.renderFile("_proxy_host_custom_location.conf", location);
 		}
 
 		return renderedLocations;
@@ -165,15 +139,6 @@ const internalNginx = {
 	 * @returns {Promise}
 	 */
 	renderUpstreams: async (host) => {
-		let template;
-		try {
-			template = await utils.getParsedTemplate(`${__dirname}/../templates/_upstream.conf`);
-		} catch (err) {
-			// a broken template load is a config problem the user must see, not a 500
-			throw new errs.ConfigurationError(err.message);
-		}
-
-		const renderEngine = utils.getRenderEngine();
 		let renderedUpstreams = "";
 
 		if (["http", "https", "grpc", "grpcs"].includes(host.forward_scheme)) {
@@ -191,7 +156,7 @@ const internalNginx = {
 				host.forward_upstream_name = host.forward_host;
 			} else {
 				host.forward_upstream_name = `upstream_${host.id}`;
-				renderedUpstreams += await renderEngine.render(template, host);
+				renderedUpstreams += await utils.renderEngine.renderFile("_upstream.conf", host);
 			}
 		}
 
@@ -218,7 +183,7 @@ const internalNginx = {
 				location.forward_upstream_name = location.forward_host;
 			} else {
 				location.forward_upstream_name = `upstream_${host.id}_location_${idx}`;
-				renderedUpstreams += await renderEngine.render(template, location);
+				renderedUpstreams += await utils.renderEngine.renderFile("_upstream.conf", location);
 			}
 		}
 
@@ -233,18 +198,14 @@ const internalNginx = {
 	generateConfig: async (host_type, host_row) => {
 		// Prevent modifying the original object:
 		const host = structuredClone(host_row);
-
-		const renderEngine = utils.getRenderEngine();
+		const raws = [];
+		for (const item of [host, ...(host.locations ?? [])]) {
+			for (const field of ["advanced_config", "npmplus_location_config", "npmplus_advanced_config"]) {
+				if (item[field]) item[field] = `npmplus#raw#${raws.push(item[field]) - 1};`;
+			}
+		}
 
 		const filename = internalNginx.getConfigName(host_type, host.id);
-
-		let template;
-		try {
-			template = await utils.getParsedTemplate(`${__dirname}/../templates/${host_type}.conf`);
-		} catch (err) {
-			// a broken template load is a config problem the user must see, not a 500
-			throw new errs.ConfigurationError(err.message);
-		}
 
 		host.env = process.env;
 
@@ -259,7 +220,7 @@ const internalNginx = {
 		}
 
 		if (host.domain_names) {
-			host.server_names = host.domain_names.map((domain_name) => domainToASCII(domain_name) || domain_name);
+			host.server_names = host.domain_names.map((domain) => utils.nginxQuote(toAsciiDomain(domain)));
 		}
 		if (host.npmplus_access_list_type === "custom") {
 			// note that there is access_lists -> an array in the correct order
@@ -276,8 +237,7 @@ const internalNginx = {
 
 		if (host.locations) {
 			for (const location of host.locations) {
-				// inherit the host auth_request when the location doesn't specify its own
-				if (!location.npmplus_auth_request || location.npmplus_auth_request === "none") {
+				if (location.npmplus_auth_request === "global") {
 					location.npmplus_auth_request = host.npmplus_auth_request;
 				}
 
@@ -291,7 +251,6 @@ const internalNginx = {
 				) {
 					location.path = `${location.path}/`;
 				}
-
 				if (location.npmplus_access_list_type === "global") {
 					location.access_list = host.access_list;
 				} else if (location.npmplus_access_list_type === "custom") {
@@ -306,6 +265,9 @@ const internalNginx = {
 					location.filename = htpasswdFileName;
 				}
 				if (location.npmplus_enabled === false) continue;
+				if (location.path === "/.well-known/acme-challenge/" && ["", "^~"].includes(location.location_type)) {
+					host.custom_acme_challenge_location = true;
+				}
 				const provider =
 					location.npmplus_auth_request === "authentik-send-basic-auth"
 						? "authentik"
@@ -344,21 +306,16 @@ const internalNginx = {
 			}
 		}
 
-		try {
-			const config_text = await renderEngine.render(template, host);
+		const config_text = await utils.renderEngine.renderFile(`${host_type}.conf`, host);
 
-			await writeFile(filename, config_text, { encoding: "utf8" });
-			debug(logger, "Wrote config:", filename);
+		await writeFile(
+			filename,
+			utils.reindent(config_text).replace(rawPlaceholderPattern, (_, index) => raws[index].trimEnd()),
+			{ encoding: "utf8" },
+		);
+		logger.debug("Wrote config:", filename);
 
-			if (process.env.DISABLE_NGINX_BEAUTIFIER === "false") {
-				await utils.execFile("nginxbeautifier", ["-s", "2", filename]).catch(() => {});
-			}
-
-			return true;
-		} catch (err) {
-			debug(logger, `Could not write ${filename}:`, err.message);
-			throw new errs.ConfigurationError(err.message);
-		}
+		return true;
 	},
 
 	/**
@@ -381,7 +338,11 @@ const internalNginx = {
 	renameConfigAsError: async (host_type, host) => {
 		const config_file = internalNginx.getConfigName(host_type, host?.id ?? 0);
 
-		await rename(config_file, `${config_file}.err`);
+		try {
+			await rename(config_file, `${config_file}.err`);
+		} catch (err) {
+			if (err.code !== "ENOENT") throw err;
+		}
 	},
 };
 

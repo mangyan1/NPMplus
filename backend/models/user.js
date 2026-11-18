@@ -9,15 +9,12 @@ import UserPermission from "./user_permission.js";
 
 Model.knex(db());
 
-const boolFields = ["is_disabled"];
+const boolFields = ["is_disabled", "npmplus_is_admin"];
 
 class User extends Model {
 	$beforeInsert() {
 		this.created_on = now();
 		this.modified_on = now();
-
-		// Default for roles
-		this.roles ??= [];
 	}
 
 	$beforeUpdate() {
@@ -25,7 +22,7 @@ class User extends Model {
 	}
 
 	$parseDatabaseJson(json) {
-		const { is_deleted, nickname, ...thisJson } = super.$parseDatabaseJson(json);
+		const { is_deleted, nickname, roles, ...thisJson } = super.$parseDatabaseJson(json);
 		return convertIntFieldsToBool(thisJson, boolFields);
 	}
 
@@ -42,17 +39,7 @@ class User extends Model {
 		return thisJson;
 	}
 
-	static get name() {
-		return "User";
-	}
-
-	static get tableName() {
-		return "user";
-	}
-
-	static get jsonAttributes() {
-		return ["roles"];
-	}
+	static tableName = "user";
 
 	static get relationMappings() {
 		return {

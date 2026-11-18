@@ -1,7 +1,6 @@
 import errs from "../lib/error.js";
-import { castJsonIfNeed } from "../lib/helpers.js";
+import { castJsonIfNeed, hasDuplicateDomains } from "../lib/helpers.js";
 import { assertPrivilegedNginxFields } from "../lib/nginx-privilege.js";
-import { global as logger } from "../logger.js";
 import deadHostModel from "../models/dead_host.js";
 import internalAuditLog from "./audit-log.js";
 import internalCertificate from "./certificate.js";
@@ -28,15 +27,18 @@ const internalDeadHost = {
 		}
 
 		access.can("dead_hosts:manage");
+		internalHost.checkCustomConfig(access, thisData);
 		await assertPrivilegedNginxFields(access, thisData);
 
+		if (hasDuplicateDomains(thisData.domain_names)) {
+			throw new errs.ValidationError("Domain names need to be unique");
+		}
+
 		// Get a list of the domain names and check each of them against existing records
-		const checkResults = await Promise.all(
-			thisData.domain_names.map((domainName) => internalHost.isHostnameTaken(domainName)),
-		);
-		const taken = checkResults.find((result) => result.is_taken);
-		if (taken) {
-			throw new errs.ValidationError(`${taken.hostname} is already in use`);
+		for (const domainName of thisData.domain_names) {
+			if ((await internalHost.isHostnameTaken(domainName)).is_taken) {
+				throw new errs.ValidationError(`${domainName} is already in use`);
+			}
 		}
 
 		// At this point the domains should have been checked
@@ -47,38 +49,33 @@ const internalDeadHost = {
 			thisData.certificate_id = (await internalCertificate.createQuickCertificate(access, thisData)).id;
 		}
 
-		const createdRow = await deadHostModel.query().insertAndFetch(thisData);
-
-		let savedRow;
-		const finalize = async () => {
-			savedRow = await internalDeadHost.get(access, { id: createdRow.id });
-
-			// Add to audit log
-			await internalAuditLog.add(access, {
-				action: "created",
-				object_type: "dead-host",
-				object_id: savedRow.id,
-				meta: savedRow,
-			});
-		};
+		let row;
 		try {
-			const row = await internalDeadHost.get(access, {
-				id: createdRow.id,
-				expand: ["certificate"],
-			});
+			await deadHostModel.transaction(async (trx) => {
+				row = await internalDeadHost.get(
+					access,
+					{ id: (await deadHostModel.query(trx).insertAndFetch(thisData)).id, expand: ["certificate"] },
+					trx,
+				);
 
-			// Configure nginx
-			await internalNginx.configure(deadHostModel, "dead_host", row);
-		} catch (operationError) {
-			// the audit write must never replace the operation's own error
-			try {
-				await finalize();
-			} catch (cleanupError) {
-				logger.error(`Error auditing dead host create ${createdRow.id}: ${cleanupError.message}`);
-			}
-			throw operationError;
+				// Configure nginx
+				await internalNginx.configure(deadHostModel, "dead_host", row, { trx });
+			});
+		} catch (err) {
+			if (createCertificate) err.certificate_id = thisData.certificate_id;
+			if (row) await internalNginx.deleteConfig("dead_host", row);
+			throw err;
 		}
-		await finalize();
+
+		const savedRow = await internalDeadHost.get(access, { id: row.id });
+
+		// Add to audit log
+		await internalAuditLog.add(access, {
+			action: "created",
+			object_type: "dead-host",
+			object_id: savedRow.id,
+			meta: savedRow,
+		});
 
 		return savedRow;
 	},
@@ -91,41 +88,36 @@ const internalDeadHost = {
 	 */
 	update: async (access, data) => {
 		let thisData = data;
+		const existingRow = await internalDeadHost.get(access, { id: thisData.id });
 		const createCertificate = thisData.certificate_id === "new";
 
 		if (createCertificate) {
 			delete thisData.certificate_id;
-		} else if (thisData.certificate_id > 0) {
+		} else if (thisData.certificate_id > 0 && thisData.certificate_id !== existingRow.certificate_id) {
 			await internalCertificate.get(access, { id: thisData.certificate_id, mtls: false });
 		}
-		if (thisData.npmplus_mtls_certificate_id > 0) {
+		if (
+			thisData.npmplus_mtls_certificate_id > 0 &&
+			thisData.npmplus_mtls_certificate_id !== existingRow.npmplus_mtls_certificate_id
+		) {
 			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id, mtls: true });
 		}
 
 		access.can("dead_hosts:manage");
-
-		const existingRow = await internalDeadHost.get(access, { id: thisData.id });
+		internalHost.checkCustomConfig(access, thisData, existingRow);
+		await assertPrivilegedNginxFields(access, thisData, existingRow);
 
 		// Get a list of the domain names and check each of them against existing records
 		if (thisData.domain_names !== undefined) {
-			const checkResults = await Promise.all(
-				thisData.domain_names.map((domainName) =>
-					internalHost.isHostnameTaken(domainName, "dead", thisData.id),
-				),
-			);
-			const taken = checkResults.find((result) => result.is_taken);
-			if (taken) {
-				throw new errs.ValidationError(`${taken.hostname} is already in use`);
+			if (hasDuplicateDomains(thisData.domain_names)) {
+				throw new errs.ValidationError("Domain names need to be unique");
+			}
+			for (const domainName of thisData.domain_names) {
+				if ((await internalHost.isHostnameTaken(domainName, "dead", thisData.id)).is_taken) {
+					throw new errs.ValidationError(`${domainName} is already in use`);
+				}
 			}
 		}
-
-		if (existingRow.id !== thisData.id) {
-			// Sanity check that something crazy hasn't happened
-			throw new errs.InternalValidationError(
-				`Dead Host could not be updated, IDs do not match: ${existingRow.id} !== ${thisData.id}`,
-			);
-		}
-		await assertPrivilegedNginxFields(access, thisData, existingRow);
 
 		if (createCertificate) {
 			const cert = await internalCertificate.createQuickCertificate(access, {
@@ -139,41 +131,37 @@ const internalDeadHost = {
 
 		thisData = internalHost.cleanSslHstsData(createCertificate, thisData, existingRow);
 
-		await deadHostModel.query().where({ id: thisData.id }).patch(thisData);
-
-		let savedRow;
-		const finalize = async () => {
-			savedRow = await internalDeadHost.get(access, { id: thisData.id });
-
-			// Add to audit log
-			await internalAuditLog.add(access, {
-				action: "updated",
-				object_type: "dead-host",
-				object_id: savedRow.id,
-				meta: savedRow,
-			});
-		};
 		try {
-			const row = await internalDeadHost.get(access, {
-				id: thisData.id,
-				expand: ["certificate"],
-			});
+			await deadHostModel.transaction(async (trx) => {
+				await deadHostModel.query(trx).where({ id: thisData.id }).patch(thisData);
 
-			// No need to add nginx config if host is disabled
-			if (row.enabled) {
 				// Configure nginx
-				await internalNginx.configure(deadHostModel, "dead_host", row);
-			}
-		} catch (operationError) {
-			// the audit write must never replace the operation's own error
-			try {
-				await finalize();
-			} catch (cleanupError) {
-				logger.error(`Error auditing dead host update ${thisData.id}: ${cleanupError.message}`);
-			}
-			throw operationError;
+				await internalNginx.configure(
+					deadHostModel,
+					"dead_host",
+					await internalDeadHost.get(access, { id: thisData.id, expand: ["certificate"] }, trx),
+					{ trx },
+				);
+			});
+		} catch (err) {
+			if (createCertificate) err.certificate_id = thisData.certificate_id;
+			await internalNginx.configure(
+				deadHostModel,
+				"dead_host",
+				await internalDeadHost.get(access, { id: thisData.id, expand: ["certificate"] }),
+			);
+			throw err;
 		}
-		await finalize();
+
+		const savedRow = await internalDeadHost.get(access, { id: thisData.id });
+
+		// Add to audit log
+		await internalAuditLog.add(access, {
+			action: "updated",
+			object_type: "dead-host",
+			object_id: savedRow.id,
+			meta: savedRow,
+		});
 
 		return savedRow;
 	},
@@ -185,10 +173,10 @@ const internalDeadHost = {
 	 * @param  {Array}    [data.expand]
 	 * @return {Promise}
 	 */
-	get: async (access, data) => {
+	get: async (access, data, trx) => {
 		access.can("dead_hosts:view");
 
-		const query = deadHostModel.query().where("id", data.id).allowGraph("[certificate]").first();
+		const query = deadHostModel.query(trx).where("id", data.id).allowGraph("[certificate]").first();
 
 		if (access.visibility !== "all") {
 			query.andWhere("owner_user_id", access.token.getUserId(1));
@@ -218,7 +206,11 @@ const internalDeadHost = {
 
 		await deadHostModel.query().deleteById(row.id);
 
-		const finalize = async () => {
+		try {
+			// Delete Nginx Config
+			await internalNginx.deleteConfig("dead_host", row);
+			await internalNginx.reload();
+		} finally {
 			// Add to audit log
 			await internalAuditLog.add(access, {
 				action: "deleted",
@@ -226,21 +218,7 @@ const internalDeadHost = {
 				object_id: row.id,
 				meta: row,
 			});
-		};
-		try {
-			// Delete Nginx Config
-			await internalNginx.deleteConfig("dead_host", row);
-			await internalNginx.reload();
-		} catch (operationError) {
-			// the audit write must never replace the operation's own error
-			try {
-				await finalize();
-			} catch (cleanupError) {
-				logger.error(`Error auditing dead host delete ${row.id}: ${cleanupError.message}`);
-			}
-			throw operationError;
 		}
-		await finalize();
 
 		return row;
 	},
@@ -263,26 +241,23 @@ const internalDeadHost = {
 			throw new errs.ValidationError("Host is already enabled");
 		}
 
-		const checkResults = await Promise.all(
-			row.domain_names.map((domainName) => internalHost.isHostnameTaken(domainName)),
-		);
-		const taken = checkResults.find((result) => result.is_taken);
-		if (taken) {
-			throw new errs.ValidationError(`${taken.hostname} is already in use by an active host`);
+		for (const domainName of row.domain_names) {
+			if ((await internalHost.isHostnameTaken(domainName)).is_taken) {
+				throw new errs.ValidationError(`${domainName} is already in use by an active host`);
+			}
 		}
 
 		row.enabled = 1;
 
 		await deadHostModel.query().where("id", row.id).patch({
 			enabled: 1,
-			// pessimistic until configure reports otherwise: a failed enable
-			// must not leave the previous online state on an enabled row
-			npmplus_nginx_online: false,
-			npmplus_nginx_err: "",
 		});
 
 		let savedRow;
-		const finalize = async () => {
+		try {
+			// Configure nginx
+			await internalNginx.configure(deadHostModel, "dead_host", row);
+		} finally {
 			savedRow = await internalDeadHost.get(access, { id: row.id });
 
 			// Add to audit log
@@ -292,20 +267,7 @@ const internalDeadHost = {
 				object_id: row.id,
 				meta: savedRow,
 			});
-		};
-		try {
-			// Configure nginx
-			await internalNginx.configure(deadHostModel, "dead_host", row);
-		} catch (operationError) {
-			// the audit write must never replace the operation's own error
-			try {
-				await finalize();
-			} catch (cleanupError) {
-				logger.error(`Error auditing dead host enable ${row.id}: ${cleanupError.message}`);
-			}
-			throw operationError;
 		}
-		await finalize();
 
 		return savedRow;
 	},
@@ -330,7 +292,11 @@ const internalDeadHost = {
 		});
 
 		let savedRow;
-		const finalize = async () => {
+		try {
+			// Delete Nginx Config
+			await internalNginx.deleteConfig("dead_host", row);
+			await internalNginx.reload();
+		} finally {
 			savedRow = await internalDeadHost.get(access, { id: row.id });
 
 			// Add to audit log
@@ -340,21 +306,7 @@ const internalDeadHost = {
 				object_id: row.id,
 				meta: savedRow,
 			});
-		};
-		try {
-			// Delete Nginx Config
-			await internalNginx.deleteConfig("dead_host", row);
-			await internalNginx.reload();
-		} catch (operationError) {
-			// the audit write must never replace the operation's own error
-			try {
-				await finalize();
-			} catch (cleanupError) {
-				logger.error(`Error auditing dead host disable ${row.id}: ${cleanupError.message}`);
-			}
-			throw operationError;
 		}
-		await finalize();
 
 		return savedRow;
 	},
@@ -372,7 +324,7 @@ const internalDeadHost = {
 		const query = deadHostModel
 			.query()
 			.groupBy("id")
-			.allowGraph("[owner,certificate]")
+			.allowGraph("[owner,certificate,mtls_certificate]")
 			.orderBy(castJsonIfNeed("domain_names"), "ASC");
 
 		if (access.visibility !== "all") {
@@ -387,15 +339,20 @@ const internalDeadHost = {
 	/**
 	 * Report use
 	 *
-	 * @param   {Number}  user_id
-	 * @param   {String}  visibility
+	 * @param   {Access}  access
 	 * @returns {Promise}
 	 */
-	getCount: (user_id, visibility) => {
+	getCount: (access) => {
+		try {
+			access.can("dead_hosts:view");
+		} catch {
+			return 0;
+		}
+
 		const query = deadHostModel.query();
 
-		if (visibility !== "all") {
-			query.andWhere("owner_user_id", user_id);
+		if (access.visibility !== "all") {
+			query.andWhere("owner_user_id", access.token.getUserId(1));
 		}
 
 		return query.resultSize();

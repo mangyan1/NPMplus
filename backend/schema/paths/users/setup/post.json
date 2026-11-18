@@ -2,8 +2,10 @@
 	"operationId": "createSetupUser",
 	"summary": "Create the initial admin User, only possible while no User exists",
 	"tags": [
-		"public"
+		"public",
+		"users"
 	],
+	"security": [],
 	"requestBody": {
 		"description": "User Payload",
 		"required": true,
@@ -32,7 +34,7 @@
 							"properties": {
 								"type": {
 									"type": "string",
-									"enum": ["password"]
+									"const": "password"
 								},
 								"secret": {
 									"type": "string",

@@ -26,7 +26,7 @@ const PASSWORD_STDIN = args.includes("--password-stdin");
 if (PASSWORD_STDIN) args.splice(args.indexOf("--password-stdin"), 1);
 const EMAIL = args[0]?.toLowerCase().trim();
 if (args.length > 1 || args.some((arg) => arg.startsWith("--"))) usage();
-const PASSWORD = PASSWORD_STDIN ? readFileSync(0, "utf8").replace(/\r?\n$/, "") : undefined;
+const PASSWORD = PASSWORD_STDIN ? readFileSync(0, "utf8").replace(/\r?\n$/u, "") : undefined;
 
 if (!EMAIL || (PASSWORD_STDIN && !PASSWORD) || (!PASSWORD_STDIN && !DISABLE_MFA)) {
 	if (!EMAIL) console.error("ERROR: User email address must be set.");

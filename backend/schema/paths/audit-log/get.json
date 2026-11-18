@@ -14,11 +14,46 @@
 			"in": "query",
 			"name": "expand",
 			"description": "Expansions",
+			"style": "form",
+			"explode": false,
+			"schema": {
+				"type": "array",
+				"uniqueItems": true,
+				"items": {
+					"type": "string",
+					"const": "user"
+				}
+			}
+		},
+		{
+			"in": "query",
+			"name": "query",
+			"description": "Search in object type, action and meta",
 			"schema": {
 				"type": "string",
-				"enum": [
-					"user"
-				]
+				"maxLength": 255
+			}
+		},
+		{
+			"in": "query",
+			"name": "page",
+			"description": "Page number starting at 0",
+			"schema": {
+				"type": "integer",
+				"minimum": 0,
+				"maximum": 2147483647,
+				"default": 0
+			}
+		},
+		{
+			"in": "query",
+			"name": "page_size",
+			"description": "Number of entries per page",
+			"schema": {
+				"type": "integer",
+				"minimum": 1,
+				"maximum": 1000,
+				"default": 25
 			}
 		},
 		{

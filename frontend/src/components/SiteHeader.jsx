@@ -2,13 +2,13 @@ import { IconDevicesX, IconLock, IconLogout, IconShieldLock, IconUser } from "@t
 import { LocalePicker, NavLink, ThemeSwitcher } from "src/components";
 import { useAuthState } from "src/context";
 import { useUser } from "src/hooks";
-import { T } from "src/locale";
+import { intl, T } from "src/locale";
 import { showChangePasswordModal, showMfaModal, showUserModal } from "src/modals";
-import { isAdmin } from "src/modules/Permissions";
+import { showError } from "src/notifications";
 
 export function SiteHeader() {
 	const { data: currentUser } = useUser("me");
-	const role = isAdmin(currentUser?.roles) ? "role.admin" : "role.standard-user";
+	const role = currentUser?.npmplusIsAdmin ? "role.admin" : "role.standard-user";
 	const { logout, logoutEverywhere } = useAuthState();
 
 	return (
@@ -17,22 +17,21 @@ export function SiteHeader() {
 				<button
 					className="navbar-toggler"
 					type="button"
+					title={intl.formatMessage({ id: "navigation" })}
 					data-bs-toggle="collapse"
 					data-bs-target="#navbar-menu"
-					aria-controls="navbar-menu"
 					aria-expanded="false"
-					aria-label="Toggle navigation"
 				>
 					<span className="navbar-toggler-icon" />
 				</button>
 				<div className="navbar-brand navbar-brand-autodark pe-0 pe-md-3">
 					<NavLink to="/">
 						<img
-							src="/images/logo-no-text.svg"
+							src="/icon.svg"
 							width={40}
 							height={40}
-							className="navbar-brand-image me-3"
-							alt="Logo"
+							className="navbar-brand-image object-fit-cover me-3"
+							alt=""
 						/>
 						NPMplus
 					</NavLink>
@@ -48,14 +47,10 @@ export function SiteHeader() {
 					</div>
 					<div className="nav-item d-md-flex">
 						<div className="nav-item dropdown">
-							<a
-								href="/"
-								className="nav-link d-flex lh-1"
-								data-bs-toggle="dropdown"
-								aria-label="Open user menu"
-							>
+							<a href="/" className="nav-link d-flex lh-1" data-bs-toggle="dropdown">
 								<span
 									className="avatar avatar-square avatar-sm"
+									title={currentUser?.name}
 									style={{
 										backgroundImage: `url(${currentUser?.avatar || "/images/default-avatar.jpg"})`,
 									}}
@@ -125,9 +120,13 @@ export function SiteHeader() {
 								<a
 									href="?"
 									className="dropdown-item"
-									onClick={(e) => {
+									onClick={async (e) => {
 										e.preventDefault();
-										void logout();
+										try {
+											await logout();
+										} catch (err) {
+											showError(<T id={err.message} />);
+										}
 									}}
 								>
 									<IconLogout width={18} />
@@ -136,9 +135,13 @@ export function SiteHeader() {
 								<a
 									href="?"
 									className="dropdown-item"
-									onClick={(e) => {
+									onClick={async (e) => {
 										e.preventDefault();
-										void logoutEverywhere();
+										try {
+											await logoutEverywhere();
+										} catch (err) {
+											showError(<T id={err.message} />);
+										}
 									}}
 								>
 									<IconDevicesX width={18} />

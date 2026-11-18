@@ -1,6 +1,6 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test as it } from "node:test";
 import { createAttackerCatalog } from "../internal/crowdsec-attackers.js";
 import { isAttackAlert, normalizeCrowdsecAlerts } from "../lib/crowdsec-contract.js";
 
@@ -13,7 +13,7 @@ const alert = (id, ip, observedAt) => ({
 	events: [{ meta: [{ key: "target_host", value: "example.test" }] }],
 });
 const time = "2026-09-19T12:00:00Z";
-test("upstream alert kinds exclude custom-reason manual bans and remote intelligence", () => {
+it("upstream alert kinds exclude custom-reason manual bans and remote intelligence", () => {
 	for (const kind of ["cscli", "capi", "papi"]) {
 		const [item] = normalizeCrowdsecAlerts([{ id: 1, kind, scenario: "custom reason" }]);
 		assert.equal(isAttackAlert(item), false);
@@ -22,7 +22,7 @@ test("upstream alert kinds exclude custom-reason manual bans and remote intellig
 	assert.equal(isAttackAlert({ scenario: "manual 'ban' from 'localhost'" }), false);
 	assert.equal(isAttackAlert({ scenario: "crowdsecurity/http-probing", kind: "crowdsec" }), true);
 });
-test("attacker snapshots group canonical IPs across older batches without duplicate counts", async () => {
+it("attacker snapshots group canonical IPs across older batches without duplicate counts", async () => {
 	let calls = 0;
 	const read = createAttackerCatalog(async () => {
 		calls++;
@@ -47,10 +47,10 @@ test("attacker snapshots group canonical IPs across older batches without duplic
 	assert.equal(calls, 5);
 	assert.equal((await read({ session: first.session, search: "missing" })).matched, 0);
 	assert.equal((await read({ session: first.session, search: "example.test" })).matched, 1);
-	await assert.rejects(read({ session: first.session, windowHours: 1 }), /expired/);
-	await assert.rejects(read({ session: "unknown" }), /expired/);
+	await assert.rejects(read({ session: first.session, windowHours: 1 }), /expired/u);
+	await assert.rejects(read({ session: "unknown" }), /expired/u);
 });
-test("attacker pagination and truncation never claim a complete inventory", async () => {
+it("attacker pagination and truncation never claim a complete inventory", async () => {
 	const read = createAttackerCatalog(async () => ({
 		items: Array.from({ length: 30 }, (_, i) => alert(i + 1, `192.0.2.${i + 1}`, time)),
 		scanned: 30,
@@ -69,7 +69,7 @@ test("attacker pagination and truncation never claim a complete inventory", asyn
 	assert.equal(next.items.length, 5);
 	assert.equal(new Set([...first.items, ...next.items].map((item) => item.ip)).size, 30);
 });
-test("on-demand event pages retain sanitization beyond the ten-event summary", () => {
+it("on-demand event pages retain sanitization beyond the ten-event summary", () => {
 	const raw = {
 		id: 1,
 		events_count: 30,

@@ -59,6 +59,47 @@ The script is intended for an Actions checkout. Use the local procedure below
 when reviewing a merge manually. Its regression tests use local bare Git remotes
 and a fake GitHub CLI; no real branch or PR is created by the tests.
 
+## November 17 reconciliation (2026-11-17)
+
+The November 17 sync incorporates upstream `537e04f8` on top of the October 26
+reconciliation. The upstream graph is about 250 commits; `git cherry` finds 183
+genuinely new patches and 26 patch-equivalent repeats from another rewrite, and
+`merge-tree` stops on 110 conflicted files. Upstream rewrote its history again,
+so the merge base is older than the last integrated revision (`a27d1f2d`) and the
+conflict count includes rewrite noise. The reconciliation is a regular merge
+commit on `fix/upstream-sync-20261117`; never squash or rebase it.
+
+Adopted from upstream: Caddy 2.11.9 (already carrying chi v5.4.0 and x/net
+v0.60.0, so the targeted replaces are removed while the source build and
+govulncheck gate stay), AWS-LC 5.15.0, nginx-auth-ldap v1.4.0 and the new
+compression-module revisions, the checked-in `patches/<module>/*.patch` layout,
+`npmplus_is_admin` replacing legacy roles, renamed permission-schema path keys
+(`{host_id}`, `{user_id}`, ...), server-managed nicknames, UTC-safe date handling,
+the frontend Swagger page and shared table/modal refactors, and the inverted
+per-host flags `npmplus_disable_crowdsec_appsec` /
+`npmplus_disable_proxy_request_buffering` with string-valued response buffering.
+The new migrations are `user_is_admin`, `location_auth_request_global`,
+`location_type_without_space`, `not_null_user_permission_meta`,
+`proxy_buffering` and `disable_columns`; the last three flag migrations cannot
+migrate down, so roll back with the safe updater's matching database and image
+snapshot.
+
+Kept deliberately fork-side: the ES512 JWT/token payload and database-backed
+session revocation, the pinned-pip Certbot DNS-01 pipeline (not upstream's `uv`
+switch), CrowdSec/Anubis telemetry instrumentation and the host observers,
+installer/safe-update/recovery tooling, ACL ownership scoping for delegated
+managers, nginx-syntax neutralization of legacy stored payloads, the
+`getCompiledSchema` test contract, `CommandError` remaining an internal 500, the
+setup-token gate, and the no-store admin UI. Upstream's `docs.js`/Swagger backend
+route is removed in favour of the frontend page, and the installer's secret-file
+resolution was extended to the new `_FILE` variables.
+
+Verification for this reconciliation: backend Biome CI and 234/234 tests, schema
+validation, frontend Biome CI, 24/24 tests, TypeScript, production Vite build,
+`tests/security-invariants.mjs`, 28 installer-recovery tests and six heal-migration
+tests in Linux containers. These local results do not replace a real VM
+update/reboot test or a fresh multi-architecture image scan.
+
 ## Reviewing an upstream update
 
 The October 26 reconciliation incorporates upstream `a27d1f2d`. The rewritten

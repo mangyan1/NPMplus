@@ -24,13 +24,12 @@ class UserPermission extends Model {
 		return thisJson;
 	}
 
-	static get name() {
-		return "UserPermission";
+	$parseDatabaseJson(json) {
+		const { meta, ...thisJson } = super.$parseDatabaseJson(json);
+		return thisJson;
 	}
 
-	static get tableName() {
-		return "user_permission";
-	}
+	static tableName = "user_permission";
 }
 
 export default UserPermission;

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Alert } from "react-bootstrap";
 import Modal from "react-bootstrap/Modal";
 import { createCertificate } from "src/api/backend";
-import { Button, DNSProviderFields, DomainNamesField } from "src/components";
+import { Button, CommandOutput, DNSProviderFields, DomainNamesField } from "src/components";
 import { T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
 import { showObjectSuccess } from "src/notifications";
@@ -13,13 +13,10 @@ const showDNSCertificateModal = () => {
 	void EasyModal.show(DNSCertificateModal);
 };
 
-const DNSCertificateModal = EasyModal.create(({ visible, remove }) => {
+const DNSCertificateModal = EasyModal.create(({ visible, remove, close, formRef }) => {
 	const [errorMsg, setErrorMsg] = useState(null);
-	const [isSubmitting, setIsSubmitting] = useState(false);
 
-	const onSubmit = async (values, { setSubmitting }) => {
-		if (isSubmitting) return;
-		setIsSubmitting(true);
+	const onSubmit = async (values) => {
 		setErrorMsg(null);
 
 		try {
@@ -28,27 +25,17 @@ const DNSCertificateModal = EasyModal.create(({ visible, remove }) => {
 			remove();
 		} catch (err) {
 			if (err.payload?.error?.output) {
-				setErrorMsg(
-					<div className="w-100">
-						<pre>
-							<code>{err.payload.error.output}</code>
-						</pre>
-					</div>,
-				);
+				setErrorMsg(<CommandOutput output={err.payload.error.output} />);
 			} else {
 				setErrorMsg(<T id={err.message} />);
 			}
 		}
-		setIsSubmitting(false);
-		setSubmitting(false);
 	};
 
-	const toggleClasses = "form-check-input";
-	const toggleEnabled = cn(toggleClasses, "bg-cyan");
-
 	return (
-		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
+		<Modal show={visible} backdrop="static" onHide={close}>
 			<Formik
+				innerRef={formRef}
 				initialValues={{
 					domainNames: [],
 					provider: "letsencrypt",
@@ -59,7 +46,7 @@ const DNSCertificateModal = EasyModal.create(({ visible, remove }) => {
 			>
 				{() => (
 					<Form>
-						<Modal.Header closeButton={!isSubmitting}>
+						<Modal.Header closeButton>
 							<Modal.Title>
 								<T id="object.add" tData={{ object: "lets-encrypt-via-dns" }} />
 							</Modal.Title>
@@ -74,14 +61,15 @@ const DNSCertificateModal = EasyModal.create(({ visible, remove }) => {
 									<DNSProviderFields />
 									<div className="row">
 										<div className="col-6">
-											<Field name="npmplusReuseKey">
+											<Field name="npmplusReuseKey" type="checkbox">
 												{({ field }) => (
 													<label className="form-check form-switch mt-1">
 														<input
 															{...field}
-															className={field.value ? toggleEnabled : toggleClasses}
 															type="checkbox"
-															checked={field.value}
+															className={cn("form-check-input", {
+																"bg-cyan": field.checked,
+															})}
 														/>
 
 														<span className="form-check-label">
@@ -96,16 +84,10 @@ const DNSCertificateModal = EasyModal.create(({ visible, remove }) => {
 							</div>
 						</Modal.Body>
 						<Modal.Footer>
-							<Button onClick={remove} disabled={isSubmitting}>
+							<Button onClick={close}>
 								<T id="cancel" />
 							</Button>
-							<Button
-								type="submit"
-								color="pink"
-								className="ms-auto"
-								isLoading={isSubmitting}
-								disabled={isSubmitting}
-							>
+							<Button type="submit" color="pink" className="ms-auto">
 								<T id="save" />
 							</Button>
 						</Modal.Footer>

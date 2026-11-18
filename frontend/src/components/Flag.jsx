@@ -1,67 +1,12 @@
 import { IconWorld } from "@tabler/icons-react";
-import {
-	AZ,
-	BG,
-	CN,
-	CZ,
-	DE,
-	EE,
-	ES,
-	FR,
-	HU,
-	ID,
-	IE,
-	IT,
-	JP,
-	KR,
-	NL,
-	NO,
-	PL,
-	PT,
-	RU,
-	SK,
-	TR,
-	UA,
-	VN,
-} from "country-flag-icons/react/3x2";
+import cn from "clsx";
 
-const localeFlags = {
-	AZ,
-	BG,
-	CN,
-	CZ,
-	DE,
-	EE,
-	ES,
-	FR,
-	HU,
-	ID,
-	IE,
-	IT,
-	JP,
-	KR,
-	NL,
-	NO,
-	PL,
-	PT,
-	RU,
-	SK,
-	TR,
-	UA,
-	VN,
-};
-
-function Flag({ className, countryCode }) {
-	countryCode = countryCode.toUpperCase();
-	if (countryCode === "EN") {
-		return <IconWorld className={className} width={20} />;
+function Flag({ className, countryCode, title }) {
+	if (countryCode === "en") {
+		return <IconWorld className={className} width={20} title={title} />;
 	}
 
-	if (countryCode in localeFlags) {
-		const FlagElement = localeFlags[countryCode];
-		return <FlagElement title={countryCode} className={className} width={20} />;
-	}
-	return <IconWorld className={className} width={20} />;
+	return <span title={title} className={cn("flag flag-xs", `flag-country-${countryCode}`, className)} />;
 }
 
 export { Flag };

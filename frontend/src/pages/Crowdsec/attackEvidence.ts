@@ -1,31 +1,31 @@
 // Classifications describe the detector's claim, never a successful compromise.
 const ATTACK_TYPES: [RegExp, string][] = [
-	[/honeypot/, "honeypot"],
-	[/^manual\//, "manual"],
-	[/sql[-_ ]?injection|sqli/, "sql"],
-	[/xss|cross[-_ ]site[-_ ]scripting/, "xss"],
-	[/traversal|\blfi\b|\brfi\b/, "file"],
-	[/\brce\b|remote[-_ ]code|command[-_ ]injection/, "execution"],
-	[/cve-\d{4}-\d+/, "cve"],
-	[/env-access|git-config|sensitive[-_ ]file/, "exposure"],
-	[/brute|[-_/]bf(?:$|-)/, "brute"],
-	[/probing|scan|crawl|enum/, "probing"],
-	[/flood|(?:^|[-_/])(?:d?dos)(?:$|-)/, "flood"],
+	[/honeypot/u, "honeypot"],
+	[/^manual\//u, "manual"],
+	[/sql[-_ ]?injection|sqli/u, "sql"],
+	[/xss|cross[-_ ]site[-_ ]scripting/u, "xss"],
+	[/traversal|\blfi\b|\brfi\b/u, "file"],
+	[/\brce\b|remote[-_ ]code|command[-_ ]injection/u, "execution"],
+	[/cve-\d{4}-\d+/u, "cve"],
+	[/env-access|git-config|sensitive[-_ ]file/u, "exposure"],
+	[/brute|[-_/]bf(?:$|-)/u, "brute"],
+	[/probing|scan|crawl|enum/u, "probing"],
+	[/flood|(?:^|[-_/])(?:d?dos)(?:$|-)/u, "flood"],
 ];
 export const attackType = (name: string): string =>
 	ATTACK_TYPES.find(([pattern]) => pattern.test(name.toLowerCase()))?.[1] ?? "unknown";
 
 // Only explicit client claims qualify. A path, IP, or scenario cannot identify a tool.
 const CLIENT_HINTS: [RegExp, string][] = [
-	[/\bsqlmap(?:\/|\b)/i, "sqlmap"],
-	[/\bnikto(?:\/|\b)/i, "Nikto"],
-	[/\bnuclei(?:\/|\b)/i, "Nuclei"],
-	[/\bnmap(?:\/|\b)/i, "Nmap"],
-	[/\bgobuster(?:\/|\b)/i, "Gobuster"],
-	[/\bffuf(?:\/|\b)/i, "ffuf"],
-	[/\bcurl\//i, "curl"],
-	[/\bpython-requests\//i, "Python Requests"],
-	[/\bwget\//i, "Wget"],
+	[/\bsqlmap(?:\/|\b)/iu, "sqlmap"],
+	[/\bnikto(?:\/|\b)/iu, "Nikto"],
+	[/\bnuclei(?:\/|\b)/iu, "Nuclei"],
+	[/\bnmap(?:\/|\b)/iu, "Nmap"],
+	[/\bgobuster(?:\/|\b)/iu, "Gobuster"],
+	[/\bffuf(?:\/|\b)/iu, "ffuf"],
+	[/\bcurl\//iu, "curl"],
+	[/\bpython-requests\//iu, "Python Requests"],
+	[/\bwget\//iu, "Wget"],
 ];
 
 export const toolHints = (userAgent: string): string[] =>

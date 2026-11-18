@@ -1,7 +1,9 @@
 {
 	"operationId": "loginWithTotp",
 	"summary": "Verify TOTP code and get full token",
-	"tags": ["tokens"],
+	"description": "The issued token is valid for 1 hour",
+	"tags": ["tokens", "public"],
+	"security": [],
 	"requestBody": {
 		"description": "totp Challenge Payload",
 		"required": true,

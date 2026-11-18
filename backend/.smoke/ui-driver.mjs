@@ -137,8 +137,8 @@ const user = {
 	name: "Smoke Admin",
 	nickname: "",
 	avatar: "",
-	roles: ["admin"],
-	permissions: { visibility: "enabled", roles: ["admin"] },
+	npmplus_is_admin: 1,
+	permissions: { visibility: "enabled", npmplus_is_admin: 1 },
 };
 const proxyHosts = [
 	{
@@ -186,7 +186,7 @@ const api = async (route) => {
 	const request = route.request();
 	const url = new URL(request.url());
 	if (url.pathname.startsWith("/src/")) return route.continue();
-	const apiPath = url.pathname.replace(/^\/api/, "");
+	const apiPath = url.pathname.replace(/^\/api/u, "");
 	const respond = (data) =>
 		route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(data) });
 	if (apiPath === "/settings/default-site") {
@@ -586,22 +586,22 @@ check(
 	"four service shortcuts expose health separately from decision totals",
 	(await serviceShortcuts.getByRole("button").count()) === 4,
 );
-await serviceShortcuts.getByRole("button", { name: /Web application firewall/ }).click();
+await serviceShortcuts.getByRole("button", { name: /Web application firewall/u }).click();
 check(
 	"WAF service shortcut opens request filtering details",
 	(await page.getByRole("tab", { name: "WAF", exact: true }).getAttribute("aria-selected")) === "true",
 );
 await page.getByRole("tab", { name: "Overview", exact: true }).click();
-await serviceShortcuts.getByRole("button", { name: /CrowdSec/ }).click();
+await serviceShortcuts.getByRole("button", { name: /CrowdSec/u }).click();
 check(
 	"CrowdSec service shortcut opens system diagnostics",
 	(await page.getByRole("tab", { name: "System", exact: true }).getAttribute("aria-selected")) === "true",
 );
 await page.getByRole("tab", { name: "Overview", exact: true }).click();
-for (const name of [/Anubis/, /Honeypot/]) {
+for (const name of [/Anubis/u, /Honeypot/u]) {
 	await serviceShortcuts.getByRole("button", { name }).click();
 	await page.getByRole("dialog").waitFor();
-	await page.getByRole("dialog").getByRole("button", { name: /close/i }).first().click();
+	await page.getByRole("dialog").getByRole("button", { name: /close/iu }).first().click();
 	await page.getByRole("dialog").waitFor({ state: "hidden" });
 }
 check(
@@ -613,7 +613,7 @@ check("technical detection filters start collapsed", (await exploration.getAttri
 await exploration.locator("summary").focus();
 await exploration.locator("summary").press("Enter");
 check("detection filters disclose through keyboard navigation", (await exploration.getAttribute("open")) !== null);
-await exploration.getByRole("button", { name: /Example Telecommunications/ }).click();
+await exploration.getByRole("button", { name: /Example Telecommunications/u }).click();
 check(
 	"disclosed ASN filter opens activity with a field-scoped search",
 	(await page.locator("#crowdsec-history-search").inputValue()).startsWith("asn:Example Telecommunications"),
@@ -633,15 +633,15 @@ await page.getByRole("tab", { name: "Attackers", exact: true }).click();
 await page.getByRole("button", { name: "198.51.100.7", exact: true }).waitFor();
 await page.screenshot({ path: "backend/.smoke/security-attackers-desktop.png", fullPage: true });
 await page.getByRole("button", { name: "Load older history", exact: true }).click();
-await page.getByText(/Reached the end of retained alerts/).waitFor();
+await page.getByText(/Reached the end of retained alerts/u).waitFor();
 await page.getByLabel("Search IP, country, ASN, host or detection").fill("no-match");
 await page.getByRole("button", { name: "Search", exact: true }).click();
-await page.getByText(/No matching source IPs in the loaded history/).waitFor();
+await page.getByText(/No matching source IPs in the loaded history/u).waitFor();
 await page.getByLabel("Search IP, country, ASN, host or detection").fill("");
 await page.getByRole("button", { name: "Search", exact: true }).click();
 await page.getByRole("button", { name: "198.51.100.7", exact: true }).click();
 const investigation = page.getByRole("dialog");
-await investigation.getByText(/not proof of successful exploitation/).waitFor();
+await investigation.getByText(/not proof of successful exploitation/u).waitFor();
 await investigation.getByRole("button", { name: "Load older history" }).click();
 await investigation.locator("ol > li").nth(1).waitFor();
 check(
@@ -649,7 +649,7 @@ check(
 	(await investigation.locator("ol > li").first().innerText()).includes("http-sensitive-files"),
 );
 await investigation.getByRole("button", { name: "Details", exact: true }).last().click();
-await investigation.getByText(/26 retained event records/).waitFor();
+await investigation.getByText(/26 retained event records/u).waitFor();
 await investigation.getByRole("button", { name: "Next", exact: true }).click();
 await investigation.getByText("/second-page", { exact: false }).waitFor();
 await page.screenshot({ path: "backend/.smoke/security-attacker-timeline-desktop.png", animations: "disabled" });
@@ -685,7 +685,7 @@ await page.getByRole("button", { name: "Search", exact: true }).click();
 // Change the filter to force a fresh request while retaining the previous result.
 await page.getByLabel("Search IP, country, ASN, host or detection").fill("failure");
 await page.getByRole("button", { name: "Search", exact: true }).click();
-await page.getByText(/Refresh history to retry or start a new snapshot/).waitFor();
+await page.getByText(/Refresh history to retry or start a new snapshot/u).waitFor();
 check(
 	"attacker refresh errors retain prior source rows",
 	await page.getByRole("button", { name: "198.51.100.7", exact: true }).isVisible(),
@@ -708,7 +708,7 @@ const dashboardButtonLabels = await page
 	.evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label") || button.textContent?.trim()));
 check(
 	"browser alert control communicates its current state",
-	(await page.getByRole("button", { name: /Browser alerts (off|unavailable|blocked)/ }).count()) === 1,
+	(await page.getByRole("button", { name: /Browser alerts (off|unavailable|blocked)/u }).count()) === 1,
 	JSON.stringify(dashboardButtonLabels),
 );
 check(
@@ -746,7 +746,7 @@ check(
 );
 await page.emulateMedia({ reducedMotion: "no-preference" });
 
-await page.getByRole("button", { name: /Community blocklist entries/i }).click();
+await page.getByRole("button", { name: /Community blocklist entries/iu }).click();
 const communityModal = page.getByRole("dialog");
 const communityText = await communityModal.innerText();
 check(
@@ -756,16 +756,16 @@ check(
 );
 check(
 	"community modal describes configured enforcement without claiming current proof",
-	/configured remediation components/i.test(communityText),
+	/configured remediation components/iu.test(communityText),
 	communityText,
 );
 check(
 	"community modal has no CAPI IPs or unban action",
 	!communityText.includes("192.0.2.55") &&
-		(await page.getByRole("dialog").getByRole("button", { name: /Unban/i }).count()) === 0,
+		(await page.getByRole("dialog").getByRole("button", { name: /Unban/iu }).count()) === 0,
 	communityText,
 );
-await communityModal.getByRole("button", { name: /close/i }).first().click();
+await communityModal.getByRole("button", { name: /close/iu }).first().click();
 
 await page.getByRole("tab", { name: "Active bans" }).click();
 const localTable = page.locator("#crowdsec-active-bans tbody");
@@ -777,7 +777,7 @@ check(
 	(await localTable.getByText("simulated", { exact: true }).count()) === 1,
 	localText,
 );
-check("ban expiry shows the real timestamp, not the raw lapi duration", !/in \d+[hms]/.test(localText), localText);
+check("ban expiry shows the real timestamp, not the raw lapi duration", !/in \d+[hms]/u.test(localText), localText);
 check(
 	"active bans lists only this instance",
 	localText.includes("203.0.113.9") && localText.includes("198.51.100.7"),
@@ -790,7 +790,7 @@ check(
 );
 check(
 	"unban actions exist only for local rows",
-	(await localTable.getByRole("button", { name: /Unban/i }).count()) === 3,
+	(await localTable.getByRole("button", { name: /Unban/iu }).count()) === 3,
 );
 
 const banSearch = page.getByRole("searchbox", { name: "Search bans" });
@@ -842,7 +842,7 @@ check(
 );
 check(
 	"event timestamps are rendered rather than echoed verbatim",
-	!/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/.test(evidenceText),
+	!/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/u.test(evidenceText),
 	evidenceText,
 );
 // the dump is reference detail behind a disclosure: it stays out of the
@@ -882,7 +882,7 @@ alertOverflow = false;
 await toggleBan("203.0.113.9");
 
 await page.getByRole("tab", { name: "Overview" }).click();
-await page.getByRole("button", { name: /Honeypot decisions/i }).click();
+await page.getByRole("button", { name: /Honeypot decisions/iu }).click();
 const anubisModal = page.getByRole("dialog");
 const anubisText = await anubisModal.innerText();
 check(
@@ -981,7 +981,7 @@ check(
 	(await anubisModal.getByText("14", { exact: true }).count()) === 1,
 );
 anubisReportFailure = false;
-await anubisModal.getByRole("button", { name: /close/i }).first().click();
+await anubisModal.getByRole("button", { name: /close/iu }).first().click();
 
 await page.getByRole("tab", { name: "WAF" }).click();
 await page.getByLabel("Proxy host", { exact: true }).waitFor();
@@ -1005,15 +1005,15 @@ check(
 );
 check(
 	"WAF tab shows protection state and traffic outcomes",
-	/web application firewall/i.test(wafText) &&
-		/inspected requests/i.test(wafText) &&
+	/web application firewall/iu.test(wafText) &&
+		/inspected requests/iu.test(wafText) &&
 		wafText.includes("25.0%") &&
-		/false positives and compatibility/i.test(wafText),
+		/false positives and compatibility/iu.test(wafText),
 	wafText.slice(0, 500),
 );
 check(
 	"WAF traffic visualization has an accessible summary",
-	(await page.getByRole("img", { name: /AppSec inspected 12 requests/i }).count()) === 1,
+	(await page.getByRole("img", { name: /AppSec inspected 12 requests/iu }).count()) === 1,
 );
 const crsPanel = page.getByRole("region", { name: "OWASP CRS observations" });
 check(
@@ -1038,7 +1038,7 @@ await page.getByRole("tab", { name: "WAF" }).click();
 const disabledWafText = await page.locator("#crowdsec-tab-panel").innerText();
 check(
 	"WAF tab distinguishes globally disabled AppSec",
-	/appsec disabled/i.test(disabledWafText) && disabledWafText.includes("--update --enable-appsec"),
+	/appsec disabled/iu.test(disabledWafText) && disabledWafText.includes("--update --enable-appsec"),
 	disabledWafText.slice(0, 300),
 );
 check(
@@ -1053,23 +1053,23 @@ await page.getByText("Service active; INPUT and FORWARD drop rules present", { e
 const systemText = await page.locator("body").innerText();
 check(
 	"enforcement separates HTTP requests from IPv4 packets",
-	/HTTP ban actions/i.test(systemText) &&
-		/IPv4 forwarded packets dropped/i.test(systemText) &&
+	/HTTP ban actions/iu.test(systemText) &&
+		/IPv4 forwarded packets dropped/iu.test(systemText) &&
 		systemText.includes("Service active; INPUT and FORWARD drop rules present"),
 );
 check(
 	"technical metrics moved to the System tab",
-	/parser node evaluation success/i.test(systemText) && systemText.includes("500.0 ms"),
+	/parser node evaluation success/iu.test(systemText) && systemText.includes("500.0 ms"),
 	systemText.slice(0, 300),
 );
 check(
 	"whitelisted events are surfaced on the System tab",
-	/whitelist node matches/i.test(systemText),
+	/whitelist node matches/iu.test(systemText),
 	systemText.slice(0, 300),
 );
 check(
 	"system metrics are informational cards rather than misleading buttons",
-	(await page.getByRole("button", { name: /Parser success/i }).count()) === 0,
+	(await page.getByRole("button", { name: /Parser success/iu }).count()) === 0,
 );
 
 await page.getByRole("tab", { name: "Attack activity" }).click();
@@ -1249,12 +1249,12 @@ await page.reload({ waitUntil: "networkidle" });
 await page.getByRole("tab", { name: "Overview", exact: true }).click();
 check(
 	"capped local counts are visibly lower bounds",
-	(await page.getByRole("button", { name: /Local active decisions/i }).innerText()).includes("500+"),
+	(await page.getByRole("button", { name: /Local active decisions/iu }).innerText()).includes("500+"),
 );
 await page.getByRole("tab", { name: "WAF" }).click();
 check(
 	"missing AppSec counters do not render a fabricated zero-traffic chart",
-	(await page.getByRole("img", { name: /AppSec inspected 0 requests/i }).count()) === 0 &&
+	(await page.getByRole("img", { name: /AppSec inspected 0 requests/iu }).count()) === 0 &&
 		(await page.locator("#crowdsec-tab-panel").innerText()).includes("—"),
 );
 await page.screenshot({ path: "backend/.smoke/ui-security-dashboard-missing-metrics.png", fullPage: true });
@@ -1273,7 +1273,7 @@ await page.getByText("AppSec metrics unavailable", { exact: true }).first().wait
 await page.getByRole("tab", { name: "WAF" }).click();
 check(
 	"an initial metrics outage renders an error instead of an endless skeleton",
-	/CrowdSec metrics are unavailable/.test(await page.locator("#crowdsec-tab-panel").innerText()),
+	/CrowdSec metrics are unavailable/u.test(await page.locator("#crowdsec-tab-panel").innerText()),
 );
 metricsFailure = false;
 await page.reload({ waitUntil: "networkidle" });
@@ -1316,15 +1316,15 @@ await page.getByRole("heading", { name: "Proxy Hosts", exact: true }).waitFor();
 check("proxy-host list shows when Anubis is enabled", (await page.getByText("Anubis enabled").count()) === 1);
 await page.getByRole("button", { name: "Add Proxy Host" }).click();
 const proxyModal = page.getByRole("dialog");
-const appsecToggle = proxyModal.getByRole("checkbox", { name: /CrowdSec AppSec protection/i });
+const appsecToggle = proxyModal.getByRole("checkbox", { name: /CrowdSec AppSec protection/iu });
 check("new proxy hosts enable their AppSec preference by default", await appsecToggle.isChecked());
-const authRequest = proxyModal.getByLabel(/Authentication \/ Bot Protection/i);
+const authRequest = proxyModal.getByLabel(/Authentication \/ Bot Protection/iu);
 check("new proxy hosts leave Anubis off by default", (await authRequest.inputValue()) === "none");
 await authRequest.selectOption("anubis");
 check("Anubis can be selected per proxy host", (await authRequest.inputValue()) === "anubis");
 check(
 	"Anubis guidance distinguishes browser sites from APIs",
-	(await proxyModal.getByText(/Leave it off for APIs, webhooks, and licensing services/).count()) === 1,
+	(await proxyModal.getByText(/Leave it off for APIs, webhooks, and licensing services/u).count()) === 1,
 );
 await page.screenshot({ path: "backend/.smoke/ui-proxy-host-protection.png", fullPage: true });
 await page.setViewportSize({ width: 390, height: 844 });
@@ -1339,7 +1339,7 @@ check(
 await page.screenshot({ path: "backend/.smoke/ui-proxy-host-protection-mobile.png", fullPage: true });
 await appsecToggle.uncheck();
 check("proxy-host AppSec protection can be turned off", !(await appsecToggle.isChecked()));
-await proxyModal.getByRole("button", { name: /close/i }).click();
+await proxyModal.getByRole("button", { name: /close/iu }).click();
 await page.goto(`${baseUrl}/settings`);
 const forbiddenOption = page.getByRole("radio", { name: "Animated forbidden page (403)", exact: true });
 await forbiddenOption.locator("..").click();

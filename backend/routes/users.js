@@ -76,7 +76,7 @@ router.use(limiter, readLimiter);
  */
 router
 	.route("/")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * GET /api/users
@@ -124,7 +124,7 @@ router
 				// We are in setup mode, only take the fields a user may set and force this
 				// first user to be an admin.
 				const { name, email, auth } = req.body;
-				body = { name, email, auth, roles: ["admin"] };
+				body = { name, email, auth, npmplus_is_admin: true };
 			}
 
 			const payload = apiValidator(getValidationSchema("/users", "post"), body);
@@ -143,7 +143,7 @@ router
  */
 router
 	.route("/:user_id")
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.all(userIdFromMe)
 
 	/**
@@ -170,8 +170,8 @@ router
 	 * Update and existing user
 	 */
 	.put(async (req, res) => {
-		const payload = apiValidator(getValidationSchema("/users/{userID}", "put"), req.body);
-		payload.id = req.params.user_id;
+		const payload = apiValidator(getValidationSchema("/users/{user_id}", "put"), req.body);
+		payload.id = Number(req.params.user_id);
 		const result = await internalUser.update(res.locals.access, payload);
 		res.status(200).send(result);
 	})
@@ -183,7 +183,7 @@ router
 	 */
 	.delete(async (req, res) => {
 		const result = await internalUser.delete(res.locals.access, {
-			id: req.params.user_id,
+			id: Number(req.params.user_id),
 		});
 		res.status(200).send(result);
 	});
@@ -195,7 +195,7 @@ router
  */
 router
 	.route("/:user_id/auth")
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.all(userIdFromMe)
 
 	/**
@@ -204,8 +204,8 @@ router
 	 * Update password for a user
 	 */
 	.put(async (req, res) => {
-		const payload = apiValidator(getValidationSchema("/users/{userID}/auth", "put"), req.body);
-		payload.id = req.params.user_id;
+		const payload = apiValidator(getValidationSchema("/users/{user_id}/auth", "put"), req.body);
+		payload.id = Number(req.params.user_id);
 		const result = await internalUser.setPassword(res.locals.access, payload);
 		if (Number(req.params.user_id) === res.locals.access.token.getUserId(0)) {
 			// the password change stamps token_valid_after, so a self-change must
@@ -229,7 +229,7 @@ router
  */
 router
 	.route("/:user_id/permissions")
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.all(userIdFromMe)
 
 	/**
@@ -238,8 +238,8 @@ router
 	 * Set some or all permissions for a user
 	 */
 	.put(async (req, res) => {
-		const payload = apiValidator(getValidationSchema("/users/{userID}/permissions", "put"), req.body);
-		payload.id = req.params.user_id;
+		const payload = apiValidator(getValidationSchema("/users/{user_id}/permissions", "put"), req.body);
+		payload.id = Number(req.params.user_id);
 		const result = await internalUser.setPermissions(res.locals.access, payload);
 		res.status(200).send(result);
 	});
@@ -251,7 +251,7 @@ router
  */
 router
 	.route("/:user_id/mfa")
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.all(userIdFromMe)
 
 	/**
@@ -260,7 +260,7 @@ router
 	 * Get MFA status for a user (all factors and backup codes)
 	 */
 	.get(async (req, res) => {
-		const status = await internalMfa.getStatus(res.locals.access, req.params.user_id);
+		const status = await internalMfa.getStatus(res.locals.access, Number(req.params.user_id));
 		res.status(200).send(status);
 	})
 
@@ -270,7 +270,7 @@ router
 	 * Admin reset: disable all second factors and backup codes for a user
 	 */
 	.delete(async (req, res) => {
-		await internalMfa.adminDisable(res.locals.access, req.params.user_id);
+		await internalMfa.adminDisable(res.locals.access, Number(req.params.user_id));
 		res.status(200).send(true);
 	});
 
@@ -281,7 +281,7 @@ router
  */
 router
 	.route("/:user_id/mfa/totp")
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.all(userIdFromMe)
 
 	/**
@@ -301,7 +301,7 @@ router
  */
 router
 	.route("/:user_id/mfa/totp/enable")
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.all(userIdFromMe)
 
 	/**
@@ -310,8 +310,8 @@ router
 	 * Verify code and enable TOTP
 	 */
 	.post(async (req, res) => {
-		const { code } = apiValidator(getValidationSchema("/users/{userID}/mfa/totp/enable", "post"), req.body);
-		const result = await internalMfa.enableTotp(res.locals.access, req.params.user_id, code);
+		const { code } = apiValidator(getValidationSchema("/users/{user_id}/mfa/totp/enable", "post"), req.body);
+		const result = await internalMfa.enableTotp(res.locals.access, Number(req.params.user_id), code);
 		const data = await internalToken.getFreshToken(res.locals.access, true);
 		res.cookie("__Host-Http-token", data.token, {
 			signed: true,
@@ -325,7 +325,7 @@ router
 
 router
 	.route("/:user_id/mfa/totp/disable")
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.all(userIdFromMe)
 
 	/**
@@ -334,8 +334,8 @@ router
 	 * Disable TOTP for a user
 	 */
 	.post(async (req, res) => {
-		const { code } = apiValidator(getValidationSchema("/users/{userID}/mfa/totp/disable", "post"), req.body);
-		await internalMfa.disableTotp(res.locals.access, req.params.user_id, code);
+		const { code } = apiValidator(getValidationSchema("/users/{user_id}/mfa/totp/disable", "post"), req.body);
+		await internalMfa.disableTotp(res.locals.access, Number(req.params.user_id), code);
 		res.status(200).send(true);
 	});
 
@@ -346,7 +346,7 @@ router
  */
 router
 	.route("/:user_id/mfa/backup-codes")
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.all(userIdFromMe)
 
 	/**
@@ -355,8 +355,8 @@ router
 	 * Regenerate backup codes
 	 */
 	.post(async (req, res) => {
-		const { code } = apiValidator(getValidationSchema("/users/{userID}/mfa/backup-codes", "post"), req.body);
-		const result = await internalMfa.regenerateBackupCodes(res.locals.access, req.params.user_id, code);
+		const { code } = apiValidator(getValidationSchema("/users/{user_id}/mfa/backup-codes", "post"), req.body);
+		const result = await internalMfa.regenerateBackupCodes(res.locals.access, Number(req.params.user_id), code);
 		const data = await internalToken.getFreshToken(res.locals.access, true);
 		res.cookie("__Host-Http-token", data.token, {
 			signed: true,
@@ -370,7 +370,7 @@ router
 
 router
 	.route("/:user_id/sessions")
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.all(userIdFromMe)
 
 	/**
@@ -404,7 +404,7 @@ router
  */
 router
 	.route("/:user_id/avatar")
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.all(userIdFromMe)
 
 	/**

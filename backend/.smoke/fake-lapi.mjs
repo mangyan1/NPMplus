@@ -193,7 +193,7 @@ const server = http.createServer((req, res) => {
 			// crowdsec's lapi validates the client user agent against the machine
 			// registration (a bare "node" agent is rejected); enforce the same rule
 			// here so the backend can never regress to an anonymous login
-			if (!/^npmplus-ui-backend\//.test(req.headers["user-agent"] || "")) {
+			if (!/^npmplus-ui-backend\//u.test(req.headers["user-agent"] || "")) {
 				return send(401, { code: 401, message: "incorrect Username or Password" });
 			}
 			const creds = JSON.parse(body);
@@ -223,7 +223,7 @@ const server = http.createServer((req, res) => {
 			const since = url.searchParams.get("since");
 			if (since) {
 				// parse the crowdsec duration syntax: 24h, 1h, 30m, 7d...
-				const match = /^([1-9][0-9]*)(s|m|h|d)$/.exec(since);
+				const match = /^([1-9][0-9]*)(s|m|h|d)$/u.exec(since);
 				if (!match) return send(400, { message: `bad since: ${since}` });
 				const unitSeconds = { s: 1, m: 60, h: 3600, d: 86400 }[match[2]];
 				const cutoff = Date.now() - Number(match[1]) * unitSeconds * 1000;

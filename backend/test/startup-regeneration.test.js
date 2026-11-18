@@ -1,7 +1,7 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import { access, mkdir, readFile } from "node:fs/promises";
-import test from "node:test";
+import it from "node:test";
 import db from "../db.js";
 import internalNginx from "../internal/nginx.js";
 import { getEnvironmentHash } from "../lib/environment-hash.js";
@@ -14,19 +14,19 @@ import Stream from "../models/stream.js";
 import User from "../models/user.js";
 import setup from "../setup.js";
 
-test("startup regenerates existing enabled hosts of every type before completing", async (t) => {
+it("startup regenerates existing enabled hosts of every type before completing", async (t) => {
 	await migrateUp();
 	for (const directory of ["proxy_host", "redirection_host", "dead_host", "stream", "default"]) {
 		await mkdir(`/data/nginx/${directory}`, { recursive: true });
 	}
-	await mkdir("/usr/local/nginx/conf/conf.d", { recursive: true });
+	await mkdir("/data/nginx", { recursive: true });
 	await mkdir("/data/access/temp", { recursive: true });
 	const user = await User.query().insertAndFetch({
 		name: "Existing administrator",
 		email: "startup@example.test",
 		nickname: "fixture",
 		avatar: "",
-		roles: ["admin"],
+		npmplus_is_admin: 1,
 	});
 	const proxy = {
 		owner_user_id: user.id,

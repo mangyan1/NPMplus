@@ -43,15 +43,22 @@ const getSectionStream = (items) => {
 	);
 };
 
-export function CertificateInUseFormatter({ proxyHosts, redirectionHosts, deadHosts, streams }) {
+export function CertificateInUseFormatter({ proxyHosts, redirectionHosts, deadHosts, streams, isDefault }) {
 	const totalCount = proxyHosts.length + redirectionHosts.length + deadHosts.length + streams.length;
-	if (totalCount === 0) {
+	if (totalCount === 0 && !isDefault) {
 		return <TrueFalseFormatter value={false} falseLabel="certificate.not-in-use" />;
 	}
 
 	const popover = (
 		<Popover id="popover-basic">
 			<Popover.Body>
+				{isDefault && (
+					<div>
+						<strong>
+							<T id="settings.default-site" />
+						</strong>
+					</div>
+				)}
 				{getSection("proxy-hosts", proxyHosts)}
 				{getSection("redirection-hosts", redirectionHosts)}
 				{getSection("dead-hosts", deadHosts)}
@@ -61,10 +68,10 @@ export function CertificateInUseFormatter({ proxyHosts, redirectionHosts, deadHo
 	);
 
 	return (
-		<OverlayTrigger trigger={["hover", "click", "focus"]} placement="bottom" overlay={popover}>
-			<div>
+		<OverlayTrigger placement="bottom" overlay={popover}>
+			<button type="button" className="p-0 border-0 bg-transparent">
 				<TrueFalseFormatter value trueLabel="certificate.in-use" />
-			</div>
+			</button>
 		</OverlayTrigger>
 	);
 }

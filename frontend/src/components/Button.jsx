@@ -1,5 +1,6 @@
 import cn from "clsx";
-import styles from "./Button.module.css";
+import { FormikContext } from "formik";
+import { useContext } from "react";
 
 function Button({
 	children,
@@ -11,31 +12,29 @@ function Button({
 	size,
 	color,
 	fullWidth,
-	isLoading,
+	isSubmitting,
 	disabled,
-	...buttonProps
+	autoFocus,
 }) {
+	const formSubmitting = useContext(FormikContext)?.isSubmitting;
 	const cns = cn(
 		"btn",
 		className,
-		variant === "outline" && styles.outline,
-		variant === "outline" || variant === "ghost"
-			? `btn-${variant}-${color || actionType || "secondary"}`
-			: actionType && `btn-${actionType}`,
-		variant && variant !== "outline" && variant !== "ghost" && `btn-${variant}`,
+		actionType && `btn-${actionType}`,
+		variant && `btn-${variant}`,
 		size && `btn-${size}`,
-		color && variant !== "outline" && variant !== "ghost" && `btn-${color}`,
+		color && `btn-${color}`,
 		fullWidth && "w-100",
-		isLoading && "btn-loading",
+		(isSubmitting || (formSubmitting && type === "submit")) && "btn-loading",
 	);
 
 	return (
 		<button
-			{...buttonProps}
 			type={type || "button"}
 			className={cns}
-			onClick={() => !isLoading && onClick?.()}
-			disabled={disabled || isLoading}
+			onClick={(e) => (isSubmitting || formSubmitting ? e.preventDefault() : onClick?.(e))}
+			disabled={disabled}
+			autoFocus={autoFocus}
 		>
 			{children}
 		</button>

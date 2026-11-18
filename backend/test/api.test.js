@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
-import { after, test } from "node:test";
+import { after, test as it } from "node:test";
 import { generate } from "otplib";
 import internalAuditLog from "../internal/audit-log.js";
 import crsControl from "../internal/crs-control.js";
@@ -62,13 +62,15 @@ const ADMIN_PASSWORD = "Correct-Horse-1";
 const PEON_EMAIL = "peon@example.com";
 const PEON_PASSWORD = "Peon-Pass-1";
 
-const insertUser = async ({ email, password, roles, permissions: permissionOverrides = {} }) => {
-	const user = await userModel.query().insertAndFetch({ email, name: "Test", nickname: "tester", avatar: "", roles });
+const insertUser = async ({ email, password, roles = [], npmplus_is_admin, permissions: permissionOverrides = {} }) => {
+	const isAdmin = roles.includes("admin") || npmplus_is_admin === 1 || npmplus_is_admin === true;
+	const user = await userModel
+		.query()
+		.insertAndFetch({ email, name: "Test", nickname: "tester", avatar: "", npmplus_is_admin: isAdmin ? 1 : 0 });
 	await authModel
 		.query()
 		// models/auth.js hashes the secret on insert, so pass it in plain
 		.insert({ user_id: user.id, type: "password", secret: password, meta: {} });
-	const isAdmin = roles.includes("admin");
 	await userPermissionModel.query().insert({
 		user_id: user.id,
 		visibility: isAdmin ? "all" : "user",
@@ -84,7 +86,7 @@ const insertUser = async ({ email, password, roles, permissions: permissionOverr
 	return user;
 };
 
-await insertUser({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD, roles: ["admin"] });
+await insertUser({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD, npmplus_is_admin: 1 });
 
 // setup.js seeds this row for real installations; the api settings test needs it
 await getInstance()("setting").insert({
@@ -141,9 +143,9 @@ const nextSecond = async () => {
 };
 
 // express clears a cookie by emitting the name with an empty value
-const CLEARED_SESSION_COOKIE_RE = /^__Host-Http-token=;/;
+const CLEARED_SESSION_COOKIE_RE = /^__Host-Http-token=;/u;
 const OIDC_NO_REDIRECT_PREFIX = "__Host-npmplus_oidc_no_redirect=true";
-const OIDC_NO_REDIRECT_EXPIRY_RE = /Max-Age=3600|Expires=/;
+const OIDC_NO_REDIRECT_EXPIRY_RE = /Max-Age=3600|Expires=/u;
 
 let adminCookie = null;
 let peonCookie = null;
@@ -151,7 +153,7 @@ let peonCookie = null;
 let adminId = null;
 let peonId = null;
 
-test("encoded JSON and form bodies are rejected before decompression and routing", async () => {
+it("encoded JSON and form bodies are rejected before decompression and routing", async () => {
 	for (const contentType of ["application/json", "application/x-www-form-urlencoded"]) {
 		for (const encoding of ["gzip", "deflate", "br"]) {
 			const response = await api("POST", "/api/tokens", {
@@ -176,12 +178,12 @@ after(async () => {
 
 // a missing token yields an anonymous access object whose permission check
 // 403s; a *present but invalid* token is what produces a 401
-test("a missing session is refused (403)", async () => {
+it("a missing session is refused (403)", async () => {
 	const res = await api("GET", "/api/settings");
 	assert.equal(res.status, 403);
 });
 
-test("rejected session cookies clear authentication instead of becoming anonymous", async () => {
+it("rejected session cookies clear authentication instead of becoming anonymous", async () => {
 	for (const value of ["s:old-session.rejected-signature", "unsigned-session", ""]) {
 		const res = await api("GET", "/api/users/me?expand=permissions", {
 			cookie: `__Host-Http-token=${encodeURIComponent(value)}`,
@@ -194,24 +196,24 @@ test("rejected session cookies clear authentication instead of becoming anonymou
 });
 
 // A valid cookie signature carrying an invalid JWT must also answer 401.
-test("an invalid session token is an authentication failure (401)", async () => {
+it("an invalid session token is an authentication failure (401)", async () => {
 	// cookie-signature 1.0.6 wire format: val + '.' + b64(hmac-sha256(secret, val)).replace(/=+$/,'')
 	const mac = crypto
 		.createHmac("sha256", "api-test-cookie-secret")
 		.update("not-a-real-token")
 		.digest("base64")
-		.replace(/[=]+$/, "");
+		.replace(/[=]+$/u, "");
 	const res = await api("GET", "/api/settings", { cookie: `__Host-Http-token=s:not-a-real-token.${mac}` });
 	assert.equal(res.status, 401);
 });
 
-test("a cross-origin request is rejected before auth (403)", async () => {
+it("a cross-origin request is rejected before auth (403)", async () => {
 	const res = await api("GET", "/api/settings", { headers: { origin: "http://evil.example" } });
 	assert.equal(res.status, 403);
 	assert.equal(res.body.error.message, "Rejected Origin.");
 });
 
-test("a cross-site fetch-metadata request is rejected (403)", async () => {
+it("a cross-site fetch-metadata request is rejected (403)", async () => {
 	const res = await api("GET", "/api/settings", { headers: { "sec-fetch-site": "cross-site" } });
 	assert.equal(res.status, 403);
 	assert.equal(res.body.error.message, "Rejected Sec-Fetch-Site Value.");
@@ -219,12 +221,12 @@ test("a cross-site fetch-metadata request is rejected (403)", async () => {
 
 // login-attempt rejections are PermissionError (403) since the upstream sync: the
 // frontend reloads on 401, so login attempts must not 401
-test("wrong credentials are rejected", async () => {
+it("wrong credentials are rejected", async () => {
 	const res = await api("POST", "/api/tokens", { body: { identity: ADMIN_EMAIL, secret: "wrong-password" } });
 	assert.equal(res.status, 403);
 });
 
-test("good credentials issue a signed session cookie", async () => {
+it("good credentials issue a signed session cookie", async () => {
 	const res = await api("POST", "/api/tokens", { body: { identity: ADMIN_EMAIL, secret: ADMIN_PASSWORD } });
 	assert.equal(res.status, 200);
 	const cookie = sessionCookieOf(res);
@@ -239,7 +241,7 @@ test("good credentials issue a signed session cookie", async () => {
 	adminId = me.body.id;
 });
 
-test("an existing session can refresh its token", async () => {
+it("an existing session can refresh its token", async () => {
 	const res = await api("GET", "/api/tokens", { cookie: adminCookie });
 	assert.equal(res.status, 200);
 	const refreshed = sessionCookieOf(res);
@@ -247,13 +249,34 @@ test("an existing session can refresh its token", async () => {
 	adminCookie = refreshed;
 });
 
-test("admin reads the settings list", async () => {
+it("admin reads the settings list", async () => {
 	const res = await api("GET", "/api/settings", { cookie: adminCookie });
 	assert.equal(res.status, 200);
 	assert.ok(Array.isArray(res.body));
 });
 
-test("admin updates a setting and reads it back", async (t) => {
+it("health, the nginx auth subrequest and report gates keep their contracts", async () => {
+	for (const path of ["/api", "/api/"]) {
+		const health = await api("GET", path);
+		assert.equal(health.status, 200, `${path}: ${health.text}`);
+		assert.equal(health.body.status, "OK");
+	}
+
+	// nginx uses /api/auth as its auth_request gate for avatar files: anonymous
+	// sessions must not get a 2xx, or the login check is bypassed.
+	assert.equal((await api("GET", "/api/auth")).status, 403);
+	assert.equal((await api("GET", "/api/auth", { cookie: adminCookie })).status, 200);
+
+	assert.equal((await api("GET", "/api/version/check")).status, 403);
+	assert.equal((await api("GET", "/api/reports/hosts")).status, 403);
+	const report = await api("GET", "/api/reports/hosts", { cookie: adminCookie });
+	assert.equal(report.status, 200, report.text);
+	for (const key of ["proxy", "redirection", "stream", "dead", "access_list", "certificate"]) {
+		assert.equal(typeof report.body[key], "number", key);
+	}
+});
+
+it("admin updates a setting and reads it back", async (t) => {
 	// updating default-site regenerates the nginx default config and reloads
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 	const put = await api("PUT", "/api/settings/default-site", {
@@ -266,7 +289,7 @@ test("admin updates a setting and reads it back", async (t) => {
 	assert.equal(read.body.value, "congratulations");
 });
 
-test("animated forbidden selection persists and generates a fixed 403 without replacing custom HTML", async (t) => {
+it("animated forbidden selection persists and generates a fixed 403 without replacing custom HTML", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 	const custom = "<p>Existing custom page</p>";
 	writeFileSync("/data/html/index.html", custom);
@@ -277,15 +300,15 @@ test("animated forbidden selection persists and generates a fixed 403 without re
 	assert.equal(put.status, 200, put.text);
 	const read = await api("GET", "/api/settings/default-site", { cookie: adminCookie });
 	assert.equal(read.body.value, "forbidden");
-	const config = readFileSync("/usr/local/nginx/conf/conf.d/default.conf", "utf8");
-	assert.match(config, /content_by_lua_block \{\s*return ngx\.exit\(ngx\.HTTP_FORBIDDEN\)/);
-	assert.match(config, /error_page 403 \/forbidden\.html;/);
-	assert.match(config, /location = \/forbidden\.html \{\s*root \/usr\/local\/nginx\/html;\s*internal;/);
-	assert.doesNotMatch(config, /return 503|root \/data\/html/);
+	const config = readFileSync("/data/nginx/default.conf", "utf8");
+	assert.match(config, /content_by_lua_block \{\s*return ngx\.exit\(ngx\.HTTP_FORBIDDEN\)/u);
+	assert.match(config, /error_page 403 \/forbidden\.html;/u);
+	assert.match(config, /location = \/forbidden\.html \{\s*root \/usr\/local\/nginx\/html;\s*internal;/u);
+	assert.doesNotMatch(config, /return 503|root \/data\/html/u);
 	assert.equal(readFileSync("/data/html/index.html", "utf8"), custom);
 });
 
-test("admin creates a user with password auth", async () => {
+it("admin creates a user with password auth", async () => {
 	const res = await api("POST", "/api/users", {
 		cookie: adminCookie,
 		body: { name: "Peon", email: PEON_EMAIL, auth: { type: "password", secret: PEON_PASSWORD } },
@@ -294,7 +317,7 @@ test("admin creates a user with password auth", async () => {
 	assert.ok(res.body.id > 0);
 });
 
-test("the new user can log in and hits the permission wall on admin routes", async () => {
+it("the new user can log in and hits the permission wall on admin routes", async () => {
 	const login = await api("POST", "/api/tokens", { body: { identity: PEON_EMAIL, secret: PEON_PASSWORD } });
 	assert.equal(login.status, 200);
 	peonCookie = sessionCookieOf(login);
@@ -309,7 +332,7 @@ test("the new user can log in and hits the permission wall on admin routes", asy
 	assert.equal(res.status, 403);
 });
 
-test("peon can still read proxy hosts (view permission)", async () => {
+it("peon can still read proxy hosts (view permission)", async () => {
 	// new non-admin users start hidden on every resource (upstream fce815df),
 	// so the read grant comes from the admin; the cross-field validation on
 	// permission updates requires access lists and certificates to be visible
@@ -331,7 +354,7 @@ test("peon can still read proxy hosts (view permission)", async () => {
 
 // the session-revocation route has no id validator, so the sentinel id used
 // to slip past canUser into an unauthenticated 500. It must be a 403.
-test("revoking the anonymous-session sentinel id is a permission error", async () => {
+it("revoking the anonymous-session sentinel id is a permission error", async () => {
 	const res = await api("DELETE", "/api/users/0/sessions");
 	assert.equal(res.status, 403);
 });
@@ -345,7 +368,7 @@ test("revoking the anonymous-session sentinel id is a permission error", async (
 // user B pass user A's checks. This pins the distinction end to end:
 // admin and peon perform the SAME users-get permission check back to back,
 // and the cross-user 403 walls must hold regardless of check order.
-test("cached permission checks never leak one user's id into another's validation", async () => {
+it("cached permission checks never leak one user's id into another's validation", async () => {
 	// admin first: primes any per-permission cache with an admin-role check
 	const adminSeesAdmin = await api("GET", `/api/users/${adminId}`, { cookie: adminCookie });
 	assert.equal(adminSeesAdmin.status, 200, adminSeesAdmin.text);
@@ -371,7 +394,7 @@ test("cached permission checks never leak one user's id into another's validatio
 // an API response, and expanded permissions expose only their access fields.
 // The strip lives in the models' $formatJson, so every response path (me,
 // get, getAll, create/update returns) is covered at once.
-test("user responses strip the token cutoff and permission row internals", async () => {
+it("user responses strip the token cutoff and permission row internals", async () => {
 	const me = await api("GET", "/api/users/me", { cookie: adminCookie });
 	assert.equal(me.status, 200, me.text);
 	assert.equal("npmplus_token_valid_after" in me.body, false);
@@ -393,7 +416,7 @@ test("user responses strip the token cutoff and permission row internals", async
 	);
 });
 
-test("proxy host CRUD round-trips through nginx config generation", async (t) => {
+it("proxy host CRUD round-trips through nginx config generation", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 
 	const created = await api("POST", "/api/nginx/proxy-hosts", {
@@ -434,13 +457,13 @@ test("proxy host CRUD round-trips through nginx config generation", async (t) =>
 // the caller's own lists for non-admins, so a foreign id fails as "no longer
 // exist" instead of silently linking and leaking its allow/deny rules and
 // basic-auth usernames through the expand endpoints.
-test("a delegated manager cannot attach another user's access list to their host", async (t) => {
+it("a delegated manager cannot attach another user's access list to their host", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 
 	await insertUser({
 		email: "manager@example.com",
 		password: "Manager-Pass-1",
-		roles: ["user"],
+		npmplus_is_admin: 0,
 		permissions: { proxy_hosts: "manage", access_lists: "manage" },
 	});
 	const login = await api("POST", "/api/tokens", {
@@ -511,7 +534,7 @@ const injectorLogin = async () => {
 	await insertUser({
 		email: "injector@example.com",
 		password: "Injector-Pass-1",
-		roles: ["user"],
+		npmplus_is_admin: 0,
 		permissions: { proxy_hosts: "manage", access_lists: "manage" },
 	});
 	return api("POST", "/api/tokens", {
@@ -519,7 +542,7 @@ const injectorLogin = async () => {
 	});
 };
 
-test("a delegated manager cannot inject nginx syntax through an access-list address", async (t) => {
+it("a delegated manager cannot inject nginx syntax through an access-list address", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 	const login = await injectorLogin();
 	assert.equal(login.status, 200, login.text);
@@ -544,7 +567,7 @@ test("a delegated manager cannot inject nginx syntax through an access-list addr
 	assert.equal(injected.status, 400, injected.text);
 });
 
-test("access-list addresses still accept ip, cidr and hostname forms", async (t) => {
+it("access-list addresses still accept ip, cidr and hostname forms", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 
 	const created = await api("POST", "/api/nginx/access-lists", {
@@ -564,7 +587,7 @@ test("access-list addresses still accept ip, cidr and hostname forms", async (t)
 	assert.equal(created.status, 201, created.text);
 });
 
-test("a delegated manager cannot inject nginx syntax through the auth-request upstream", async (t) => {
+it("a delegated manager cannot inject nginx syntax through the auth-request upstream", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 	const login = await injectorLogin();
 	assert.equal(login.status, 200, login.text);
@@ -587,7 +610,7 @@ test("a delegated manager cannot inject nginx syntax through the auth-request up
 	assert.equal(created.status, 400, created.text);
 });
 
-test("a conforming auth-request upstream is accepted", async (t) => {
+it("a conforming auth-request upstream is accepted", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 
 	const created = await api("POST", "/api/nginx/proxy-hosts", {
@@ -604,7 +627,7 @@ test("a conforming auth-request upstream is accepted", async (t) => {
 	assert.equal(created.status, 201, created.text);
 });
 
-test("stored nginx-syntax payloads are neutralized when configs regenerate", async (t) => {
+it("stored nginx-syntax payloads are neutralized when configs regenerate", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 
 	const acl = await api("POST", "/api/nginx/access-lists", {
@@ -652,7 +675,7 @@ test("stored nginx-syntax payloads are neutralized when configs regenerate", asy
 
 	const conf = readFileSync(`/data/nginx/proxy_host/${created.body.id}.conf`, { encoding: "utf8" });
 	// positive control: the regenerated config is for this host
-	assert.ok(conf.includes("server_name stored-payload.example.com;"), "host config did not regenerate");
+	assert.ok(conf.includes('server_name "stored-payload.example.com";'), "host config did not regenerate");
 	assert.ok(!conf.includes("pwn-stored"), "stored access-list address rendered into the config");
 	assert.ok(!conf.includes("upstream z"), "stored auth-request upstream rendered into the config");
 });
@@ -668,7 +691,7 @@ const listenOnEphemeralPort = () =>
 		srv.listen(0, "127.0.0.1", () => resolve({ srv, port: srv.address().port }));
 	});
 
-test("proxy host create probes the forward destination and reports it reachable", async (t) => {
+it("proxy host create probes the forward destination and reports it reachable", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 	const { srv, port } = await listenOnEphemeralPort();
 	try {
@@ -692,7 +715,7 @@ test("proxy host create probes the forward destination and reports it reachable"
 	}
 });
 
-test("proxy host create reports an unreachable forward destination", async (t) => {
+it("proxy host create reports an unreachable forward destination", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 	// grab an ephemeral port and then let go of it, so nothing is listening
 	const { srv, port } = await listenOnEphemeralPort();
@@ -712,7 +735,7 @@ test("proxy host create reports an unreachable forward destination", async (t) =
 	assert.ok(created.body.meta.reach_err, "no reach error message stored");
 });
 
-test("proxy host without a tcp destination clears the reachability probe state", async (t) => {
+it("proxy host without a tcp destination clears the reachability probe state", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 
 	const created = await api("POST", "/api/nginx/proxy-hosts", {
@@ -731,7 +754,7 @@ test("proxy host without a tcp destination clears the reachability probe state",
 	assert.equal(created.body.meta.reach_err, null, created.text);
 });
 
-test("audit history pages, filters and bounds results behind the admin gate", async () => {
+it("audit history pages, filters and bounds results behind the admin gate", async () => {
 	const { default: AuditLog } = await import("../models/audit-log.js");
 	const ids = [];
 	for (let index = 0; index < 5; index++) {
@@ -778,7 +801,7 @@ test("audit history pages, filters and bounds results behind the admin gate", as
 // CrowdSec routes: no LAPI is wired in the test environment, so these pin the
 // permission wall and the input-validation guards that fire before the LAPI
 // is ever contacted
-test("CRS control requires admin, fixed observation input, same origin and a prior audit", async () => {
+it("CRS control requires admin, fixed observation input, same origin and a prior audit", async () => {
 	const originalStatus = crsControl.status;
 	const originalEnable = crsControl.enable;
 	const originalAudit = internalAuditLog.add;
@@ -797,7 +820,7 @@ test("CRS control requires admin, fixed observation input, same origin and a pri
 			.createHmac("sha256", "api-test-cookie-secret")
 			.update("invalid")
 			.digest("base64")
-			.replace(/[=]+$/, "");
+			.replace(/[=]+$/u, "");
 		assert.equal(
 			(
 				await api("POST", "/api/crowdsec/crs", {
@@ -848,25 +871,25 @@ test("CRS control requires admin, fixed observation input, same origin and a pri
 	}
 });
 
-test("peon is refused on crowdsec routes", async () => {
+it("peon is refused on crowdsec routes", async () => {
 	const res = await api("GET", "/api/crowdsec/decisions", { cookie: peonCookie });
 	assert.equal(res.status, 403);
 	assert.equal(res.body.error.message, "access.denied");
 });
 
-test("crowdsec pagination guard fires before the LAPI is contacted", async () => {
+it("crowdsec pagination guard fires before the LAPI is contacted", async () => {
 	const res = await api("GET", "/api/crowdsec/decisions?page=10&page_size=100", { cookie: adminCookie });
 	assert.equal(res.status, 400);
 	assert.equal(res.body.error.message, "crowdsec.page-too-deep");
 });
 
-test("crowdsec manual-ban validation fires before the LAPI is contacted", async () => {
+it("crowdsec manual-ban validation fires before the LAPI is contacted", async () => {
 	const res = await api("POST", "/api/crowdsec/decisions", { cookie: adminCookie, body: { value: "" } });
 	assert.equal(res.status, 400);
 	assert.equal(res.body.error.message, "crowdsec.invalid-ban-input");
 });
 
-test("Anubis reporting retains admin authorization and unknown metrics before collection", async () => {
+it("Anubis reporting retains admin authorization and unknown metrics before collection", async () => {
 	assert.equal((await api("GET", "/api/crowdsec/anubis-report")).status, 403);
 	assert.equal((await api("GET", "/api/crowdsec/anubis-report", { cookie: peonCookie })).status, 403);
 	const report = await api("GET", "/api/crowdsec/anubis-report?window=1", { cookie: adminCookie });
@@ -876,7 +899,7 @@ test("Anubis reporting retains admin authorization and unknown metrics before co
 	assert.equal(report.body.ledger.total, 0);
 });
 
-test("crowdsec reads degrade to a stable not-wired error without a LAPI key", async () => {
+it("crowdsec reads degrade to a stable not-wired error without a LAPI key", async () => {
 	// key-auth reads and machine-token reads report distinct wiring states,
 	// while the anubis view degrades per-probe instead of failing
 	const expectations = [
@@ -920,7 +943,7 @@ const mockGravatarFetch = (t, respond) => {
 	});
 };
 
-test("user creation downloads and stores the gravatar for the email", async (t) => {
+it("user creation downloads and stores the gravatar for the email", async (t) => {
 	mockGravatarFetch(t, () => new Response(gravatarPng, { status: 200, headers: { "content-type": "image/png" } }));
 	const { readFile } = await import("node:fs/promises");
 	const res = await api("POST", "/api/users", {
@@ -935,7 +958,7 @@ test("user creation downloads and stores the gravatar for the email", async (t) 
 	assert.equal(stored.subarray(0, 4).toString("hex"), "89504e47");
 });
 
-test("a failed gravatar download falls back to the default avatar", async (t) => {
+it("a failed gravatar download falls back to the default avatar", async (t) => {
 	mockGravatarFetch(t, () => new Response("nope", { status: 500 }));
 	const res = await api("POST", "/api/users", {
 		cookie: adminCookie,
@@ -949,8 +972,12 @@ test("a failed gravatar download falls back to the default avatar", async (t) =>
 	assert.equal(res.body.avatar, "/images/default-avatar.jpg");
 });
 
-test("a custom local avatar survives a user update", async (_t) => {
-	const user = await insertUser({ email: "local-avatar@example.com", password: "Local-Avatar-1", roles: ["user"] });
+it("a custom local avatar survives a user update", async (_t) => {
+	const user = await insertUser({
+		email: "local-avatar@example.com",
+		password: "Local-Avatar-1",
+		npmplus_is_admin: 0,
+	});
 	await userModel.query().patchAndFetchById(user.id, { avatar: "/images/avatar/local.jpg" });
 	const res = await api("PUT", `/api/users/${user.id}`, {
 		cookie: adminCookie,
@@ -960,10 +987,10 @@ test("a custom local avatar survives a user update", async (_t) => {
 	assert.equal(res.body.avatar, "/images/avatar/local.jpg");
 });
 
-test("login backfills the avatar of a user whose row has none", async (t) => {
+it("login backfills the avatar of a user whose row has none", async (t) => {
 	// this mimics the installer seed path, which inserts the user directly
 	// with an empty avatar and never runs the gravatar download
-	const seeded = await insertUser({ email: "backfill@example.com", password: "Backfill-1", roles: ["admin"] });
+	const seeded = await insertUser({ email: "backfill@example.com", password: "Backfill-1", npmplus_is_admin: 1 });
 	assert.equal(seeded.avatar, "");
 
 	mockGravatarFetch(t, () => new Response(gravatarPng, { status: 200, headers: { "content-type": "image/png" } }));
@@ -981,8 +1008,12 @@ test("login backfills the avatar of a user whose row has none", async (t) => {
 	assert.fail("login did not backfill the missing gravatar avatar");
 });
 
-test("a failed backfill leaves the avatar empty for the next login to retry", async (t) => {
-	const seeded = await insertUser({ email: "backfill-fail@example.com", password: "Backfill-2", roles: ["admin"] });
+it("a failed backfill leaves the avatar empty for the next login to retry", async (t) => {
+	const seeded = await insertUser({
+		email: "backfill-fail@example.com",
+		password: "Backfill-2",
+		npmplus_is_admin: 1,
+	});
 	mockGravatarFetch(t, () => new Response("nope", { status: 500 }));
 	const login = await api("POST", "/api/tokens", {
 		body: { identity: "backfill-fail@example.com", secret: "Backfill-2" },
@@ -993,7 +1024,7 @@ test("a failed backfill leaves the avatar empty for the next login to retry", as
 	assert.equal(row.avatar, "");
 });
 
-test("security telemetry requires admin access and represents an empty collector honestly", async () => {
+it("security telemetry requires admin access and represents an empty collector honestly", async () => {
 	assert.equal((await api("GET", "/api/crowdsec/telemetry")).status, 403);
 	assert.equal((await api("GET", "/api/crowdsec/telemetry", { cookie: peonCookie })).status, 403);
 	const result = await api("GET", "/api/crowdsec/telemetry?window_hours=1", { cookie: adminCookie });
@@ -1004,7 +1035,7 @@ test("security telemetry requires admin access and represents an empty collector
 	assert.deepEqual(result.body.nginx.hosts, []);
 });
 
-test("extended alert history retains the admin gate", async () => {
+it("extended alert history retains the admin gate", async () => {
 	for (const path of ["/attackers", "/attackers/timeline?ip=192.0.2.1", "/attackers/events/1"]) {
 		assert.equal((await api("GET", `/api/crowdsec${path}`)).status, 403);
 		assert.equal((await api("GET", `/api/crowdsec${path}`, { cookie: peonCookie })).status, 403);
@@ -1027,7 +1058,7 @@ test("extended alert history retains the admin gate", async () => {
 // /api/nginx/proxy-hosts, which has no limiter, instead of /api/users/me.
 // ---------------------------------------------------------------------------
 
-test("a self password change issues a fresh cookie and kills the old session", async () => {
+it("a self password change issues a fresh cookie and kills the old session", async () => {
 	const NEW_PASSWORD = "Rotated-Pass-2";
 	const login1 = await api("POST", "/api/tokens", { body: { identity: PEON_EMAIL, secret: PEON_PASSWORD } });
 	assert.equal(login1.status, 200, login1.text);
@@ -1076,7 +1107,7 @@ test("a self password change issues a fresh cookie and kills the old session", a
 	assert.equal((await api("GET", "/api/nginx/proxy-hosts", { cookie: refreshedCookie })).status, 200);
 });
 
-test("a self password change without the current password is refused", async () => {
+it("a self password change without the current password is refused", async () => {
 	const res = await api("PUT", `/api/users/${peonId}/auth`, {
 		cookie: peonCookie,
 		body: { type: "password", secret: "Still-No-Current-1" },
@@ -1086,7 +1117,7 @@ test("a self password change without the current password is refused", async () 
 	assert.equal((await api("GET", "/api/nginx/proxy-hosts", { cookie: peonCookie })).status, 200);
 });
 
-test("an admin password change for another user does not refresh the admin session", async () => {
+it("an admin password change for another user does not refresh the admin session", async () => {
 	const OTHER_PASSWORD = "Other-User-Pass-3";
 	const created = await api("POST", "/api/users", {
 		cookie: adminCookie,
@@ -1117,7 +1148,7 @@ test("an admin password change for another user does not refresh the admin sessi
 	);
 });
 
-test("revoking your own sessions clears the cookie and sets the oidc opt-out", async () => {
+it("revoking your own sessions clears the cookie and sets the oidc opt-out", async () => {
 	// dedicated session so the shared peon cookie survives this test
 	const login = await api("POST", "/api/tokens", { body: { identity: PEON_EMAIL, secret: "Rotated-Pass-2" } });
 	assert.equal(login.status, 200, login.text);
@@ -1146,7 +1177,7 @@ test("revoking your own sessions clears the cookie and sets the oidc opt-out", a
 	peonCookie = sessionCookieOf(relogin);
 });
 
-test("revoking another user's sessions requires admin and does not clear the caller cookie", async () => {
+it("revoking another user's sessions requires admin and does not clear the caller cookie", async () => {
 	// a non-admin revoking someone else gets the permission wall (403)
 	const otherSessions = await api("DELETE", `/api/users/${adminId}/sessions`, { cookie: peonCookie });
 	assert.equal(otherSessions.status, 403);
@@ -1169,7 +1200,7 @@ test("revoking another user's sessions requires admin and does not clear the cal
 	assert.ok(peonCookie);
 });
 
-test("a revoked session is rejected on every request, not only the first after revoke", async () => {
+it("a revoked session is rejected on every request, not only the first after revoke", async () => {
 	// pin that the revocation check runs per-request against the database
 	// stamp: issue two requests on the same cookie, revoke between them
 	await nextSecond();
@@ -1183,12 +1214,12 @@ test("a revoked session is rejected on every request, not only the first after r
 	assert.equal((await api("GET", "/api/nginx/proxy-hosts", { cookie })).status, 401);
 });
 
-test("delegated proxy CRUD cannot publish local sockets or named upstreams", async (t) => {
+it("delegated proxy CRUD cannot publish local sockets or named upstreams", async (t) => {
 	t.mock.method(utils, "execFile", async () => ({ stdout: "ok" }));
 	await insertUser({
 		email: "socket-manager@example.com",
 		password: "Socket-Manager-1",
-		roles: ["user"],
+		npmplus_is_admin: 0,
 		permissions: { proxy_hosts: "manage" },
 	});
 	const login = await api("POST", "/api/tokens", {
@@ -1232,7 +1263,7 @@ test("delegated proxy CRUD cannot publish local sockets or named upstreams", asy
 	assert.equal((await api("DELETE", url, { cookie })).status, 200);
 });
 
-test("access-list usernames reject record delimiters and preserve ordinary credentials", async () => {
+it("access-list usernames reject record delimiters and preserve ordinary credentials", async () => {
 	const oversizedPassword = await api("POST", "/api/nginx/access-lists", {
 		cookie: adminCookie,
 		body: { name: "oversized-password", items: [{ username: "valid-user", password: "é".repeat(40) }] },
@@ -1275,10 +1306,10 @@ test("access-list usernames reject record delimiters and preserve ordinary crede
 	assert.equal(readFileSync("/data/access/legacy-audit", "utf8"), "valid:synthetic-hash\n");
 });
 
-test("MFA changes await the new session before setting the enrollment and backup-code cookies", async (t) => {
+it("MFA changes await the new session before setting the enrollment and backup-code cookies", async (t) => {
 	const email = "mfa-session-refresh@example.test";
 	const password = "Mfa-Session-Fixture-1";
-	const user = await insertUser({ email, password, roles: [] });
+	const user = await insertUser({ email, password, npmplus_is_admin: 0 });
 	const login = await api("POST", "/api/tokens", {
 		body: { identity: email, secret: password },
 		headers: { "x-forwarded-for": "192.0.2.166" },

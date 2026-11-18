@@ -1,10 +1,10 @@
 import { IconSearch } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import { deleteRedirectionHost, toggleRedirectionHost } from "src/api/backend";
 import { Button, HasPermission, LoadingPage } from "src/components";
 import { getDirectory, useRedirectionHosts } from "src/hooks";
-import { T } from "src/locale";
+import { intl, T } from "src/locale";
 import { showDeleteConfirmModal, showRedirectionHostModal } from "src/modals";
 import { MANAGE, REDIRECTION_HOSTS } from "src/modules/Permissions";
 import { showError, showObjectSuccess } from "src/notifications";
@@ -13,25 +13,21 @@ import Table from "./Table";
 export default function TableWrapper() {
 	const [search, setSearch] = useState("");
 	const [sorting, setSorting] = useState([{ id: "enabled", desc: false }]);
-	const { isFetching, isPending, isError, error, data } = useRedirectionHosts(["owner", "certificate"]);
+	const { isFetching, isPending, isError, error, data } = useRedirectionHosts([
+		"owner",
+		"certificate",
+		"mtls_certificate",
+	]);
 
-	useEffect(() => {
-		// this can happen if someone deletes the last item while searching
-		if (search !== "" && !data?.length) {
-			setSearch("");
-		}
-	});
+	// this can happen if someone deletes the last item while searching
+	if (search !== "" && !data?.length) setSearch("");
 
 	if (isPending) {
 		return <LoadingPage />;
 	}
 
 	if (isError) {
-		return (
-			<Alert variant="danger">
-				<T id={error?.message || "error.unknown"} />
-			</Alert>
-		);
+		return <Alert variant="danger">{error?.message}</Alert>;
 	}
 
 	const handleDisableToggle = async (id, enabled) => {
@@ -64,6 +60,7 @@ export default function TableWrapper() {
 		sorting,
 		onSortingChange: setSorting,
 		onEdit: (id) => showRedirectionHostModal(id),
+		onClone: (id) => showRedirectionHostModal(id, true),
 		onDelete: (id) => {
 			const host = data?.find((item) => item.id === id);
 			showDeleteConfirmModal({
@@ -104,7 +101,8 @@ export default function TableWrapper() {
 											<IconSearch size={16} />
 										</span>
 										<input
-											type="text"
+											type="search"
+											placeholder={intl.formatMessage({ id: "action.search" })}
 											className="form-control form-control-sm"
 											autoComplete="off"
 											onChange={(e) => setSearch(e.target.value.toLowerCase().trim())}

@@ -27,8 +27,8 @@
 		"hsts_enabled",
 		"hsts_subdomains",
 		"npmplus_noindex",
-		"npmplus_crowdsec_appsec",
-		"npmplus_proxy_request_buffering",
+		"npmplus_disable_crowdsec_appsec",
+		"npmplus_disable_proxy_request_buffering",
 		"npmplus_proxy_response_buffering",
 		"npmplus_upstream_compression",
 		"npmplus_fancyindex",
@@ -82,11 +82,11 @@
 		"npmplus_noindex": {
 			"$ref": "../common.json#/properties/npmplus_noindex"
 		},
-		"npmplus_crowdsec_appsec": {
-			"$ref": "../common.json#/properties/npmplus_crowdsec_appsec"
+		"npmplus_disable_crowdsec_appsec": {
+			"$ref": "../common.json#/properties/npmplus_disable_crowdsec_appsec"
 		},
-		"npmplus_proxy_request_buffering": {
-			"$ref": "../common.json#/properties/npmplus_proxy_request_buffering"
+		"npmplus_disable_proxy_request_buffering": {
+			"$ref": "../common.json#/properties/npmplus_disable_proxy_request_buffering"
 		},
 		"npmplus_proxy_response_buffering": {
 			"$ref": "../common.json#/properties/npmplus_proxy_response_buffering"
@@ -204,10 +204,11 @@
 						"enum": [
 							"",
 							"@",
-							"= ",
-							"~ ",
-							"~* ",
-							"^~ "
+							"$",
+							"=",
+							"~",
+							"~*",
+							"^~"
 						],
 						"default": ""
 					},
@@ -223,11 +224,11 @@
 					"npmplus_noindex": {
 						"$ref": "#/properties/npmplus_noindex"
 					},
-					"npmplus_crowdsec_appsec": {
-						"$ref": "#/properties/npmplus_crowdsec_appsec"
+					"npmplus_disable_crowdsec_appsec": {
+						"$ref": "#/properties/npmplus_disable_crowdsec_appsec"
 					},
-					"npmplus_proxy_request_buffering": {
-						"$ref": "#/properties/npmplus_proxy_request_buffering"
+					"npmplus_disable_proxy_request_buffering": {
+						"$ref": "#/properties/npmplus_disable_proxy_request_buffering"
 					},
 					"npmplus_proxy_response_buffering": {
 						"$ref": "#/properties/npmplus_proxy_response_buffering"
@@ -242,7 +243,20 @@
 						"$ref": "#/properties/npmplus_x_frame_options"
 					},
 					"npmplus_auth_request": {
-						"$ref": "#/properties/npmplus_auth_request"
+						"type": "string",
+						"enum": [
+							"global",
+							"none",
+							"anubis",
+							"tinyauth",
+							"oauth2proxy",
+							"voidauth",
+							"authelia",
+							"authentik",
+							"authentik-send-basic-auth"
+						],
+						"default": "global",
+						"example": "global"
 					},
 					"npmplus_auth_request_upstream": {
 						"$ref": "#/properties/npmplus_auth_request_upstream"
@@ -281,6 +295,18 @@
 			"$ref": "../common.json#/properties/hsts_subdomains"
 		},
 		"certificate": {
+			"oneOf": [
+				{
+					"type": "null",
+					"example": null
+				},
+				{
+					"$ref": "./certificate-object.json"
+				}
+			],
+			"example": null
+		},
+		"mtls_certificate": {
 			"oneOf": [
 				{
 					"type": "null",

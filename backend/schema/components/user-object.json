@@ -9,7 +9,7 @@
 		"email",
 		"name",
 		"avatar",
-		"roles"
+		"npmplus_is_admin"
 	],
 	"additionalProperties": false,
 	"properties": {
@@ -55,26 +55,23 @@
 			"description": "Gravatar URL based on email, without scheme",
 			"example": "//www.gravatar.com/avatar/6193176330f8d38747f038c170ddb193?default=mm"
 		},
-		"roles": {
-			"description": "Roles applied",
-			"default": [],
-			"example": [
-				"admin"
-			],
-			"type": "array",
-			"uniqueItems": true,
-			"items": {
-				"type": "string",
-				"enum": [
-					"admin"
-				]
-			}
+		"npmplus_is_admin": {
+			"type": "boolean",
+			"description": "Is user an Admin",
+			"default": false,
+			"example": true
 		},
 		"npmplus_token_valid_after": {
 			"type": "integer",
 			"description": "Tokens issued at or before this unix time are rejected",
 			"readOnly": true,
 			"example": 0
+		},
+		"mfa_enabled": {
+			"type": "boolean",
+			"description": "Is MFA enabled, only sent in the user list",
+			"readOnly": true,
+			"example": true
 		},
 		"goaccess": {
 			"type": "boolean",

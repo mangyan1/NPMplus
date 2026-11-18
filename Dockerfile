@@ -1,34 +1,31 @@
-# syntax=docker/dockerfile:1.28.0@sha256:bb22d9815c728170f72750f4e5b0d672e06176142e1d602c7e66c050100b7e5b
-FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS nginx
+# syntax=docker/dockerfile:1.29.0@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS nginx
 SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 
 ARG LUAJIT_INC=/usr/include/luajit-2.1
 ARG LUAJIT_LIB=/usr/lib
 
-ARG AWSLC_VER=cd481c207e38f06aeb5766f4a1cdfce10a4c0af8 # v5.12.0
+ARG AWSLC_VER=4378134b6206a0a0fa62f31367d0729ca0780e4c # v5.15.0
 
 ARG NGINX_VER=140aa942711868a8daeb95810bc9a81f272ada72 # release-1.31.8
-ARG DTR_VER=1.29.2
-ARG ORP_VER=1.31.8
-ARG ZNP_VER=1.30.0
 
-ARG NB_VER=df036cc80cd4f5b0bf67b25b0a10d0ee86ba5bdb # master
-ARG NUB_VER=bce69c4295e43ae62e95a9ddff7902baf5b0cbd7 # 1.0.0
-ARG ZNM_VER=1c0d3f96708c86afeebd7d9778504f77c7893227 # 0.1.2
-ARG NHUZFM_VER=f743b0250c93ae5fa721bed6bebc4c66c5139aee # 1.0.0
+ARG NB_VER=42fd8006b13f8a64f1a4ab8b84435c888cb35318 # 1.1.0
+ARG NUB_VER=a09e2fe091c2729a0aee62a16d67d94f19c1ff86 # 1.1.0
+ARG ZNM_VER=33324b7e365b65a0b157973c07d48a12b69749de # 0.2.0
+ARG NHUZFM_VER=1dffe587aeb1346819a942367a961c4044df7f2c # 1.1.0
 ARG NF_VER=70311f239ec1e88ff79c669d126d08532ddb8554 # v0.6.0
 ARG HMNM_VER=21066f7eed72e4de4f6ec47b93e8d5f36c38b84a # v0.41
 ARG NDK_VER=bd44d16302273052d6005d7bdb55f74e23813de3 # v0.3.4
 ARG LNM_VER=e672520a9480524f40ee8f999ef1f182959750a9 # v0.10.32rc7
 
 ARG NJS_VER=72e6a980b9bf2a28ae2d568bbc3b6830a5d7c39e # 1.0.2
-ARG NAL_VER=ac737bedec7d7f560cb6a85beb14573aa3e12376 # v1.2.0
+ARG NAL_VER=c7cc57b2fdec647efa37883f96585058eda4382c # v1.4.0
 ARG VTS_VER=38b8612527ecb003ea15cefe934f302cf1a7c27e # v0.2.7
 ARG NNTLM_VER=3da77b0cb30e517dfee01d7e7f7d649144d24051 # master
 
 
 WORKDIR /src
-COPY patches/*.patch /src
+COPY patches /src/patches
 COPY rootfs/usr/local/bin/git-clone-commit.sh /usr/local/bin/git-clone-commit.sh
 
 RUN apk upgrade --no-cache -a && \
@@ -53,42 +50,13 @@ RUN git config --global advice.detachedHead false && \
 
 RUN git-clone-commit.sh https://github.com/aws/aws-lc "$AWSLC_VER" /src/aws-lc && \
     cd /src/aws-lc && \
-    git apply /src/aws-lc-tls13-cipher-preference.patch && \
+    git apply /src/patches/aws-lc/tls13-cipher-preference.patch && \
     cmake /src/aws-lc -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DDISABLE_GO=ON -DDISABLE_PERL=ON -DBUILD_TESTING=OFF && \
     ninja install
 
 RUN git-clone-commit.sh https://github.com/nginx/nginx "$NGINX_VER" /src/nginx && \
     cd /src/nginx && \
-    wget -q https://patch-diff.githubusercontent.com/raw/nginx/nginx/pull/689.patch -O /src/nginx/1.patch && \
-    echo "73fdee62748f1624f87015a951a2480fd0d4fe566a81d92b852b51536d954b91  /src/nginx/1.patch" | sha256sum -c - && \
-    git apply /src/nginx/1.patch && \
-    wget -q https://patch-diff.githubusercontent.com/raw/nginx/nginx/pull/1333.patch -O /src/nginx/2.patch && \
-    echo "01bf75b130b8f91075ec913a400a8debfab6da0ac609711c7d412ddbe59dd898  /src/nginx/2.patch" | sha256sum -c - && \
-    git apply /src/nginx/2.patch && \
-    wget -q https://raw.githubusercontent.com/nginx-modules/ngx_http_tls_dyn_size/master/nginx__dynamic_tls_records_"$DTR_VER"%2B.patch -O /src/nginx/3.patch && \
-    echo "0aa9c73e7515dbbd48ecc798f7894412c1a50e96e98aee25847e823059faf821  /src/nginx/3.patch" | sha256sum -c - && \
-    git apply /src/nginx/3.patch && \
-    wget -q https://raw.githubusercontent.com/openresty/openresty/master/patches/nginx/"$ORP_VER"/nginx-"$ORP_VER"-resolver_conf_parsing.patch -O /src/nginx/4.patch && \
-    echo "24d6a51349551e65c16709122307a12ce84274cbbaa224adfa5853aa367608b8  /src/nginx/4.patch" | sha256sum -c - && \
-    git apply /src/nginx/4.patch && \
-    wget -q https://raw.githubusercontent.com/zlib-ng/patches/master/nginx/"$ZNP_VER"-zlib-ng.patch -O /src/nginx/5.patch && \
-    echo "bcd0f2fb9723fc1f251f94cead8d5160e767f7d4a04365331396a72a9ba54c6b  /src/nginx/5.patch" | sha256sum -c - && \
-    git apply /src/nginx/5.patch && \
-    wget -q https://raw.githubusercontent.com/openresty/openresty/master/patches/nginx/"$ORP_VER"/nginx-"$ORP_VER"-resolver_hosts.patch -O /src/nginx/6.patch && \
-    echo "7a3e9ebe4fafaef0a90773ed093bed83c3e753af5983718b0aee50881c32151b  /src/nginx/6.patch" | sha256sum -c - && \
-    git apply /src/nginx/6.patch && \
-    sed -i "s|ngx_destroy_pool(r->hosts->pool);|r->hosts->pool->log = r->log; &|" /src/nginx/src/core/ngx_resolver.c && \
-    wget -q https://raw.githubusercontent.com/openresty/openresty/master/patches/nginx/"$ORP_VER"/nginx-"$ORP_VER"-upstream_pipelining.patch -O /src/nginx/7.patch && \
-    echo "f147c9724a0ad33084a3cb51acdafbd4dbd2c40ba5840af1684b7b9595b24ae2  /src/nginx/7.patch" | sha256sum -c - && \
-    git apply /src/nginx/7.patch && \
-    wget -q https://raw.githubusercontent.com/openresty/openresty/master/patches/nginx/"$ORP_VER"/nginx-"$ORP_VER"-reuseport_close_unused_fds.patch -O /src/nginx/8.patch && \
-    echo "7f1c3eefcd841502515f529e3a0c0a17492e7e44ba5c47fc50ae6a3123d8937f  /src/nginx/8.patch" | sha256sum -c - && \
-    git apply -C1 /src/nginx/8.patch && \
-    git apply /src/nginx-footer.patch && \
-    git apply /src/nginx-ip-sni.patch && \
-    git apply /src/nginx-buffer-log.patch && \
-    git apply /src/nginx-ech-boringssl-awslc.patch && \
-    git apply /src/nginx-cert-compression-brotli.patch && \
+    git apply /src/patches/nginx/*.patch && \
     \
     git-clone-commit.sh https://github.com/HanadaLee/ngx_http_brotli_module "$NB_VER" /src/ngx_http_brotli_module && \
     git-clone-commit.sh https://github.com/HanadaLee/ngx_http_unbrotli_filter_module "$NUB_VER" /src/ngx_http_unbrotli_filter_module && \
@@ -96,16 +64,16 @@ RUN git-clone-commit.sh https://github.com/nginx/nginx "$NGINX_VER" /src/nginx &
     git-clone-commit.sh https://github.com/HanadaLee/ngx_http_unzstd_filter_module "$NHUZFM_VER" /src/ngx_http_unzstd_filter_module && \
     git-clone-commit.sh https://github.com/aperezdc/ngx-fancyindex "$NF_VER" /src/ngx-fancyindex && \
     cd /src/ngx-fancyindex && \
-    wget -q https://patch-diff.githubusercontent.com/raw/aperezdc/ngx-fancyindex/pull/176.patch -O /src/ngx-fancyindex/1.patch && \
-    echo "0b76992c0981e5beda1f158493d0334dcbdfe381348ea0eeeb09123bd9aaa4d3  /src/ngx-fancyindex/1.patch" | sha256sum -c - && \
-    git apply /src/ngx-fancyindex/1.patch && \
+    git apply /src/patches/ngx-fancyindex/close-headerfooter-files.patch && \
     git-clone-commit.sh https://github.com/openresty/headers-more-nginx-module "$HMNM_VER" /src/headers-more-nginx-module && \
     git-clone-commit.sh https://github.com/vision5/ngx_devel_kit "$NDK_VER" /src/ngx_devel_kit && \
     git-clone-commit.sh https://github.com/openresty/lua-nginx-module "$LNM_VER" /src/lua-nginx-module && \
     cd /src/lua-nginx-module && \
-    git apply /src/lua-nginx-module-aws-lc.patch && \
+    git apply /src/patches/lua-nginx-module/aws-lc.patch && \
     \
     git-clone-commit.sh https://github.com/nginx/njs "$NJS_VER" /src/njs && \
+    cd /src/njs && \
+    git apply /src/patches/njs/zlib-ng.patch && \
     git-clone-commit.sh https://github.com/kvspb/nginx-auth-ldap "$NAL_VER" /src/nginx-auth-ldap && \
     git-clone-commit.sh https://github.com/vozlt/nginx-module-vts "$VTS_VER" /src/nginx-module-vts && \
     git-clone-commit.sh https://github.com/gabihodoroaga/nginx-ntlm-module "$NNTLM_VER" /src/nginx-ntlm-module
@@ -212,13 +180,12 @@ COPY backend /app
 FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 ENV NODE_ENV=production
+ENV NODE_OPTIONS=--use-openssl-ca
 ARG LRC_VER=873d072635fd408d81a0abd4187392f3f128ceb9 # v0.1.35rc2
 ARG LRL_VER=3ff6300e68b73ba20e909c7d16bd839aef2e5a4b # v0.15
 ARG LCSB_VER=92a8617ede3b781c33cd39e73734505597e318fd # main
-ARG COF_VER=da93e0cec7fdb1a80f4972f75b3638763d012c0e # main
-ARG NBF_VER=5cee8db2a505f2a253e24691399c828c043071fc # master
-ARG PIP_VER=26.2.2
-ARG CERTBOT_VER=5.9.0
+ARG PIP_VER=26.3
+ARG CERTBOT_VER=5.10.0
 # CVE-2026-97687 and CVE-2026-97689; preserve runtime DNS-plugin installation.
 ARG URLLIB3_VER=2.8.0
 
@@ -272,18 +239,9 @@ RUN apk upgrade --no-cache -a && \
     python3 -m venv /usr/local && \
     pip install --no-cache-dir --upgrade "pip==$PIP_VER" "certbot==$CERTBOT_VER" "urllib3==$URLLIB3_VER" && \
     \
-    wget -q https://raw.githubusercontent.com/tomwassenberg/certbot-ocsp-fetcher/"$COF_VER"/certbot-ocsp-fetcher -O /usr/local/bin/certbot-ocsp-fetcher.sh && \
-    echo "60148ed2ffef2f1354427d3e080400d008132f8e5fb014f721f5986f438dd621  /usr/local/bin/certbot-ocsp-fetcher.sh" | sha256sum -c - && \
-    sed -i "s|/live||g" /usr/local/bin/certbot-ocsp-fetcher.sh && \
-    \
-    wget -q https://raw.githubusercontent.com/vasilevich/nginxbeautifier/"$NBF_VER"/index.js -O /usr/local/bin/nginxbeautifier && \
-    echo "316349857e6de63d21bec1eee155819237d67b338be7c35514879ac8b00848fc  /usr/local/bin/nginxbeautifier" | sha256sum -c - && \
-    wget -q https://raw.githubusercontent.com/vasilevich/nginxbeautifier/"$NBF_VER"/nginxbeautifier.js -O /usr/local/bin/nginxbeautifier.js && \
-    echo "406f715ae944cc46ae31e79a1bc3ea758f91605621113b8a29f5332fe13f0a83  /usr/local/bin/nginxbeautifier.js" | sha256sum -c - && \
-    sed -i "s|code.slice(0, startOfParanthesis - 1)|code.slice(0, startOfParanthesis)|g" /usr/local/bin/nginxbeautifier.js && \
-    \
     ln -s /usr/local/nginx/sbin/nginx /usr/local/bin/nginx && \
     ln -s /app/password-reset.js /usr/local/bin/password-reset.js && \
+    ln -s /app/lib/ocsp.js /usr/local/bin/ocsp.js && \
     ln -s /app/index.js /usr/local/bin/index.js && \
     \
     chmod +x /usr/local/bin/*

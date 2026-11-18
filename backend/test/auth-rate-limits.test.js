@@ -1,6 +1,6 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
-import { after, test } from "node:test";
+import { after, test as it } from "node:test";
 
 process.env.COOKIE_SECRET = "rate-limit-test-cookie-secret";
 const { default: app } = await import("../app.js");
@@ -16,7 +16,7 @@ const user = await User.query().insertAndFetch({
 	name: "Limits fixture",
 	nickname: "fixture",
 	avatar: "/images/default-avatar.jpg",
-	roles: ["admin"],
+	npmplus_is_admin: 1,
 });
 await UserPermission.query().insert({
 	user_id: user.id,
@@ -44,7 +44,7 @@ const request = (method, path, body, cookieValue) =>
 const credentials = { identity: "limits@example.com", secret: "Fixture-Password-123" };
 let cookie;
 
-test("logged-out session checks do not consume the password failure allowance", async () => {
+it("logged-out session checks do not consume the password failure allowance", async () => {
 	for (let i = 0; i < 8; i++) assert.equal((await request("GET", "/tokens")).status, 401);
 	const login = await request("POST", "/tokens", credentials);
 	assert.equal(login.status, 200);
@@ -55,7 +55,7 @@ test("logged-out session checks do not consume the password failure allowance", 
 	assert.equal((await request("GET", "/users/me?expand=permissions", undefined, cookie)).status, 200);
 });
 
-test("account mutation throttling cannot hide a valid user's profile", async () => {
+it("account mutation throttling cannot hide a valid user's profile", async () => {
 	for (let i = 0; i < 5; i++)
 		assert.equal(
 			(
@@ -76,7 +76,7 @@ test("account mutation throttling cannot hide a valid user's profile", async () 
 	assert.equal((await request("GET", "/users/me?expand=permissions", undefined, cookie)).status, 200);
 });
 
-test("five invalid passwords still throttle login while refresh and logout remain available", async () => {
+it("five invalid passwords still throttle login while refresh and logout remain available", async () => {
 	for (let i = 0; i < 5; i++)
 		assert.equal(
 			(await request("POST", "/tokens", { ...credentials, secret: "Wrong-Fixture-Password" })).status,
@@ -87,7 +87,7 @@ test("five invalid passwords still throttle login while refresh and logout remai
 	assert.equal((await request("DELETE", "/tokens", undefined, cookie)).status, 200);
 });
 
-test("session and account reads retain independent request limits", async () => {
+it("session and account reads retain independent request limits", async () => {
 	let refresh;
 	let profile;
 	for (let i = 0; i < 61; i++) {

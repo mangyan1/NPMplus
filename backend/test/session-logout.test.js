@@ -1,7 +1,7 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { after, test } from "node:test";
+import { after, test as it } from "node:test";
 
 process.env.COOKIE_SECRET = "logout-test-cookie-secret";
 const { default: app } = await import("../app.js");
@@ -17,7 +17,7 @@ const user = await User.query().insertAndFetch({
 	name: "Logout fixture",
 	nickname: "fixture",
 	avatar: "",
-	roles: ["admin"],
+	npmplus_is_admin: 1,
 	npmplus_token_valid_after: 0,
 });
 const server = app.listen(0, "127.0.0.1");
@@ -26,7 +26,7 @@ after(async () => {
 	server.closeAllConnections();
 	await new Promise((resolve) => server.close(resolve));
 });
-const paddingPattern = /[=]+$/;
+const paddingPattern = /[=]+$/u;
 const cookieFor = (value, name = "__Host-Http-token") => {
 	const mac = crypto
 		.createHmac("sha256", process.env.COOKIE_SECRET)
@@ -48,7 +48,7 @@ const payload = (scope = "user") => ({
 });
 const newSession = async () => cookieFor((await issueSessionToken(Token(), payload())).token);
 
-test("logout revokes original and refreshed cookies but preserves another device", async () => {
+it("logout revokes original and refreshed cookies but preserves another device", async () => {
 	const original = await newSession();
 	const otherDevice = await newSession();
 	const refresh = await request("GET", "/api/tokens", original);
@@ -67,7 +67,7 @@ test("logout revokes original and refreshed cookies but preserves another device
 	assert.equal((await request("DELETE", "/api/tokens")).status, 200);
 });
 
-test("logout invalidates an MFA challenge and clears its cookies", async () => {
+it("logout invalidates an MFA challenge and clears its cookies", async () => {
 	const challenge = await issueSessionToken(Token(), payload("mfa-challenge"));
 	const response = await request("DELETE", "/api/tokens", cookieFor(challenge.token, "__Host-Http-challenge_token"));
 	assert.equal(response.status, 200);
@@ -75,7 +75,7 @@ test("logout invalidates an MFA challenge and clears its cookies", async () => {
 	assert.ok(response.headers.getSetCookie().some((value) => value.startsWith("__Host-Http-challenge_token=;")));
 });
 
-test("a refresh already signing when logout runs cannot recreate its session", async () => {
+it("a refresh already signing when logout runs cannot recreate its session", async () => {
 	const original = await issueSessionToken(Token(), payload());
 	let release;
 	let started;
@@ -104,12 +104,12 @@ test("a refresh already signing when logout runs cannot recreate its session", a
 	await assert.rejects(assertTokenSession(original.payload.sid));
 });
 
-test("tokens from before session tracking require a fresh login", async () => {
+it("tokens from before session tracking require a fresh login", async () => {
 	const legacy = await Token().create(payload());
 	assert.equal((await request("GET", "/api/auth", cookieFor(legacy.token))).status, 401);
 });
 
-test("HTTP command failures expose only the generic message and correlation ID", async (t) => {
+it("HTTP command failures expose only the generic message and correlation ID", async (t) => {
 	t.mock.method(certificate, "renew", () => {
 		throw new errs.CommandError("synthetic private stderr", 1, {
 			stderr: "synthetic private stderr",
@@ -125,7 +125,7 @@ test("HTTP command failures expose only the generic message and correlation ID",
 	assert.ok(!JSON.stringify(body).includes("private"));
 });
 
-test("a login in the revocation second works and can immediately be revoked again", async () => {
+it("a login in the revocation second works and can immediately be revoked again", async () => {
 	const { default: Auth } = await import("../models/auth.js");
 	const { default: internalToken } = await import("../internal/token.js");
 	const { default: Access } = await import("../lib/access.js");

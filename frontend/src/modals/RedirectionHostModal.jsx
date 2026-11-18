@@ -1,74 +1,78 @@
 import cn from "clsx";
-import { Field, Form, Formik } from "formik";
+import { ErrorMessage, Field, Form, Formik } from "formik";
 import { useState } from "react";
 import { Alert } from "react-bootstrap";
 import Modal from "react-bootstrap/Modal";
 import {
 	Button,
+	CommandOutput,
 	DirectoryField,
 	DomainNamesField,
-	HasPermission,
 	Loading,
 	NginxConfigField,
 	SSLCertificateField,
 	SSLOptionsFields,
 } from "src/components";
-import { useDirectorySuggestions, useRedirectionHost, useRedirectionHosts, useSetRedirectionHost } from "src/hooks";
+import {
+	useDirectorySuggestions,
+	useRedirectionHost,
+	useRedirectionHosts,
+	useSetRedirectionHost,
+	useUser,
+} from "src/hooks";
 import { T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
-import { MANAGE, REDIRECTION_HOSTS } from "src/modules/Permissions";
+import { hasPermission, MANAGE, REDIRECTION_HOSTS } from "src/modules/Permissions";
 import { showTabOfInvalid, validateString } from "src/modules/Validations";
 import { showObjectSuccess } from "src/notifications";
 
-const showRedirectionHostModal = (id) => {
-	void EasyModal.show(RedirectionHostModal, { id });
+const showRedirectionHostModal = (id, isClone) => {
+	void EasyModal.show(RedirectionHostModal, { id, isClone });
 };
 
-const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
+const RedirectionHostModal = EasyModal.create(({ id, isClone, visible, remove, close, formRef }) => {
 	const { data, isPending, error } = useRedirectionHost(id);
-	const { mutate: setRedirectionHost } = useSetRedirectionHost();
+	const { mutateAsync: setRedirectionHost } = useSetRedirectionHost();
 	const { data: allRedirectionHosts } = useRedirectionHosts();
 	const suggestions = useDirectorySuggestions(allRedirectionHosts);
+	const { data: currentUser } = useUser("me");
+	const canManage = hasPermission(REDIRECTION_HOSTS, MANAGE, currentUser?.permissions, currentUser?.npmplusIsAdmin);
 	const [errorMsg, setErrorMsg] = useState(null);
-	const [isSubmitting, setIsSubmitting] = useState(false);
 
-	const onSubmit = (values, { setSubmitting }) => {
-		if (isSubmitting) return;
-		setIsSubmitting(true);
+	const onSubmit = async (values, { setFieldValue }) => {
 		setErrorMsg(null);
 
 		const payload = {
-			id: id === "new" ? undefined : id,
+			id: id === "new" || isClone ? undefined : id,
 			...values,
 		};
 
-		setRedirectionHost(payload, {
-			onError: (err) => {
-				if (err.payload?.error?.output) {
-					setErrorMsg(
-						<div className="w-100">
-							<pre>
-								<code>{err.payload.error.output}</code>
-							</pre>
-						</div>,
-					);
-				} else {
-					setErrorMsg(<T id={err.message} />);
-				}
-			},
-			onSuccess: () => {
-				showObjectSuccess("redirection-host", "saved");
-				remove();
-			},
-			onSettled: () => {
-				setIsSubmitting(false);
-				setSubmitting(false);
-			},
-		});
+		try {
+			await setRedirectionHost(payload);
+			showObjectSuccess("redirection-host", "saved");
+			remove();
+		} catch (err) {
+			if (err.payload?.error?.certificate_id) {
+				setFieldValue("certificateId", err.payload.error.certificate_id);
+			}
+			if (err.payload?.error?.output) {
+				setErrorMsg(<CommandOutput output={err.payload.error.output} />);
+			} else {
+				setErrorMsg(<T id={err.message} />);
+			}
+		}
 	};
 
 	return (
-		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
+		<Modal show={visible} backdrop={canManage ? "static" : true} onHide={close}>
+			<Modal.Header closeButton>
+				<Modal.Title>
+					<T
+						id={id !== "new" && !isClone ? "object.edit" : "object.add"}
+						tData={{ object: "redirection-host" }}
+					/>
+				</Modal.Title>
+			</Modal.Header>
 			{error && (
 				<Alert variant="danger" className="m-3">
 					{error?.message}
@@ -77,14 +81,14 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 			{isPending && <Loading noLogo />}
 			{data && (
 				<Formik
+					innerRef={formRef}
 					initialValues={{
 						// Details tab
-						domainNames: data?.domainNames || [],
-						forwardDomainName: data?.forwardDomainName || "",
-						forwardScheme:
-							!data?.forwardScheme || data.forwardScheme === "auto" ? "$scheme" : data.forwardScheme,
-						forwardHttpCode: data?.forwardHttpCode || 301,
-						preservePath: data?.preservePath || false,
+						domainNames: isClone ? [] : data?.domainNames,
+						forwardDomainName: data?.forwardDomainName,
+						forwardScheme: data?.forwardScheme,
+						forwardHttpCode: data?.forwardHttpCode,
+						preservePath: data?.preservePath,
 						// SSL tab
 						certificateId: data?.certificateId,
 						sslForced: data?.sslForced,
@@ -92,7 +96,7 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 						hstsEnabled: data?.hstsEnabled,
 						hstsSubdomains: data?.hstsSubdomains,
 						// Advanced tab
-						advancedConfig: data?.advancedConfig,
+						advancedConfig: isClone && !currentUser?.npmplusIsAdmin ? "" : data?.advancedConfig,
 						npmplusDirectory: data?.npmplusDirectory,
 						npmplusMtlsCertificateId: data?.npmplusMtlsCertificateId,
 						npmplusMtlsVerifyClientOptional: data?.npmplusMtlsVerifyClientOptional,
@@ -101,14 +105,6 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 				>
 					{({ values }) => (
 						<Form onInvalid={showTabOfInvalid}>
-							<Modal.Header closeButton={!isSubmitting}>
-								<Modal.Title>
-									<T
-										id={data?.id ? "object.edit" : "object.add"}
-										tData={{ object: "redirection-host" }}
-									/>
-								</Modal.Title>
-							</Modal.Header>
 							<Modal.Body className="p-0">
 								<Alert variant="danger" show={errorMsg} onClose={() => setErrorMsg(null)} dismissible>
 									{errorMsg}
@@ -116,37 +112,18 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 								<div className="card m-0 border-0">
 									<div className="card-header">
 										<ul className="nav nav-tabs card-header-tabs" data-bs-toggle="tabs">
-											<li className="nav-item" role="presentation">
-												<a
-													href="#tab-details"
-													className="nav-link active"
-													data-bs-toggle="tab"
-													aria-selected="true"
-													role="tab"
-												>
+											<li className="nav-item">
+												<a href="#tab-details" className="nav-link active" data-bs-toggle="tab">
 													<T id="column.details" />
 												</a>
 											</li>
-											<li className="nav-item" role="presentation">
-												<a
-													href="#tab-ssl"
-													className="nav-link"
-													data-bs-toggle="tab"
-													aria-selected="false"
-													role="tab"
-												>
+											<li className="nav-item">
+												<a href="#tab-ssl" className="nav-link" data-bs-toggle="tab">
 													<T id="column.ssl" />
 												</a>
 											</li>
-											<li className="nav-item ms-auto" role="presentation">
-												<a
-													href="#tab-advanced"
-													className="nav-link"
-													title="Settings"
-													data-bs-toggle="tab"
-													aria-selected="false"
-													role="tab"
-												>
+											<li className="nav-item ms-auto">
+												<a href="#tab-advanced" className="nav-link" data-bs-toggle="tab">
 													<T id="domains.advanced" />
 													{values?.advancedConfig?.trim() ? "*" : ""}
 												</a>
@@ -154,9 +131,10 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 										</ul>
 									</div>
 									<div className="card-body">
-										<div className="tab-content">
-											<div className="tab-pane active show" id="tab-details" role="tabpanel">
+										<fieldset className="tab-content" disabled={!canManage}>
+											<div className="tab-pane active show" id="tab-details">
 												<DomainNamesField
+													disabled={!canManage}
 													isWildcardPermitted={
 														values.certificateId !== "new" || values.npmplusDnsChallenge
 													}
@@ -191,9 +169,9 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 													<div className="col-md-8">
 														<Field
 															name="forwardDomainName"
-															validate={validateString(1, 253)}
+															validate={(value) => validateString(value, 1, 253)}
 														>
-															{({ field, form }) => (
+															{({ field, meta }) => (
 																<div className="mb-3">
 																	<label
 																		className="form-label"
@@ -204,27 +182,25 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 																	<input
 																		id="forwardDomainName"
 																		type="text"
-																		className={`form-control ${form.errors.forwardDomainName && form.touched.forwardDomainName ? "is-invalid" : ""}`}
+																		className={`form-control ${meta.touched && meta.error ? "is-invalid" : ""}`}
 																		required
 																		pattern="\S+"
 																		placeholder="example.com"
 																		{...field}
 																	/>
 
-																	{form.errors.forwardDomainName ? (
-																		<div className="invalid-feedback">
-																			{form.touched.forwardDomainName
-																				? form.errors.forwardDomainName
-																				: null}
-																		</div>
-																	) : null}
+																	<ErrorMessage
+																		name="forwardDomainName"
+																		component="div"
+																		className="invalid-feedback"
+																	/>
 																</div>
 															)}
 														</Field>
 													</div>
 												</div>
 												<Field name="forwardHttpCode">
-													{({ field }) => (
+													{({ field, form }) => (
 														<div className="mb-3">
 															<label className="form-label" htmlFor="forwardHttpCode">
 																<T id="redirection-host.forward-http-code" />
@@ -234,6 +210,12 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 																className="form-select"
 																required
 																{...field}
+																onChange={(e) =>
+																	form.setFieldValue(
+																		field.name,
+																		Number(e.target.value),
+																	)
+																}
 															>
 																<option value="301">
 																	<T id="redirection-hosts.http-code.301" />
@@ -288,8 +270,9 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 													</div>
 												</div>
 											</div>
-											<div className="tab-pane" id="tab-ssl" role="tabpanel">
+											<div className="tab-pane" id="tab-ssl">
 												<SSLCertificateField
+													disabled={!canManage}
 													name="certificateId"
 													label="ssl-certificate"
 													allowNew
@@ -297,7 +280,7 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 
 												<SSLOptionsFields color="bg-yellow" />
 											</div>
-											<div className="tab-pane" id="tab-advanced" role="tabpanel">
+											<div className="tab-pane" id="tab-advanced">
 												<NginxConfigField />
 												<div className="row mt-3">
 													<div className="col-md-12 mb-3">
@@ -309,25 +292,19 @@ const RedirectionHostModal = EasyModal.create(({ id, visible, remove }) => {
 													</div>
 												</div>
 											</div>
-										</div>
+										</fieldset>
 									</div>
 								</div>
 							</Modal.Body>
 							<Modal.Footer>
-								<Button onClick={remove} disabled={isSubmitting}>
-									<T id="cancel" />
+								<Button onClick={close}>
+									<T id={canManage ? "cancel" : "action.close"} />
 								</Button>
-								<HasPermission section={REDIRECTION_HOSTS} permission={MANAGE} hideError>
-									<Button
-										type="submit"
-										color="yellow"
-										className="ms-auto"
-										isLoading={isSubmitting}
-										disabled={isSubmitting}
-									>
+								{canManage && (
+									<Button type="submit" color="yellow" className="ms-auto">
 										<T id="save" />
 									</Button>
-								</HasPermission>
+								)}
 							</Modal.Footer>
 						</Form>
 					)}

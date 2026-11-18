@@ -1,12 +1,12 @@
-import { IconCopy, IconEye, IconEyeOff } from "@tabler/icons-react";
+import { IconEye, IconEyeOff } from "@tabler/icons-react";
 import { ErrorMessage, Field, Form, Formik } from "formik";
 import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useState } from "react";
 import { Alert } from "react-bootstrap";
 import Modal from "react-bootstrap/Modal";
 import { disableTotp, enableTotp, getMfaStatus, regenerateBackupCodes, startTotpSetup } from "src/api/backend";
-import { Button } from "src/components";
-import { T } from "src/locale";
+import { Button, CopyButton } from "src/components";
+import { intl, T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
 import { validateString } from "src/modules/Validations";
 
@@ -14,14 +14,13 @@ const showMfaModal = (id) => {
 	void EasyModal.show(MfaModal, { id });
 };
 
-const MfaModal = EasyModal.create(({ id, visible, remove }) => {
+const MfaModal = EasyModal.create(({ id, visible, close, formRef }) => {
 	const [error, setError] = useState(null);
 	const [step, setStep] = useState("loading");
 	const [isEnabled, setIsEnabled] = useState(false);
 	const [backupCodesRemaining, setBackupCodesRemaining] = useState(0);
 	const [setupData, setSetupData] = useState(null);
 	const [backupCodes, setBackupCodes] = useState([]);
-	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [showCode, setShowCode] = useState(false);
 
 	const loadStatus = useCallback(async () => {
@@ -42,7 +41,6 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 
 	const handleStartSetup = async () => {
 		setError(null);
-		setIsSubmitting(true);
 		try {
 			const data = await startTotpSetup(id);
 			setSetupData(data);
@@ -50,12 +48,10 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 		} catch (err) {
 			setError(<T id={err.message} />);
 		}
-		setIsSubmitting(false);
 	};
 
 	const handleVerify = async (values) => {
 		setError(null);
-		setIsSubmitting(true);
 		try {
 			const result = await enableTotp(id, values);
 			if (result.backupCodes) {
@@ -67,12 +63,10 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 		} catch (err) {
 			setError(<T id={err.message} />);
 		}
-		setIsSubmitting(false);
 	};
 
 	const handleDisable = async (values) => {
 		setError(null);
-		setIsSubmitting(true);
 		try {
 			await disableTotp(id, values);
 			setIsEnabled(false);
@@ -80,12 +74,10 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 		} catch (err) {
 			setError(<T id={err.message} />);
 		}
-		setIsSubmitting(false);
 	};
 
 	const handleRegenerateBackup = async (values) => {
 		setError(null);
-		setIsSubmitting(true);
 		try {
 			const result = await regenerateBackupCodes(id, values);
 			setBackupCodes(result.backupCodes);
@@ -93,7 +85,6 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 		} catch (err) {
 			setError(<T id={err.message} />);
 		}
-		setIsSubmitting(false);
 	};
 
 	const handleBackupDone = () => {
@@ -106,9 +97,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 		if (step === "loading") {
 			return (
 				<div className="text-center py-4">
-					<div className="spinner-border" role="status">
-						<span className="visually-hidden">Loading...</span>
-					</div>
+					<div className="spinner-border" />
 				</div>
 			);
 		}
@@ -131,11 +120,16 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 							</p>
 						)}
 					</div>
-					{!isEnabled ? (
-						<Button fullWidth color="azure" onClick={handleStartSetup} isLoading={isSubmitting}>
-							<T id="totp.enable" />
-						</Button>
-					) : (
+					{!isEnabled && (
+						<Formik innerRef={formRef} initialValues={{}} onSubmit={handleStartSetup}>
+							<Form>
+								<Button type="submit" fullWidth color="azure">
+									<T id="totp.enable" />
+								</Button>
+							</Form>
+						</Formik>
+					)}
+					{isEnabled && (
 						<div className="d-flex flex-column gap-2">
 							<Button fullWidth onClick={() => setStep("disable")}>
 								<T id="totp.disable" />
@@ -174,21 +168,14 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 								onClick={(e) => e.target.select()}
 							/>
 							<span className="input-group-text">
-								<button
-									type="button"
-									aria-label="copy"
-									className="p-0 border-0 bg-transparent text-secondary d-flex align-items-center cursor-pointer"
-									onClick={() => navigator.clipboard.writeText(setupData.secret)}
-								>
-									<IconCopy size={18} />
-								</button>
+								<CopyButton text={setupData.secret} />
 							</span>
 						</div>
 					</label>
-					<Formik initialValues={{ code: "" }} onSubmit={handleVerify}>
+					<Formik innerRef={formRef} initialValues={{ code: "" }} onSubmit={handleVerify}>
 						{() => (
 							<Form>
-								<Field name="code" validate={validateString(6, 6)}>
+								<Field name="code" validate={(value) => validateString(value, 6, 6)}>
 									{({ field, form }) => (
 										<label className="mb-3 d-block">
 											<span className="form-label">
@@ -197,6 +184,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 											<div className="input-group input-group-flat">
 												<input
 													{...field}
+													autoFocus
 													type={showCode || !field.value ? "text" : "password"}
 													inputMode="numeric"
 													autoComplete="one-time-code"
@@ -209,8 +197,10 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 												<span className="input-group-text">
 													<button
 														type="button"
-														tabIndex={-1}
-														aria-label="toggle visibility"
+														title={intl.formatMessage({
+															id: showCode ? "mfa.hide-code" : "mfa.show-code",
+														})}
+														onMouseDown={(e) => e.preventDefault()}
 														className="p-0 border-0 bg-transparent text-secondary d-flex align-items-center cursor-pointer"
 														onClick={() => setShowCode((v) => !v)}
 													>
@@ -227,21 +217,10 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 									)}
 								</Field>
 								<div className="d-flex gap-2">
-									<Button
-										type="button"
-										fullWidth
-										onClick={() => setStep("status")}
-										disabled={isSubmitting}
-									>
+									<Button type="button" fullWidth onClick={() => setStep("status")}>
 										<T id="cancel" />
 									</Button>
-									<Button
-										type="submit"
-										fullWidth
-										color="azure"
-										isLoading={isSubmitting}
-										disabled={isSubmitting}
-									>
+									<Button type="submit" fullWidth color="azure">
 										<T id="totp.verify-enable" />
 									</Button>
 								</div>
@@ -258,14 +237,15 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 					<Alert variant="warning">
 						<T id="mfa.backup-warning" />
 					</Alert>
-					<div className="mb-3">
-						<div className="row g-2">
+					<div className="mb-3 d-flex gap-2 align-items-start">
+						<div className="row g-2 flex-grow-1">
 							{backupCodes.map((code, index) => (
 								<div key={index} className="col-6">
 									<code className="d-block p-2 text-center">{code}</code>
 								</div>
 							))}
 						</div>
+						<CopyButton text={backupCodes.join("\n")} autoFocus />
 					</div>
 					<Button fullWidth color="azure" onClick={handleBackupDone}>
 						<T id="totp.done" />
@@ -280,10 +260,10 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 					<Alert variant="warning">
 						<T id="totp.disable-warning" />
 					</Alert>
-					<Formik initialValues={{ code: "" }} onSubmit={handleDisable}>
+					<Formik innerRef={formRef} initialValues={{ code: "" }} onSubmit={handleDisable}>
 						{() => (
 							<Form>
-								<Field name="code" validate={validateString(6, 8)}>
+								<Field name="code" validate={(value) => validateString(value, 6, 8)}>
 									{({ field, form }) => (
 										<label className="mb-3 d-block">
 											<span className="form-label">
@@ -292,6 +272,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 											<div className="input-group input-group-flat">
 												<input
 													{...field}
+													autoFocus
 													type={showCode || !field.value ? "text" : "password"}
 													autoComplete="one-time-code"
 													required
@@ -303,8 +284,10 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 												<span className="input-group-text">
 													<button
 														type="button"
-														tabIndex={-1}
-														aria-label="toggle visibility"
+														title={intl.formatMessage({
+															id: showCode ? "mfa.hide-code" : "mfa.show-code",
+														})}
+														onMouseDown={(e) => e.preventDefault()}
 														className="p-0 border-0 bg-transparent text-secondary d-flex align-items-center cursor-pointer"
 														onClick={() => setShowCode((v) => !v)}
 													>
@@ -321,21 +304,10 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 									)}
 								</Field>
 								<div className="d-flex gap-2">
-									<Button
-										type="button"
-										fullWidth
-										onClick={() => setStep("status")}
-										disabled={isSubmitting}
-									>
+									<Button type="button" fullWidth onClick={() => setStep("status")}>
 										<T id="cancel" />
 									</Button>
-									<Button
-										type="submit"
-										fullWidth
-										color="red"
-										isLoading={isSubmitting}
-										disabled={isSubmitting}
-									>
+									<Button type="submit" fullWidth color="red">
 										<T id="totp.disable-confirm" />
 									</Button>
 								</div>
@@ -355,10 +327,10 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 					<p className="text-secondary mb-3">
 						<T id="mfa.regenerate-instructions" />
 					</p>
-					<Formik initialValues={{ code: "" }} onSubmit={handleRegenerateBackup}>
+					<Formik innerRef={formRef} initialValues={{ code: "" }} onSubmit={handleRegenerateBackup}>
 						{() => (
 							<Form>
-								<Field name="code" validate={validateString(6, 6)}>
+								<Field name="code" validate={(value) => validateString(value, 6, 6)}>
 									{({ field, form }) => (
 										<label className="mb-3 d-block">
 											<span className="form-label">
@@ -367,6 +339,7 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 											<div className="input-group input-group-flat">
 												<input
 													{...field}
+													autoFocus
 													type={showCode || !field.value ? "text" : "password"}
 													autoComplete="one-time-code"
 													required
@@ -378,8 +351,10 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 												<span className="input-group-text">
 													<button
 														type="button"
-														tabIndex={-1}
-														aria-label="toggle visibility"
+														title={intl.formatMessage({
+															id: showCode ? "mfa.hide-code" : "mfa.show-code",
+														})}
+														onMouseDown={(e) => e.preventDefault()}
 														className="p-0 border-0 bg-transparent text-secondary d-flex align-items-center cursor-pointer"
 														onClick={() => setShowCode((v) => !v)}
 													>
@@ -396,21 +371,10 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 									)}
 								</Field>
 								<div className="d-flex gap-2">
-									<Button
-										type="button"
-										fullWidth
-										onClick={() => setStep("status")}
-										disabled={isSubmitting}
-									>
+									<Button type="button" fullWidth onClick={() => setStep("status")}>
 										<T id="cancel" />
 									</Button>
-									<Button
-										type="submit"
-										fullWidth
-										color="azure"
-										isLoading={isSubmitting}
-										disabled={isSubmitting}
-									>
+									<Button type="submit" fullWidth color="azure">
 										<T id="mfa.regenerate" />
 									</Button>
 								</div>
@@ -425,8 +389,8 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 	};
 
 	return (
-		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
-			<Modal.Header closeButton={!isSubmitting}>
+		<Modal show={visible} backdrop="static" onHide={step === "backup" ? undefined : close}>
+			<Modal.Header closeButton={step !== "backup"}>
 				<Modal.Title>
 					<T id="mfa.title" />
 				</Modal.Title>
@@ -437,6 +401,13 @@ const MfaModal = EasyModal.create(({ id, visible, remove }) => {
 				</Alert>
 				{renderContent()}
 			</Modal.Body>
+			{["loading", "error", "status"].includes(step) && (
+				<Modal.Footer>
+					<Button onClick={close} autoFocus>
+						<T id="action.close" />
+					</Button>
+				</Modal.Footer>
+			)}
 		</Modal>
 	);
 });

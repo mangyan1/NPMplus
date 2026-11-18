@@ -19,9 +19,8 @@ const boolFields = [
 	"hsts_enabled",
 	"hsts_subdomains",
 	"npmplus_noindex",
-	"npmplus_crowdsec_appsec",
-	"npmplus_proxy_request_buffering",
-	"npmplus_proxy_response_buffering",
+	"npmplus_disable_crowdsec_appsec",
+	"npmplus_disable_proxy_request_buffering",
 	"npmplus_upstream_compression",
 	"npmplus_fancyindex",
 	"npmplus_nginx_online",
@@ -110,6 +109,14 @@ class ProxyHost extends Model {
 				modelClass: Certificate,
 				join: {
 					from: "proxy_host.certificate_id",
+					to: "certificate.id",
+				},
+			},
+			mtls_certificate: {
+				relation: Model.HasOneRelation,
+				modelClass: Certificate,
+				join: {
+					from: "proxy_host.npmplus_mtls_certificate_id",
 					to: "certificate.id",
 				},
 			},

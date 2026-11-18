@@ -55,15 +55,15 @@ export default function (tokenString) {
 					throw new errs.PermissionError("Token has been revoked");
 				}
 
-				// make sure user has all scopes of the token
-				// The `user` role is not added against the user row, so we have to just add it here to get past this check.
-				user.roles.push("user");
-
-				if (!(tokenData.scope ?? []).every((scopeItem) => user.roles.includes(scopeItem))) {
+				// Fork tokens keep the array scope format. The user scope is
+				// what a login session carries; MFA challenge tokens never
+				// reach this branch because they have no uid.
+				const scopes = Array.isArray(tokenData.scope) ? tokenData.scope : [tokenData.scope];
+				if (!scopes.includes("user")) {
 					throw new errs.PermissionError("Invalid token scope for User");
 				}
 				initialised = true;
-				isAdmin = user.roles.includes("admin");
+				isAdmin = Boolean(user.npmplus_is_admin);
 				permissions = user.permissions ?? {};
 			} else {
 				throw new errs.PermissionError("User cannot be loaded for Token");
@@ -115,7 +115,7 @@ export default function (tokenString) {
 				// failure: jwt-decode lets it through and routes answer 403 at
 				// their permission check. 401-ing here (upstream's shape) treats
 				// every anonymous visit as a dead session and stranded the UI in
-				// a ghost session — see Rule 2 in tests/security-invariants.mjs.
+				// a ghost session â€” see Rule 2 in tests/security-invariants.mjs.
 				// Internal callers (setup) opt into a synthetic admin access.
 				if (allowInternal) {
 					initialised = true;

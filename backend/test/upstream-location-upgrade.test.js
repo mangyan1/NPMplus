@@ -2,7 +2,7 @@ import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
-import test from "node:test";
+import it from "node:test";
 import knex from "knex";
 import db from "../db.js";
 import { hostCoverage } from "../internal/anubis-reporting.js";
@@ -10,7 +10,7 @@ import { migrateUp } from "../migrate.js";
 import ProxyHost from "../models/proxy_host.js";
 import { root } from "./helpers/environment.js";
 
-test("a populated fork database keeps ordered location ACLs, Anubis coverage and a restorable legacy snapshot", async (t) => {
+it("a populated fork database keeps ordered location ACLs, Anubis coverage and a restorable legacy snapshot", async (t) => {
 	const files = (await readdir(new URL("../migrations/", import.meta.url)))
 		.filter(
 			(name) => name.endsWith(".js") && (name < "20261008000000" || name === "20261402145603_http3_support.js"),

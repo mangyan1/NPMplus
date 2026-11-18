@@ -1,5 +1,6 @@
 import { IconShield } from "@tabler/icons-react";
 import { Field, useFormikContext } from "formik";
+import { useMemo } from "react";
 import Select, { components } from "react-select";
 import { certificateProviderTranslation } from "src/components";
 import { useCertificates, useUser } from "src/hooks";
@@ -18,6 +19,13 @@ const Option = (props) => (
 	</components.Option>
 );
 
+const toOption = (cert) => ({
+	value: cert.id,
+	label: cert.niceName,
+	subLabel: `${intl.formatMessage({ id: certificateProviderTranslation(cert.provider) })} — ${intl.formatMessage({ id: "expires.on" }, { date: formatDateTime(cert.expiresOn) })}`,
+	icon: <IconShield size={14} className="text-pink" />,
+});
+
 export function SSLCertificateField({
 	name,
 	label,
@@ -26,6 +34,7 @@ export function SSLCertificateField({
 	forHttp = true,
 	mtlsName = "npmplusMtlsCertificateId",
 	mtlsLabel = "mtls-certificate",
+	disabled,
 }) {
 	const { isPending, isError, error, data } = useCertificates();
 	const { data: user } = useUser("me");
@@ -57,60 +66,50 @@ export function SSLCertificateField({
 			if (hstsSubdomains) void setFieldValue("hstsSubdomains", false);
 		}
 		if (newValue?.value !== "new") {
-			if (npmplusReuseKey) void setFieldValue("npmplusReuseKey", undefined);
-			if (npmplusDnsChallenge) void setFieldValue("npmplusDnsChallenge", undefined);
-			if (npmplusDnsProvider) void setFieldValue("npmplusDnsProvider", undefined);
-			if (npmplusDnsProviderCredentials) void setFieldValue("npmplusDnsProviderCredentials", undefined);
+			if (npmplusReuseKey !== undefined) void setFieldValue("npmplusReuseKey", undefined);
+			if (npmplusDnsChallenge !== undefined) void setFieldValue("npmplusDnsChallenge", undefined);
+			if (npmplusDnsProvider !== undefined) void setFieldValue("npmplusDnsProvider", undefined);
+			if (npmplusDnsProviderCredentials !== undefined) {
+				void setFieldValue("npmplusDnsProviderCredentials", undefined);
+			}
 			if (npmplusPropagationSeconds !== undefined) void setFieldValue("npmplusPropagationSeconds", undefined);
 		}
 	};
 
-	const options =
-		data
-			?.filter((cert) => cert.provider !== "mtls")
-			.map((cert) => ({
-				value: cert.id,
-				label: cert.niceName,
-				subLabel: `${intl.formatMessage({ id: certificateProviderTranslation(cert.provider) })} — ${intl.formatMessage({ id: "expires.on" }, { date: formatDateTime(cert.expiresOn) })}`,
-				icon: <IconShield size={14} className="text-pink" />,
-			})) || [];
+	const { options, mtlsOptions } = useMemo(() => {
+		const certs = Object.groupBy(data ?? [], (cert) => (cert.provider === "mtls" ? "mtls" : "server"));
+		const server = certs.server?.map(toOption) ?? [];
+		const mtls = certs.mtls?.map(toOption) ?? [];
 
-	const mtlsOptions =
-		data
-			?.filter((cert) => cert.provider === "mtls")
-			.map((cert) => ({
-				value: cert.id,
-				label: cert.niceName,
-				subLabel: `${intl.formatMessage({ id: certificateProviderTranslation(cert.provider) })} — ${intl.formatMessage({ id: "expires.on" }, { date: formatDateTime(cert.expiresOn) })}`,
-				icon: <IconShield size={14} className="text-pink" />,
-			})) || [];
+		// Prepend the Add New option
+		if (allowNew && hasPermission(CERTIFICATES, MANAGE, user?.permissions, user?.npmplusIsAdmin)) {
+			server.unshift({
+				value: "new",
+				label: intl.formatMessage({ id: "certificates.request.title" }),
+				subLabel: intl.formatMessage({ id: "certificates.request.subtitle" }),
+				icon: <IconShield size={14} className="text-lime" />,
+			});
+		}
 
-	// Prepend the Add New option
-	if (allowNew && hasPermission(CERTIFICATES, MANAGE, user?.permissions, user?.roles)) {
-		options?.unshift({
-			value: "new",
-			label: intl.formatMessage({ id: "certificates.request.title" }),
-			subLabel: intl.formatMessage({ id: "certificates.request.subtitle" }),
-			icon: <IconShield size={14} className="text-lime" />,
+		// Prepend the None option
+		server.unshift({
+			value: 0,
+			label: intl.formatMessage({ id: "certificate.none.title" }),
+			subLabel: intl.formatMessage({
+				id: forHttp ? "certificate.none.subtitle.for-http" : "certificate.none.subtitle",
+			}),
+			icon: <IconShield size={14} className="text-red" />,
 		});
-	}
 
-	// Prepend the None option
-	options?.unshift({
-		value: 0,
-		label: intl.formatMessage({ id: "certificate.none.title" }),
-		subLabel: forHttp
-			? intl.formatMessage({ id: "certificate.none.subtitle.for-http" })
-			: intl.formatMessage({ id: "certificate.none.subtitle" }),
-		icon: <IconShield size={14} className="text-red" />,
-	});
+		mtls.unshift({
+			value: 0,
+			label: intl.formatMessage({ id: "certificate.none.title" }),
+			subLabel: intl.formatMessage({ id: "certificate.none.subtitle" }),
+			icon: <IconShield size={14} className="text-red" />,
+		});
 
-	mtlsOptions?.unshift({
-		value: 0,
-		label: intl.formatMessage({ id: "certificate.none.title" }),
-		subLabel: intl.formatMessage({ id: "certificate.none.subtitle" }),
-		icon: <IconShield size={14} className="text-red" />,
-	});
+		return { options: server, mtlsOptions: mtls };
+	}, [data, user, allowNew, forHttp]);
 
 	return (
 		<>
@@ -137,14 +136,8 @@ export function SSLCertificateField({
 								}
 								options={options}
 								components={{ Option }}
-								styles={{
-									option: (base) => ({
-										...base,
-										height: "100%",
-									}),
-								}}
 								onChange={handleChange}
-								isDisabled={v?.udpForwarding}
+								isDisabled={disabled || v?.udpForwarding}
 							/>
 						) : null}
 					</div>
@@ -173,19 +166,13 @@ export function SSLCertificateField({
 								}
 								options={mtlsOptions}
 								components={{ Option }}
-								styles={{
-									option: (base) => ({
-										...base,
-										height: "100%",
-									}),
-								}}
 								onChange={(newValue) => {
 									void setFieldValue(mtlsName, newValue?.value);
 									if (!(newValue?.value > 0)) {
 										void setFieldValue("npmplusMtlsVerifyClientOptional", false);
 									}
 								}}
-								isDisabled={v?.udpForwarding || !v?.certificateId}
+								isDisabled={disabled || v?.udpForwarding || !v?.certificateId}
 							/>
 						) : null}
 					</div>

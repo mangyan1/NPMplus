@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import test from "node:test";
+import it from "node:test";
 import { fetchWithTimeout, readBoundedText } from "../lib/bounded-fetch.js";
 import { assertPrivilegedNginxFields, privilegedProjection } from "../lib/nginx-privilege.js";
 import utils from "../lib/utils.js";
 
-const exceedsEightBytesPattern = /exceeds 8 bytes/;
+const exceedsEightBytesPattern = /exceeds 8 bytes/u;
 const delegatedAccess = {
 	// merged permission model: canAdmin() throws for non-admins, can() stays
 	// synchronous
@@ -15,12 +15,12 @@ const delegatedAccess = {
 	can: () => true,
 };
 
-test("bounded response reader rejects oversized streaming bodies", async () => {
+it("bounded response reader rejects oversized streaming bodies", async () => {
 	const response = new Response("123456789");
 	await assert.rejects(readBoundedText(response, 8), exceedsEightBytesPattern);
 });
 
-test("outbound timeout remains active while the response body is read", async () => {
+it("outbound timeout remains active while the response body is read", async () => {
 	const server = createServer((_, response) => {
 		response.writeHead(200, { "content-type": "text/plain" });
 		response.flushHeaders();
@@ -36,14 +36,14 @@ test("outbound timeout remains active while the response body is read", async ()
 	}
 });
 
-test("delegated users cannot introduce raw nginx configuration", () => {
+it("delegated users cannot introduce raw nginx configuration", () => {
 	assert.throws(
 		() => assertPrivilegedNginxFields(delegatedAccess, { advanced_config: "proxy_set_header X-Test yes;" }),
 		(error) => error.status === 403,
 	);
 });
 
-test("delegated users cannot introduce a local filesystem proxy target", () => {
+it("delegated users cannot introduce a local filesystem proxy target", () => {
 	assert.deepEqual(privilegedProjection({ forward_scheme: "path", forward_host: "/data/html", forward_port: 9000 }), {
 		localPath: { forward_scheme: "path", forward_host: "/data/html", forward_port: 9000 },
 	});
@@ -58,7 +58,7 @@ test("delegated users cannot introduce a local filesystem proxy target", () => {
 	);
 });
 
-test("local sockets and named upstreams require administrator authorization", () => {
+it("local sockets and named upstreams require administrator authorization", () => {
 	for (const host of ["unix:/tmp/app.sock", "unix:relative.sock", "cu_private"]) {
 		const destination = { forward_scheme: "http", forward_host: host, forward_port: null };
 		assert.throws(
@@ -82,7 +82,7 @@ test("local sockets and named upstreams require administrator authorization", ()
 	);
 });
 
-test("management sockets cannot be published even by an administrator", () => {
+it("management sockets cannot be published even by an administrator", () => {
 	for (const host of ["unix:/run/nginx-control.sock", "unix:/run/../run/npmplus.sock", "unix://run/goaccess.sock"]) {
 		assert.throws(
 			() => assertPrivilegedNginxFields({ canAdmin: () => true }, { forward_host: host }),
@@ -91,7 +91,7 @@ test("management sockets cannot be published even by an administrator", () => {
 	}
 });
 
-test("delegated users cannot change the local-path fastcgi port on an existing host", () => {
+it("delegated users cannot change the local-path fastcgi port on an existing host", () => {
 	// the local-path fastcgi target renders from forward_port
 	// (fastcgi_pass unix:/run/php{{ forward_port }}.sock), so changing it must
 	// trip the admin-only guard, not just scheme/host
@@ -103,7 +103,7 @@ test("delegated users cannot change the local-path fastcgi port on an existing h
 	);
 });
 
-test("delegated users cannot add syntax-bearing custom location paths", () => {
+it("delegated users cannot add syntax-bearing custom location paths", () => {
 	assert.throws(
 		() =>
 			assertPrivilegedNginxFields(delegatedAccess, {
@@ -113,13 +113,13 @@ test("delegated users cannot add syntax-bearing custom location paths", () => {
 	);
 });
 
-test("delegated users may update ordinary fields without changing existing privileged fields", () => {
+it("delegated users may update ordinary fields without changing existing privileged fields", () => {
 	const existing = { id: 1, advanced_config: "add_header X-Test yes;", enabled: true };
 	// the guard is synchronous in the merged permission model: no throw is the pass
 	assert.equal(assertPrivilegedNginxFields(delegatedAccess, { id: 1, enabled: false }, existing), undefined);
 });
 
-test("the nginxAccessRule filter drops addresses carrying nginx syntax", async () => {
+it("the nginxAccessRule filter drops addresses carrying nginx syntax", async () => {
 	// addresses render into generated nginx configs; a row stored before the
 	// schema pattern existed may still carry syntax, so the filter must drop
 	// such rules instead of rendering them (deny-all stays the default)
@@ -134,7 +134,7 @@ test("the nginxAccessRule filter drops addresses carrying nginx syntax", async (
 	assert.equal(legit, "allow 192.168.0.0/24;");
 });
 
-test("auth-request upstreams must be a bare scheme://host:port", () => {
+it("auth-request upstreams must be a bare scheme://host:port", () => {
 	// the same shape envs.sh enforces for AUTH_REQUEST_*_UPSTREAM; anything
 	// else must be treated as absent when picking the effective upstream
 	assert.equal(utils.isValidAuthRequestUpstream("https://anubis:8923"), true);

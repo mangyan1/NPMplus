@@ -38,7 +38,7 @@ const router = express.Router({
  */
 router
 	.route("/")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * GET /api/nginx/redirection-hosts
@@ -71,7 +71,7 @@ router
  */
 router
 	.route("/:host_id")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * GET /api/nginx/redirection-hosts/123
@@ -94,7 +94,7 @@ router
 	 * Update an existing redirection-host
 	 */
 	.put(async (req, res) => {
-		const payload = apiValidator(getValidationSchema("/nginx/redirection-hosts/{hostID}", "put"), req.body);
+		const payload = apiValidator(getValidationSchema("/nginx/redirection-hosts/{host_id}", "put"), req.body);
 		payload.id = Number.parseInt(req.params.host_id, 10);
 		const result = await internalRedirectionHost.update(res.locals.access, payload);
 		res.status(200).send(result);
@@ -119,7 +119,7 @@ router
  */
 router
 	.route("/:host_id/enable")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * POST /api/nginx/redirection-hosts/123/enable
@@ -138,7 +138,7 @@ router
  */
 router
 	.route("/:host_id/disable")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * POST /api/nginx/redirection-hosts/123/disable

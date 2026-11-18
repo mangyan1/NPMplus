@@ -1,10 +1,10 @@
 // biome-ignore lint/correctness/noNodejsModules: Node test runner.
 import assert from "node:assert/strict";
 // biome-ignore lint/correctness/noNodejsModules: Node test runner.
-import test from "node:test";
+import it from "node:test";
 import { attackType, toolHints } from "../src/pages/Crowdsec/attackEvidence.ts";
 
-test("classifies detector claims without guessing from unknown rules or manual reasons", () => {
+it("classifies detector claims without guessing from unknown rules or manual reasons", () => {
 	assert.equal(attackType("crowdsecurity/http-sqli-probing"), "sql");
 	assert.equal(attackType("crowdsecurity/vpatch-CVE-2024-1234"), "cve");
 	assert.equal(attackType("crowdsecurity/vpatch-env-access"), "exposure");
@@ -14,7 +14,7 @@ test("classifies detector claims without guessing from unknown rules or manual r
 	assert.equal(attackType("new-custom-rule"), "unknown");
 });
 
-test("tool hints require an explicit bounded User-Agent claim", () => {
+it("tool hints require an explicit bounded User-Agent claim", () => {
 	assert.deepEqual(toolHints("sqlmap/1.8"), ["sqlmap"]);
 	assert.deepEqual(toolHints("Mozilla/5.0 (compatible; Nmap Scripting Engine)"), ["Nmap"]);
 	assert.deepEqual(toolHints("curl/8.0"), ["curl"]);

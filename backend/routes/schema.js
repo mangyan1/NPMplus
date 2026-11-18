@@ -1,7 +1,6 @@
 import express from "express";
 import requireLogin from "../lib/express/require-login.js";
-import PACKAGE from "../package.json" with { type: "json" };
-import { getCompiledSchema } from "../schema/index.js";
+import { compiledSchema } from "../schema/index.js";
 
 const router = express.Router({
 	caseSensitive: true,
@@ -16,13 +15,10 @@ router
 	/**
 	 * GET /schema
 	 */
-	.get(async (req, res) => {
-		const swaggerJSON = await getCompiledSchema();
-		swaggerJSON.info.version = PACKAGE.version;
-		swaggerJSON.servers[0].url = "/api";
+	.get((_, res) => {
 		res.status(200)
 			.type("json")
-			.send(JSON.stringify(swaggerJSON, null, req.app.get("json spaces")));
+			.send(JSON.stringify(compiledSchema, null, res.app.get("json spaces")));
 	});
 
 export default router;

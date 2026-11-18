@@ -14,7 +14,7 @@ if (!existsSync(playwrightEntry)) {
 	console.error("playwright is not installed globally. Install it with: npm i -g playwright");
 	process.exit(1);
 }
-const { chromium } = await import(`file://${playwrightEntry.replace(/\\/g, "/")}`);
+const { chromium } = await import(`file://${playwrightEntry.replace(/\\/gu, "/")}`);
 
 const BASE_URL = process.env.SMOKE_BASE_URL || "https://127.0.0.1:8181";
 const EMAIL = process.env.SMOKE_ADMIN_EMAIL || "admin@example.test";
@@ -33,7 +33,7 @@ const expectedDegradedState = (text) =>
 	// the login page probes the session before sign-in (401) and the crowdsec
 	// routes honestly answer 503 not-wired on a bare container; both are
 	// handled by design, anything else is a real failure
-	/status of (401|503)/.test(text);
+	/status of (401|503)/u.test(text);
 page.on("console", (message) => {
 	if (message.type() === "error" && !expectedDegradedState(message.text())) {
 		browserErrors.push(message.text());
@@ -48,19 +48,19 @@ page.on("pageerror", (error) => {
 // 1. login with the seeded admin; the app swaps to the authenticated shell
 //    on auth state, the url itself stays /login, so wait for the site menu
 await page.goto(`${BASE_URL}/login`, { waitUntil: "networkidle" });
-await page.getByLabel(/email/i).first().fill(EMAIL);
+await page.getByLabel(/email/iu).first().fill(EMAIL);
 await page
-	.getByLabel(/password/i)
+	.getByLabel(/password/iu)
 	.first()
 	.fill(PASSWORD);
-await page.getByRole("button", { name: /sign in|log in/i }).click();
+await page.getByRole("button", { name: /sign in|log in/iu }).click();
 await page.waitForFunction(() => document.querySelector('a[href="/nginx/proxy"]') !== null, { timeout: 15000 });
 check("seeded admin logs into the real UI", true, page.url());
 
 // 2. hosts page renders the real (empty) inventory
 await page.goto(`${BASE_URL}/nginx/proxy`, { waitUntil: "networkidle" });
 await page
-	.getByRole("heading", { name: /proxy hosts/i })
+	.getByRole("heading", { name: /proxy hosts/iu })
 	.first()
 	.waitFor({ timeout: 15000 });
 
@@ -68,7 +68,7 @@ await page
 await page.waitForLoadState("networkidle");
 check(
 	"hosts page shows an empty inventory",
-	(await page.getByText(/no.*hosts?|there are no hosts/i).count()) >= 1 ||
+	(await page.getByText(/no.*hosts?|there are no hosts/iu).count()) >= 1 ||
 		(await page.locator("table tbody tr").count()) === 0,
 	await page
 		.locator("body")
@@ -85,7 +85,7 @@ check("streams page renders", (await page.locator("body").innerText()).length > 
 // 4. the crowdsec dashboard renders its honest not-wired states instead of crashing
 await page.goto(`${BASE_URL}/crowdsec`, { waitUntil: "networkidle" });
 await page
-	.getByRole("heading", { name: /security overview|crowdsec/i })
+	.getByRole("heading", { name: /security overview|crowdsec/iu })
 	.first()
 	.waitFor({ timeout: 15000 });
 const crowdsecText = await page
@@ -94,7 +94,7 @@ const crowdsecText = await page
 	.catch(() => "");
 check(
 	"crowdsec dashboard renders the not-wired state",
-	/unconfigured|not wired|unavailable|degraded|insights/i.test(crowdsecText),
+	/unconfigured|not wired|unavailable|degraded|insights/iu.test(crowdsecText),
 	crowdsecText.slice(0, 300),
 );
 check("crowdsec dashboard exposes its five tabs", (await page.getByRole("tab").count()) === 5);

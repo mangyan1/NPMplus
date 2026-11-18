@@ -39,7 +39,7 @@ const router = express.Router({
  */
 router
 	.route("/")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * GET /api/nginx/proxy-hosts
@@ -72,7 +72,7 @@ router
  */
 router
 	.route("/:host_id")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * GET /api/nginx/proxy-hosts/123
@@ -95,7 +95,7 @@ router
 	 * Update an existing proxy-host
 	 */
 	.put(async (req, res) => {
-		const payload = apiValidator(getValidationSchema("/nginx/proxy-hosts/{hostID}", "put"), req.body);
+		const payload = apiValidator(getValidationSchema("/nginx/proxy-hosts/{host_id}", "put"), req.body);
 		payload.id = Number.parseInt(req.params.host_id, 10);
 		const result = await internalProxyHost.update(res.locals.access, payload);
 		res.status(200).send(result);
@@ -120,7 +120,7 @@ router
  */
 router
 	.route("/:host_id/enable")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * POST /api/nginx/proxy-hosts/123/enable
@@ -139,7 +139,7 @@ router
  */
 router
 	.route("/:host_id/disable")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * POST /api/nginx/proxy-hosts/123/disable

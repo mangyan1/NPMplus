@@ -1,6 +1,6 @@
 import { IconEye, IconEyeOff } from "@tabler/icons-react";
 import { ErrorMessage, Field, Form, Formik } from "formik";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import { Button, LocalePicker, Page, ThemeSwitcher } from "src/components";
 import { useAuthState } from "src/context";
@@ -9,26 +9,24 @@ import { intl, T } from "src/locale";
 import { getCookie } from "src/modules/Cookies";
 import { validateEmail, validateString } from "src/modules/Validations";
 
-function TotpForm() {
-	const codeRef = useRef(null);
+const redirectToOIDC = () => {
+	window.location.href = "/api/oidc";
+};
+
+function TotpForm({ formErr, setFormErr }) {
 	const [showCode, setShowCode] = useState(false);
-	const [formErr, setFormErr] = useState("");
 	const { submitTotp, cancelTotp } = useAuthState();
 
-	const onSubmit = async (values, { setSubmitting, resetForm }) => {
+	const onSubmit = async (values, { resetForm }) => {
 		setFormErr("");
 		try {
 			await submitTotp(values);
 		} catch (err) {
 			setFormErr(err.message);
 			resetForm();
+			if (err.message === "error.invalid-challenge") cancelTotp();
 		}
-		setSubmitting(false);
 	};
-
-	useEffect(() => {
-		codeRef.current?.focus();
-	});
 
 	return (
 		<>
@@ -40,22 +38,22 @@ function TotpForm() {
 			</p>
 			{formErr !== "" && <Alert variant="danger">{intl.formatMessage({ id: formErr })}</Alert>}
 			<Formik initialValues={{ code: "" }} onSubmit={onSubmit}>
-				{({ isSubmitting }) => (
+				{() => (
 					<Form>
 						<div className="mb-3">
-							<Field name="code" validate={validateString(6, 8)}>
-								{({ field, form }) => (
+							<Field name="code" validate={(value) => validateString(value, 6, 8)}>
+								{({ field, meta }) => (
 									<label className="form-label">
 										<T id="login.totp-code" />
 										<div className="input-group input-group-flat">
 											<input
 												{...field}
-												ref={codeRef}
+												autoFocus
 												type={showCode || !field.value ? "text" : "password"}
 												autoComplete="one-time-code"
 												required
 												maxLength={8}
-												className={`form-control ${form.errors.code && form.touched.code ? "is-invalid" : ""}`}
+												className={`form-control ${meta.touched && meta.error ? "is-invalid" : ""}`}
 												placeholder={intl.formatMessage({
 													id: "login.totp-code-placeholder",
 												})}
@@ -64,8 +62,10 @@ function TotpForm() {
 											<span className="input-group-text">
 												<button
 													type="button"
-													tabIndex={-1}
-													aria-label="toggle visibility"
+													title={intl.formatMessage({
+														id: showCode ? "mfa.hide-code" : "mfa.show-code",
+													})}
+													onMouseDown={(e) => e.preventDefault()}
 													className="p-0 border-0 bg-transparent text-secondary d-flex align-items-center cursor-pointer"
 													onClick={() => setShowCode((v) => !v)}
 												>
@@ -83,16 +83,17 @@ function TotpForm() {
 							</Field>
 						</div>
 						<div className="form-footer d-flex gap-2">
-							<Button type="button" fullWidth onClick={cancelTotp} disabled={isSubmitting}>
+							<Button
+								type="button"
+								fullWidth
+								onClick={() => {
+									setFormErr("");
+									cancelTotp();
+								}}
+							>
 								<T id="cancel" />
 							</Button>
-							<Button
-								type="submit"
-								fullWidth
-								color="azure"
-								isLoading={isSubmitting}
-								disabled={isSubmitting}
-							>
+							<Button type="submit" fullWidth color="azure">
 								<T id="login.totp-verify" />
 							</Button>
 						</div>
@@ -103,37 +104,26 @@ function TotpForm() {
 	);
 }
 
-function PasswordForm() {
-	const emailRef = useRef(null);
+function PasswordForm({ formErr, setFormErr }) {
 	const [showPassword, setShowPassword] = useState(false);
-	const [formErr, setFormErr] = useState("");
 	const { login } = useAuthState();
 	const health = useHealth();
 
-	const redirectToOIDC = () => {
-		window.location.href = "/api/oidc";
-	};
-
-	const onSubmit = async (values, { setSubmitting }) => {
+	const onSubmit = async (values) => {
 		setFormErr("");
 		try {
 			await login(values.email, values.password);
 		} catch (err) {
 			setFormErr(err.message);
 		}
-		setSubmitting(false);
 	};
 
 	useEffect(() => {
-		if (health.data?.password === false) {
-			if (getCookie("__Host-npmplus_oidc_no_redirect") !== "true") {
-				redirectToOIDC();
-			}
-		} else {
-			emailRef.current?.focus();
+		if (health.data?.password === false && getCookie("__Host-npmplus_oidc_no_redirect") !== "true") {
+			redirectToOIDC();
 		}
 		window.cookieStore.delete("__Host-npmplus_oidc_no_redirect");
-	});
+	}, [health.data?.password]);
 
 	return (
 		<>
@@ -149,26 +139,26 @@ function PasswordForm() {
 					}}
 					onSubmit={onSubmit}
 				>
-					{({ isSubmitting }) => (
+					{() => (
 						<Form>
 							<div className="mb-3">
-								<Field name="email" validate={validateEmail()}>
-									{({ field, form }) => (
+								<Field name="email" validate={validateEmail}>
+									{({ field, meta }) => (
 										<label className="form-label">
 											<T id="email-address" />
 											<input
 												{...field}
-												ref={emailRef}
+												autoFocus
 												type="email"
 												autoComplete="username"
 												required
-												className={`form-control ${form.errors.email && form.touched.email ? " is-invalid" : ""}`}
+												className={`form-control ${meta.touched && meta.error ? "is-invalid" : ""}`}
 												placeholder={intl.formatMessage({
 													id: "email-address",
 												})}
 											/>
 
-											<div className="invalid-feedback">{form.errors.email}</div>
+											<ErrorMessage name="email" component="div" className="invalid-feedback" />
 										</label>
 									)}
 								</Field>
@@ -193,8 +183,10 @@ function PasswordForm() {
 													<span className="input-group-text">
 														<button
 															type="button"
-															tabIndex={-1}
-															aria-label="toggle visibility"
+															title={intl.formatMessage({
+																id: showPassword ? "password.hide" : "password.show",
+															})}
+															onMouseDown={(e) => e.preventDefault()}
 															className="p-0 border-0 bg-transparent text-secondary d-flex align-items-center cursor-pointer"
 															onClick={() => setShowPassword((v) => !v)}
 														>
@@ -212,13 +204,7 @@ function PasswordForm() {
 								</Field>
 							</div>
 							<div className="form-footer">
-								<Button
-									type="submit"
-									fullWidth
-									color="azure"
-									isLoading={isSubmitting}
-									disabled={isSubmitting}
-								>
+								<Button type="submit" fullWidth color="azure">
 									<T id="sign-in" />
 								</Button>
 							</div>
@@ -244,9 +230,11 @@ function PasswordForm() {
 
 export default function Login() {
 	const { totpChallenge } = useAuthState();
+	const [formErr, setFormErr] = useState("");
 
 	return (
 		<Page className="page-center">
+			<title>{`NPMplus – ${intl.formatMessage({ id: "sign-in" })}`}</title>
 			<div className="container container-tight py-4">
 				<div className="d-flex justify-content-between align-items-center mb-4 ps-4 pe-3">
 					<img width={200} src="/images/logo-text-horizontal-grey.png" alt="NPMplus" />
@@ -256,7 +244,13 @@ export default function Login() {
 					</div>
 				</div>
 				<div className="card card-md">
-					<div className="card-body">{totpChallenge ? <TotpForm /> : <PasswordForm />}</div>
+					<div className="card-body">
+						{totpChallenge ? (
+							<TotpForm formErr={formErr} setFormErr={setFormErr} />
+						) : (
+							<PasswordForm formErr={formErr} setFormErr={setFormErr} />
+						)}
+					</div>
 				</div>
 			</div>
 		</Page>

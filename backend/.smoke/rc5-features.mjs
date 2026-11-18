@@ -58,7 +58,7 @@ check(
 const me = await request("GET", "/api/users/me");
 check(
 	"users/me returns the seeded admin",
-	me.status === 200 && me.json?.email === EMAIL && me.json?.roles?.includes("admin"),
+	me.status === 200 && me.json?.email === EMAIL && me.json?.npmplus_is_admin === true,
 	JSON.stringify(me.json),
 );
 

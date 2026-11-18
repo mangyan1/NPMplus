@@ -3,8 +3,8 @@ import { isDeepStrictEqual } from "node:util";
 import errs from "./error.js";
 
 const nonEmpty = (value) => typeof value === "string" && value.trim() !== "";
-const nginxSyntaxPattern = /[;{}$#"'\\]/;
-const socketPrefix = /^unix:/i;
+const nginxSyntaxPattern = /[;{}$#"'\\]/u;
+const socketPrefix = /^unix:/iu;
 const managementSockets = new Set([
 	"/run/nginx-control.sock",
 	"/run/npmplus.sock",
