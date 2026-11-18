@@ -141,7 +141,7 @@ page.on("console", (message) => {
 page.on("pageerror", (error) => browserErrors.push(String(error)));
 await page.route("**/api/**", (route) => api(route));
 await page.addInitScript((expires) => localStorage.setItem("auth", expires), iso(86400 * 1000));
-await page.goto("http://localhost:5173/crowdsec", { waitUntil: "networkidle" });
+await page.goto("http://localhost:5173/crowdsec", { waitUntil: "load" });
 
 await page.getByRole("heading", { name: "Security overview" }).waitFor({ timeout: 15000 });
 
@@ -203,7 +203,7 @@ check("instance dot pulses", homeAnimation !== "none", homeAnimation);
 
 // unknown home must degrade to a center-ward flight, not a fade-in-place
 homeKnown = false;
-await page.reload({ waitUntil: "networkidle" });
+await page.reload({ waitUntil: "load" });
 await page.getByRole("heading", { name: "Security overview" }).waitFor({ timeout: 15000 });
 check("instance dot is absent without a known home location", (await page.locator('[class*="homeDot"]').count()) === 0);
 const degraded = await observeMeteor();

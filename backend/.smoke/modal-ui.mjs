@@ -19,9 +19,9 @@ try {
 		if (message.type() === "error" && !/status of (400|401|403|503)/u.test(message.text()))
 			errors.push(message.text());
 	});
-	await page.goto(`${base}/login`, { waitUntil: "networkidle" });
-	await page.getByLabel(/email/iu).fill("admin@example.test");
-	await page.getByLabel(/password/iu).fill("rc5-smoke-password");
+	await page.goto(`${base}/login`, { waitUntil: "load" });
+	await page.getByLabel(/email/iu).fill(process.env.SMOKE_ADMIN_EMAIL || "admin@example.test");
+	await page.getByLabel(/password/iu).fill(process.env.SMOKE_ADMIN_PASSWORD || "rc5-smoke-password");
 	await page.getByRole("button", { name: /sign in|log in/iu }).click();
 	await page.getByRole("link", { name: "Open user menu" }).waitFor();
 	const dialog = page.getByRole("dialog");
@@ -62,7 +62,7 @@ try {
 		}
 		await cancel(name);
 	};
-	await page.goto(`${base}/users`, { waitUntil: "networkidle" });
+	await page.goto(`${base}/users`, { waitUntil: "load" });
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.getByRole("button", { name: "Add User", exact: true }).click();
 	await invalid("empty user form");
@@ -106,17 +106,17 @@ try {
 		["/nginx/stream", "Add Stream", "stream"],
 		["/access", "Add Access List", "access list"],
 	]) {
-		await page.goto(`${base}${route}`, { waitUntil: "networkidle" });
+		await page.goto(`${base}${route}`, { waitUntil: "load" });
 		await page.getByRole("button", { name: button, exact: true }).click();
 		await invalid(`empty ${name} form`);
 	}
-	await page.goto(`${base}/certificates`, { waitUntil: "networkidle" });
+	await page.goto(`${base}/certificates`, { waitUntil: "load" });
 	for (const name of [/Certbot.*HTTP/iu, /Certbot.*DNS/iu, /^Custom Certificate$/u, /^mTLS$/u]) {
 		await page.getByRole("button", { name: "Add Certificate", exact: true }).click();
 		await page.getByRole("button", { name }).click();
 		await invalid(`empty certificate ${name}`);
 	}
-	await page.goto(`${base}/audit-log`, { waitUntil: "networkidle" });
+	await page.goto(`${base}/audit-log`, { waitUntil: "load" });
 	await page.getByRole("button", { name: "View Details", exact: true }).first().click();
 	await cancel("audit event details");
 	// Renewal begins immediately on opening. Intercept only this synthetic
@@ -155,7 +155,7 @@ try {
 			await route.fulfill({ json: url.pathname.endsWith("/900001") ? certificate : [certificate] });
 		}
 	});
-	await page.goto(`${base}/certificates`, { waitUntil: "networkidle" });
+	await page.goto(`${base}/certificates`, { waitUntil: "load" });
 	const certRow = page.getByRole("row").filter({ hasText: "renewal.example.test" });
 	await certRow.locator("button.dropdown-toggle").click();
 	await certRow.getByRole("button", { name: /renew/iu }).click();
@@ -163,7 +163,7 @@ try {
 	await cancel("failed certificate renewal fixture");
 	assert.equal(renewalRequests, 1);
 	await page.unroute(certificateRoutes);
-	await page.goto(`${base}/users`, { waitUntil: "networkidle" });
+	await page.goto(`${base}/users`, { waitUntil: "load" });
 	await action("Delete");
 	await dialog.getByRole("button", { name: "Delete", exact: true }).click();
 	await dialog.waitFor({ state: "hidden" });

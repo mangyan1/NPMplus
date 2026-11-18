@@ -14,7 +14,7 @@ try {
 	page.on("console", (message) => {
 		if (message.type() === "error" && !/status of (400|401|403)/u.test(message.text())) errors.push(message.text());
 	});
-	await page.goto(`${base}/login`, { waitUntil: "networkidle" });
+	await page.goto(`${base}/login`, { waitUntil: "load" });
 	await page.getByLabel(/email/iu).fill(process.env.SMOKE_ADMIN_EMAIL);
 	await page.getByLabel(/password/iu).fill(process.env.SMOKE_ADMIN_PASSWORD);
 	await page.getByRole("button", { name: /sign in|log in/iu }).click();
@@ -49,7 +49,8 @@ try {
 			json: { results: rows.slice(auditPage * size, (auditPage + 1) * size), total: rows.length },
 		});
 	});
-	await page.goto(`${base}/users`, { waitUntil: "networkidle" });
+	await page.goto(`${base}/users`, { waitUntil: "load" });
+	await page.getByRole("row").filter({ hasText: "Pagination user 001" }).waitFor();
 	assert.equal(await page.locator("tbody tr").count(), 25);
 	await page.getByRole("button", { name: "Next page", exact: true }).first().click();
 	await page.getByRole("row").filter({ hasText: "Pagination user 026" }).waitFor();
@@ -62,12 +63,12 @@ try {
 	await page.getByRole("searchbox").fill("Pagination user 051");
 	assert.equal(await page.locator("tbody tr").count(), 1);
 	console.log("PASS user-table pagination, page size and filtering use the retained table dependency");
-	await page.goto(`${base}/audit-log`, { waitUntil: "networkidle" });
+	await page.goto(`${base}/audit-log`, { waitUntil: "load" });
+	await page.getByRole("row").filter({ hasText: "Pagination user 001" }).first().waitFor();
 	assert.equal(await page.locator("tbody tr").count(), 25);
 	const nextResponse = page.waitForResponse((response) => new URL(response.url()).searchParams.get("page") === "1");
 	await page.getByRole("button", { name: "Next page", exact: true }).first().click();
 	await nextResponse;
-	await page.waitForLoadState("networkidle");
 	assert.equal(auditPage, 1);
 	const filterResponse = page.waitForResponse((response) => {
 		const url = new URL(response.url());

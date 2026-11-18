@@ -21,7 +21,7 @@ try {
 		if (message.type() === "error" && !/status of (400|401|403|503)/u.test(message.text()))
 			errors.push(message.text());
 	});
-	await page.goto(base, { waitUntil: "networkidle" });
+	await page.goto(base, { waitUntil: "load" });
 	await page.getByLabel("Full Name", { exact: true }).fill("Security Browser Fixture");
 	await page.getByLabel(/email/iu).fill("browser-audit@example.test");
 	await page
@@ -75,7 +75,7 @@ try {
 	await page.getByRole("link", { name: "Open user menu" }).waitFor({ timeout: 15000 });
 	console.log("PASS a fresh authenticator code logs in successfully");
 	await page.setViewportSize({ width: 1280, height: 900 });
-	await page.goto(`${base}/nginx/proxy`, { waitUntil: "networkidle" });
+	await page.goto(`${base}/nginx/proxy`, { waitUntil: "load" });
 	await page.getByRole("button", { name: /add proxy host/iu }).click();
 	const domainNames = page.getByLabel("Domain Names", { exact: true });
 	await domainNames.fill("browser-audit.example.test");

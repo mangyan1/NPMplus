@@ -12,7 +12,10 @@ const getEnvironmentHash = async () => {
 		const content = await readFile(`${templateDirectory}/${filename}`, "utf8");
 		for (const match of content.match(/env\.[A-Z0-9_]+/gu) || []) names.add(match.slice(4));
 	}
-	const entries = [...names].sort().map((name) => [name, process.env[name] || ""]);
+	// code-unit order (the previous default sort) keeps the digest stable across locales
+	const entries = [...names]
+		.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+		.map((name) => [name, process.env[name] || ""]);
 	const serialized = JSON.stringify(["npmplus-env-v2", process.env.TV || "", entries]);
 	return `v2:${createHash("sha512").update(serialized).digest("hex")}`;
 };
