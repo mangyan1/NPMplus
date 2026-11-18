@@ -14,14 +14,11 @@ const showSetPasswordModal = (id) => {
 	void EasyModal.show(SetPasswordModal, { id });
 };
 
-const SetPasswordModal = EasyModal.create(({ id, visible, remove }) => {
+const SetPasswordModal = EasyModal.create(({ id, visible, remove, close, formRef }) => {
 	const [error, setError] = useState(null);
-	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [showPassword, setShowPassword] = useState(false);
 
-	const onSubmit = async (values, { setSubmitting }) => {
-		if (isSubmitting) return;
-		setIsSubmitting(true);
+	const onSubmit = async (values) => {
 		setError(null);
 		try {
 			await updateAuth(id, values.new);
@@ -30,13 +27,12 @@ const SetPasswordModal = EasyModal.create(({ id, visible, remove }) => {
 		} catch (err) {
 			setError(<T id={err.message} />);
 		}
-		setIsSubmitting(false);
-		setSubmitting(false);
 	};
 
 	return (
-		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
+		<Modal show={visible} backdrop="static" onHide={close}>
 			<Formik
+				innerRef={formRef}
 				initialValues={{
 					new: "",
 				}}
@@ -44,7 +40,7 @@ const SetPasswordModal = EasyModal.create(({ id, visible, remove }) => {
 			>
 				{() => (
 					<Form>
-						<Modal.Header closeButton={!isSubmitting}>
+						<Modal.Header closeButton>
 							<Modal.Title>
 								<T id="user.set-password" />
 							</Modal.Title>
@@ -57,8 +53,8 @@ const SetPasswordModal = EasyModal.create(({ id, visible, remove }) => {
 								<T id="logout-other-devices" />
 							</Alert>
 							<div className="mb-3">
-								<Field name="new" validate={validateString(8, 255, false)}>
-									{({ field, form }) => (
+								<Field name="new" validate={(value) => validateString(value, 8, 255, false)}>
+									{({ field, meta }) => (
 										<div className="input-group input-group-flat">
 											<div className="form-floating">
 												<input
@@ -66,7 +62,7 @@ const SetPasswordModal = EasyModal.create(({ id, visible, remove }) => {
 													type={showPassword ? "text" : "password"}
 													autoComplete="new-password"
 													required
-													className={`form-control ${form.errors.new && form.touched.new ? "is-invalid" : ""}`}
+													className={`form-control ${meta.touched && meta.error ? "is-invalid" : ""}`}
 													placeholder={intl.formatMessage({
 														id: "user.new-password",
 													})}
@@ -80,8 +76,10 @@ const SetPasswordModal = EasyModal.create(({ id, visible, remove }) => {
 											<span className="input-group-text">
 												<button
 													type="button"
-													tabIndex={-1}
-													aria-label="toggle visibility"
+													title={intl.formatMessage({
+														id: showPassword ? "password.hide" : "password.show",
+													})}
+													onMouseDown={(e) => e.preventDefault()}
 													className="p-0 border-0 bg-transparent text-secondary d-flex align-items-center cursor-pointer"
 													onClick={() => setShowPassword((v) => !v)}
 												>
@@ -95,16 +93,10 @@ const SetPasswordModal = EasyModal.create(({ id, visible, remove }) => {
 							</div>
 						</Modal.Body>
 						<Modal.Footer>
-							<Button onClick={remove} disabled={isSubmitting}>
+							<Button onClick={close}>
 								<T id="cancel" />
 							</Button>
-							<Button
-								type="submit"
-								actionType="primary"
-								className="ms-auto"
-								isLoading={isSubmitting}
-								disabled={isSubmitting}
-							>
+							<Button type="submit" actionType="primary" className="ms-auto">
 								<T id="save" />
 							</Button>
 						</Modal.Footer>

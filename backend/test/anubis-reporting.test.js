@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
-import test from "node:test";
+import it from "node:test";
 import { isolatedPath } from "./helpers/environment.js";
 
 process.env.AUTH_REQUEST_ANUBIS_UPSTREAM = "http://anubis-fixture:8923";
@@ -18,7 +18,7 @@ const { readRecentHoneypotIps, readHoneypotBridge } = await import("../internal/
 const { collectAnubis } = await import("../internal/anubis-reporting.js");
 const { default: router } = await import("../routes/crowdsec.js");
 
-test("honeypot log reports retained scope without accepting partial addresses", async () => {
+it("honeypot log reports retained scope without accepting partial addresses", async () => {
 	await writeFile("/data/anubis/honeypot.addrs", "203.0.113.1\n2001:db8::1\n203.0.113.1\n192.0.2.1");
 	const result = await readRecentHoneypotIps();
 	assert.deepEqual(result.items, ["203.0.113.1", "2001:db8::1", "203.0.113.1"]);
@@ -28,7 +28,7 @@ test("honeypot log reports retained scope without accepting partial addresses", 
 	assert.ok(result.log.modifiedAt);
 });
 
-test("bridge evidence validates counters and distinguishes stale from failed", async () => {
+it("bridge evidence validates counters and distinguishes stale from failed", async () => {
 	const status = { checked_at: Date.now(), status: "failed", applied: 1, failed: 1, invalid: 0, pending_bytes: 12 };
 	await writeFile("/data/anubis/honeypot-bridge.json", JSON.stringify(status));
 	assert.equal((await readHoneypotBridge()).status, "failed");
@@ -43,7 +43,7 @@ test("bridge evidence validates counters and distinguishes stale from failed", a
 	assert.equal((await readHoneypotBridge()).status, "unavailable");
 });
 
-test("an unreadable bridge file is reported once per outage, not once per poll", async (t) => {
+it("an unreadable bridge file is reported once per outage, not once per poll", async (t) => {
 	const messages = [];
 	t.mock.method(console, "log", (...args) => messages.push(args.join(" ")));
 	const reported = () => messages.filter((line) => line.includes("honeypot bridge is unreadable")).length;
@@ -63,7 +63,7 @@ test("an unreadable bridge file is reported once per outage, not once per poll",
 	assert.equal(reported() - before, 2, "a recovered bridge did not rearm the report");
 });
 
-test("each Anubis source reports its absence once, and separately", async (t) => {
+it("each Anubis source reports its absence once, and separately", async (t) => {
 	const messages = [];
 	t.mock.method(console, "log", (...args) => messages.push(args.join(" ")));
 	const sources = ["anubis-metrics.prom", "honeypot.addrs", "honeypot-attempts.log"];
@@ -81,7 +81,7 @@ test("each Anubis source reports its absence once, and separately", async (t) =>
 	);
 });
 
-test("Anubis HTTP response headers prove reachability even when its body is oversized", async (t) => {
+it("Anubis HTTP response headers prove reachability even when its body is oversized", async (t) => {
 	t.mock.method(globalThis, "fetch", async (input) =>
 		String(input).includes("anubis-fixture")
 			? new Response("large challenge", { status: 403, headers: { "content-length": "9999999" } })

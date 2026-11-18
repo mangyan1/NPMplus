@@ -7,7 +7,7 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { test } from "node:test";
+import { test as it } from "node:test";
 import dnsPlugins from "../certbot/dns-plugins.json" with { type: "json" };
 import internalCertificate from "../internal/certificate.js";
 import { installPlugin } from "../lib/certbot.js";
@@ -28,7 +28,7 @@ const fakeCertificate = ({ id = 101, domain_names, ...overrides } = {}) => ({
 // certbot reads its config from the environment at request time
 process.env.ACME_SERVER = "https://acme-staging-v02.api.letsencrypt.org/directory";
 
-test("dns plugin catalog stays complete: every provider is installable and configurable", () => {
+it("dns plugin catalog stays complete: every provider is installable and configurable", () => {
 	assert.ok(Object.keys(dnsPlugins).length > 50, "plugin catalog unexpectedly shrank");
 	for (const [key, plugin] of Object.entries(dnsPlugins)) {
 		assert.ok(plugin.name, `${key}: missing display name`);
@@ -42,7 +42,7 @@ test("dns plugin catalog stays complete: every provider is installable and confi
 	assert.equal(dnsPlugins.cloudflare.package_name, "certbot-dns-cloudflare");
 });
 
-test("installPlugin pip-installs the catalog package for the provider", async (t) => {
+it("installPlugin pip-installs the catalog package for the provider", async (t) => {
 	const calls = [];
 	t.mock.method(utils, "execFile", async (cmd, args) => {
 		calls.push([cmd, args]);
@@ -52,14 +52,14 @@ test("installPlugin pip-installs the catalog package for the provider", async (t
 	assert.deepEqual(calls, [["pip", ["install", "--upgrade", "--no-cache-dir", "certbot-dns-cloudflare"]]]);
 });
 
-test("installPlugin refuses providers that are not in the catalog", async (t) => {
+it("installPlugin refuses providers that are not in the catalog", async (t) => {
 	t.mock.method(utils, "execFile", async () => {
 		throw new Error("pip must never run for an unknown provider");
 	});
-	await assert.rejects(installPlugin("this-plugin-does-not-exist"), /not found|not found in/i);
+	await assert.rejects(installPlugin("this-plugin-does-not-exist"), /not found|not found in/iu);
 });
 
-test("dns challenge request invokes certbot with the plugin authenticator and credentials file", async (t) => {
+it("dns challenge request invokes certbot with the plugin authenticator and credentials file", async (t) => {
 	mkdirSync(CREDENTIALS_DIR, { recursive: true });
 	const calls = [];
 	t.mock.method(utils, "execFile", async (cmd, args) => {
@@ -108,7 +108,7 @@ test("dns challenge request invokes certbot with the plugin authenticator and cr
 	}
 });
 
-test("dns challenge request passes propagation seconds when configured", async (t) => {
+it("dns challenge request passes propagation seconds when configured", async (t) => {
 	mkdirSync(CREDENTIALS_DIR, { recursive: true });
 	const calls = [];
 	t.mock.method(utils, "execFile", async (cmd, args) => {
@@ -124,7 +124,7 @@ test("dns challenge request passes propagation seconds when configured", async (
 	assert.equal(certbotArgs[flagIndex + 1], 42);
 });
 
-test("dns challenge request cleans up the credentials file when certbot fails", async (t) => {
+it("dns challenge request cleans up the credentials file when certbot fails", async (t) => {
 	mkdirSync(CREDENTIALS_DIR, { recursive: true });
 	const credentialsPath = `${CREDENTIALS_DIR}/credentials-777`;
 	t.mock.method(utils, "execFile", async (cmd) => {
@@ -134,12 +134,12 @@ test("dns challenge request cleans up the credentials file when certbot fails", 
 
 	await assert.rejects(
 		internalCertificate.requestCertbotWithDnsChallenge(fakeCertificate({ id: 777 })),
-		/certbot exploded/,
+		/certbot exploded/u,
 	);
 	assert.equal(existsSync(credentialsPath), false, "credentials file leaked after a failed request");
 });
 
-test("dns challenge renewal revokes then renews under the same cert-name", async (t) => {
+it("dns challenge renewal revokes then renews under the same cert-name", async (t) => {
 	const calls = [];
 	t.mock.method(utils, "execFile", async (cmd, args) => {
 		calls.push([cmd, args]);
@@ -157,7 +157,7 @@ test("dns challenge renewal revokes then renews under the same cert-name", async
 	assert.ok(renewArgs.includes("--force-renewal"), "renewal must force a new certificate");
 });
 
-test("an unknown dns provider fails fast without touching pip or certbot", async (t) => {
+it("an unknown dns provider fails fast without touching pip or certbot", async (t) => {
 	const calls = [];
 	t.mock.method(utils, "execFile", async (cmd, args) => {
 		calls.push([cmd, args]);
@@ -168,11 +168,11 @@ test("an unknown dns provider fails fast without touching pip or certbot", async
 		internalCertificate.requestCertbotWithDnsChallenge(
 			fakeCertificate({ npmplus_dns_provider: "no-such-provider" }),
 		),
-		/Unknown DNS provider/,
+		/Unknown DNS provider/u,
 	);
 	await assert.rejects(
 		internalCertificate.renewCertbotWithDnsChallenge(fakeCertificate({ npmplus_dns_provider: "no-such-provider" })),
-		/Unknown DNS provider/,
+		/Unknown DNS provider/u,
 	);
 	assert.deepEqual(calls, [], "no external command may run for an unknown provider");
 });

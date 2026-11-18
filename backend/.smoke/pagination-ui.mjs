@@ -12,25 +12,25 @@ try {
 	const errors = [];
 	page.on("pageerror", (error) => errors.push(error.message));
 	page.on("console", (message) => {
-		if (message.type() === "error" && !/status of (400|401|403)/.test(message.text())) errors.push(message.text());
+		if (message.type() === "error" && !/status of (400|401|403)/u.test(message.text())) errors.push(message.text());
 	});
 	await page.goto(`${base}/login`, { waitUntil: "networkidle" });
-	await page.getByLabel(/email/i).fill(process.env.SMOKE_ADMIN_EMAIL);
-	await page.getByLabel(/password/i).fill(process.env.SMOKE_ADMIN_PASSWORD);
-	await page.getByRole("button", { name: /sign in|log in/i }).click();
+	await page.getByLabel(/email/iu).fill(process.env.SMOKE_ADMIN_EMAIL);
+	await page.getByLabel(/password/iu).fill(process.env.SMOKE_ADMIN_PASSWORD);
+	await page.getByRole("button", { name: /sign in|log in/iu }).click();
 	await page.getByRole("link", { name: "Open user menu" }).waitFor();
 	const users = Array.from({ length: 51 }, (_, index) => ({
 		id: index + 1000,
 		name: `Pagination user ${String(index + 1).padStart(3, "0")}`,
 		email: `page-${index + 1}@example.test`,
-		roles: [],
+		npmplus_is_admin: 0,
 		avatar: "",
 		created_on: "2026-10-01T12:00:00.000Z",
 		is_disabled: false,
 	}));
 	let auditPage = 0;
-	await page.route(/\/api\/users(?:\?.*)?$/, (route) => route.fulfill({ json: users }));
-	await page.route(/\/api\/audit-log(?:\?.*)?$/, (route) => {
+	await page.route(/\/api\/users(?:\?.*)?$/u, (route) => route.fulfill({ json: users }));
+	await page.route(/\/api\/audit-log(?:\?.*)?$/u, (route) => {
 		const params = new URL(route.request().url()).searchParams;
 		auditPage = Number(params.get("page") || 0);
 		const size = Number(params.get("page_size") || 25);

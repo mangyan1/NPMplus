@@ -19,7 +19,7 @@ fi
 if [ "$ACME_PROFILE" != "none" ]; then
     sed -i "s|#required-profile|required-profile = $ACME_PROFILE|g" /etc/certbot.ini
 else
-    find /data/tls/certbot/renewal -type f -name '*.conf' -exec sed -i "/required_profile/d" {} \;
+    find /data/tls/certbot/renewal -type f -name '*.conf' -exec sed -i "/required_profile/d" {} \; 2> /dev/null
 fi
 
 
@@ -35,7 +35,7 @@ if [ "$PHP83" = "true" ]; then
                 sleep inf
             fi
             echo "Installing $apk via apk..."
-            if ! apk add --no-cache "$apk" > /dev/null 2>&1; then
+            if ! apk add --no-cache "$apk" > /dev/null; then
                 echo "The apk \"$apk\" was not installed!"
             fi
         done
@@ -59,7 +59,7 @@ if [ "$PHP84" = "true" ]; then
                 sleep inf
             fi
             echo "Installing $apk via apk..."
-            if ! apk add --no-cache "$apk" > /dev/null 2>&1; then
+            if ! apk add --no-cache "$apk" > /dev/null; then
                 echo "The apk \"$apk\" was not installed!"
             fi
         done
@@ -83,7 +83,7 @@ if [ "$PHP85" = "true" ]; then
                 sleep inf
             fi
             echo "Installing $apk via apk..."
-            if ! apk add --no-cache "$apk" > /dev/null 2>&1; then
+            if ! apk add --no-cache "$apk" > /dev/null; then
                 echo "The apk \"$apk\" was not installed!"
             fi
         done
@@ -105,7 +105,7 @@ if { [ "$PHP83" = "true" ] || [ "$PHP84" = "true" ] || [ "$PHP85" = "true" ]; } 
             sleep inf
         fi
         echo "Installing $apk via apk..."
-        if ! apk add --no-cache "$apk" > /dev/null 2>&1; then
+        if ! apk add --no-cache "$apk" > /dev/null; then
             echo "The apk \"$apk\" was not installed!"
         fi
     done
@@ -188,16 +188,21 @@ done
 
 
 if mountpoint -q /etc/letsencrypt; then
-  if [ -n "$(ls -A /etc/letsencrypt 2> /dev/null)" ]; then
-    cp -van /etc/letsencrypt/* /data/tls/certbot
+  if [ -n "$(ls -A /data/tls/certbot/renewal)" ] || [ -d /data/tls/certbot/accounts ]; then
+    echo "/data/tls/certbot already contains certs or accounts, so nothing was copied, please remove the /etc/letsencrypt mountpoint and redeploy!"
+  else
+    if [ -n "$(ls -A /etc/letsencrypt)" ]; then
+      cp -van /etc/letsencrypt/* /data/tls/certbot
+    fi
+    echo "All certbot certs have been copied, please remove the /etc/letsencrypt mountpoint and redeploy to continue the migration!"
   fi
-  echo "All certbot certs have been copied, please remove the /etc/letsencrypt mountpoint and redeploy to continue the migration!"
+  find /data/tls/certbot/renewal -type f -name '*.conf' -exec sed -i "s|/etc/letsencrypt|/data/tls/certbot|g" {} \;
   sleep inf
 fi
 
-#tmp move to mointpoint if block
-find /data/tls/certbot/renewal -type f -name '*.conf' -exec sed -i "s|/etc/letsencrypt|/data/tls/certbot|g" {} \;
 find /data/tls/certbot/renewal -type f -name '*.conf' -exec sed -i "s|/data/tls/certbot/credentials|/tmp/certbot-credentials|g" {} \;
+find /data/tls/certbot/renewal -type f -name '*.conf' -exec sed -i "/^manual_auth_hook = true$/d" {} \;
+find /data/tls/certbot/renewal -type f -name '*.conf' -exec sed -i "s|^authenticator = manual$|authenticator = webroot|g" {} \;
 
 if [ -d /data/tls/certbot/live ] && [ -d /data/tls/certbot/archive ]; then
   find /data/tls/certbot/live ! -name "$(printf "*\n*")" -type f -name "*.pem" > /tmp/certs.txt
@@ -233,11 +238,13 @@ fi
 #done
 
 rm -vrf /data/letsencrypt-acme-challenge \
+        /data/nginx/acme_challenge.conf \
         /data/nginx/default_host \
         /data/nginx/temp \
         /data/logs \
         /data/keys.json \
-        /data/npmplus/keys.json
+        /data/npmplus/keys.json \
+        /data/npmplus/keys-ec.json
 
 touch /data/tls/ech/nginx.conf \
       /data/tls/ech/cron.sh \
@@ -259,6 +266,8 @@ touch /data/tls/ech/nginx.conf \
       /data/custom_nginx/server_stream.conf \
       /data/custom_nginx/server_stream_tcp.conf \
       /data/custom_nginx/server_stream_udp.conf
+: > /data/nginx/ip_ranges.conf
+: > /data/nginx/default.conf
 
 
 if [ ! -s /data/crowdsec/ban.html ]; then
@@ -435,7 +444,7 @@ if [ "$NGINX_LOAD_VHOST_TRAFFIC_STATUS_MODULE" = "true" ]; then
 fi
 
 if [ "$REGENERATE_ALL" = "true" ]; then
-    find /data/nginx -name "*.conf" -delete
+    find /data/nginx -mindepth 2 -name "*.conf" -delete
 fi
 
 if [ "$LOGROTATE" = "true" ]; then
@@ -444,9 +453,9 @@ if [ "$LOGROTATE" = "true" ]; then
     sed -i "s|access_log off; # stream|access_log /data/nginx/logs/stream.log slog;|g" /usr/local/nginx/conf/nginx.conf
     sed -i "s|#error_log|error_log|g" /usr/local/nginx/conf/nginx.conf
 
-    if [ ! -L /data/nginx/access.log ] && [ ! -f /data/nginx/logs/access.log ]; then mv -vn /data/nginx/access.log* /data/nginx/logs; fi
-    if [ ! -L /data/nginx/stream.log ] && [ ! -f /data/nginx/logs/stream.log ]; then mv -vn /data/nginx/stream.log* /data/nginx/logs; fi
-    if [ ! -L /data/nginx/error.log ] && [ ! -f /data/nginx/logs/error.log ]; then mv -vn /data/nginx/error.log* /data/nginx/logs; fi
+    if [ ! -L /data/nginx/access.log ] && [ ! -f /data/nginx/logs/access.log ]; then mv -vn /data/nginx/access.log* /data/nginx/logs 2> /dev/null; fi
+    if [ ! -L /data/nginx/stream.log ] && [ ! -f /data/nginx/logs/stream.log ]; then mv -vn /data/nginx/stream.log* /data/nginx/logs 2> /dev/null; fi
+    if [ ! -L /data/nginx/error.log ] && [ ! -f /data/nginx/logs/error.log ]; then mv -vn /data/nginx/error.log* /data/nginx/logs 2> /dev/null; fi
     if [ -f /data/logrotate.state ]; then mv -vn /data/logrotate.state /data/nginx/logs/logrotate.state; fi
 
     touch /data/nginx/logs/access.log \
@@ -479,17 +488,17 @@ rm -vf /usr/local/nginx/logs/nginx.pid
 rm -vf /run/*.sock
 
 if [ "$PUID" != "0" ]; then
-    if [ -n "$(getent group "$PGID" 2>/dev/null)" ]; then
+    if [ -n "$(getent group "$PGID")" ]; then
         :
-    elif [ -n "$(getent group npmplus 2>/dev/null)" ]; then
+    elif [ -n "$(getent group npmplus)" ]; then
         groupmod -g "$PGID" npmplus
     else
         groupadd -g "$PGID" npmplus
     fi
 
-    if [ -n "$(getent passwd "$PUID" 2>/dev/null)" ]; then
+    if [ -n "$(getent passwd "$PUID")" ]; then
         :
-    elif [ -n "$(getent passwd npmplus 2>/dev/null)" ]; then
+    elif [ -n "$(getent passwd npmplus)" ]; then
         usermod -u "$PUID" -g "$PGID" -G "" -d /tmp npmplus
     else
         useradd -u "$PUID" -g "$PGID" -M -d /tmp -s /sbin/nologin npmplus

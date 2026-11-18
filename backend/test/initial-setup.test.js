@@ -1,7 +1,7 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
-import { after, test } from "node:test";
+import { after, test as it } from "node:test";
 
 process.env.INITIAL_SETUP_TOKEN = "isolated-initial-setup-token-for-tests-only";
 const { default: app } = await import("../app.js");
@@ -21,7 +21,7 @@ after(async () => {
 	await new Promise((resolve) => server.close(resolve));
 });
 
-test("first-admin setup accepts the current schema and remains token-protected and one-time", async (t) => {
+it("first-admin setup accepts the current schema and remains token-protected and one-time", async (t) => {
 	t.mock.method(user, "fetchGravatar", async () => "");
 	const create = (token) =>
 		fetch(`http://127.0.0.1:${server.address().port}/api/users`, {
@@ -30,7 +30,7 @@ test("first-admin setup accepts the current schema and remains token-protected a
 			body: JSON.stringify({
 				name: "First administrator",
 				email: "setup@example.test",
-				roles: [],
+				npmplus_is_admin: 0,
 				auth: { type: "password", secret: "Setup-Fixture-Password-1" },
 			}),
 		});
@@ -59,7 +59,7 @@ test("first-admin setup accepts the current schema and remains token-protected a
 	}
 	const created = await create(process.env.INITIAL_SETUP_TOKEN);
 	assert.equal(created.status, 201, await created.clone().text());
-	assert.deepEqual((await created.json()).roles, ["admin"]);
+	assert.equal((await created.json()).npmplus_is_admin, true);
 	const login = await fetch(`http://127.0.0.1:${server.address().port}/api/tokens`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
@@ -70,7 +70,7 @@ test("first-admin setup accepts the current schema and remains token-protected a
 	assert.equal((await create(process.env.INITIAL_SETUP_TOKEN)).status, 403);
 });
 
-test("avatar failure after account creation still returns a complete usable account", async (t) => {
+it("avatar failure after account creation still returns a complete usable account", async (t) => {
 	t.mock.method(user, "fetchGravatar", async () => {
 		throw new Error("injected avatar failure");
 	});
@@ -78,7 +78,7 @@ test("avatar failure after account creation still returns a complete usable acco
 	const created = await user.create(access, {
 		name: "Avatar fallback",
 		email: "avatar-fallback@example.test",
-		roles: [],
+		npmplus_is_admin: 0,
 		auth: { type: "password", secret: "Avatar-Fixture-Password-1" },
 	});
 	assert.equal(created.avatar, "/images/default-avatar.jpg");

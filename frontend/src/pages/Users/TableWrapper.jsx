@@ -1,10 +1,10 @@
 import { IconSearch } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import { adminDisableMfa, deleteUser, revokeSessions, toggleUser } from "src/api/backend";
 import { Button, LoadingPage } from "src/components";
 import { useUser, useUsers } from "src/hooks";
-import { T } from "src/locale";
+import { intl, T } from "src/locale";
 import { showDeleteConfirmModal, showPermissionsModal, showSetPasswordModal, showUserModal } from "src/modals";
 import { showError, showObjectSuccess } from "src/notifications";
 import Table from "./Table";
@@ -13,12 +13,6 @@ export default function TableWrapper() {
 	const [search, setSearch] = useState("");
 	const { isFetching, isPending, isError, error, data } = useUsers();
 
-	useEffect(() => {
-		// this can happen if someone deletes the last item while searching
-		if (search !== "" && !data?.length) {
-			setSearch("");
-		}
-	});
 	const { data: currentUser } = useUser("me");
 
 	if (isPending) {
@@ -26,11 +20,7 @@ export default function TableWrapper() {
 	}
 
 	if (isError) {
-		return (
-			<Alert variant="danger">
-				<T id={error?.message || "error.unknown"} />
-			</Alert>
-		);
+		return <Alert variant="danger">{error?.message}</Alert>;
 	}
 
 	const handleDisableToggle = async (id, enabled) => {
@@ -44,7 +34,9 @@ export default function TableWrapper() {
 
 	let filtered = null;
 	if (search) {
-		filtered = data?.filter((item) => item.name.toLowerCase().includes(search) || item.email.includes(search));
+		filtered = data?.filter(
+			(item) => item.name.toLowerCase().includes(search) || item.email.toLowerCase().includes(search),
+		);
 	}
 
 	return (
@@ -66,7 +58,8 @@ export default function TableWrapper() {
 											<IconSearch size={16} />
 										</span>
 										<input
-											type="text"
+											type="search"
+											placeholder={intl.formatMessage({ id: "action.search" })}
 											className="form-control form-control-sm"
 											autoComplete="off"
 											onChange={(e) => setSearch(e.target.value.toLowerCase().trim())}
@@ -87,7 +80,7 @@ export default function TableWrapper() {
 					isFetching={isFetching}
 					currentUserId={currentUser?.id}
 					onEditUser={(id) => showUserModal(id)}
-					onEditPermissions={(id) => showPermissionsModal(id)}
+					onEditPermissions={(id, name) => showPermissionsModal(id, name)}
 					onSetPassword={(id) => showSetPasswordModal(id)}
 					onResetMfa={(id) => {
 						const user = data?.find((item) => item.id === id);

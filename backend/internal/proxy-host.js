@@ -1,6 +1,6 @@
 import net from "node:net";
 import errs from "../lib/error.js";
-import { castJsonIfNeed } from "../lib/helpers.js";
+import { castJsonIfNeed, hasDuplicateDomains } from "../lib/helpers.js";
 import { assertPrivilegedNginxFields } from "../lib/nginx-privilege.js";
 import { global as logger } from "../logger.js";
 import locationModel from "../models/location.js";
@@ -11,55 +11,23 @@ import internalHost from "./host.js";
 import internalNginx from "./nginx.js";
 import internalProxyHostAccessList from "./proxy-host-access-list.js";
 
-// tcp probe of the forward destination; nginx -t never checks it, but a
-// destination nothing listens on means the host serves errors, so the
-// dashboard dot should say so. Returns null when there is no tcp
-// destination to probe (path/empty schemes, unix sockets, upstream names).
-const probeForwardDestination = (scheme, host, port) => {
-	if (!["http", "https", "grpc", "grpcs"].includes(scheme)) {
-		return null;
-	}
-	if (!host || host.startsWith("/") || host.startsWith("unix") || host.startsWith("cu_")) {
-		return null;
-	}
-	const portNumber = Number(port) || (["https", "grpcs"].includes(scheme) ? 443 : 80);
-	return new Promise((resolve) => {
-		const socket = net.connect({ host, port: portNumber });
-		const finish = (ok, err) => {
-			socket.destroy();
-			resolve({ ok, err: err ? err.message : null });
-		};
-		socket.setTimeout(3_000, () => finish(false, new Error("Connection timed out")));
-		socket.once("connect", () => finish(true));
-		socket.once("error", (err) => finish(false, err));
-	});
-};
+const authProvider = (authRequest) => authRequest?.replace("-send-basic-auth", "");
 
-// configure nginx, then probe and persist reachability into the host meta so
-// the create/update/enable responses and the list all carry the same state.
-// The probe is advisory: it must never fail the save of a configured, live
-// host, and a non-tcp destination clears stale reach state from whatever the
-// previous destination probed.
-const configureWithReachability = async (row) => {
-	const status = await internalNginx.configure(proxyHostModel, "proxy_host", row);
-	try {
-		const reach = await probeForwardDestination(row.forward_scheme, row.forward_host, row.forward_port);
-		await proxyHostModel
-			.query()
-			.where("id", row.id)
-			.patch({ meta: { reach_ok: reach ? reach.ok : null, reach_err: reach ? reach.err : null } });
-	} catch (err) {
-		logger.error(`Reachability probe failed for proxy host ${row.id}: ${err.message}`);
-		try {
-			await proxyHostModel
-				.query()
-				.where("id", row.id)
-				.patch({ meta: { reach_ok: null, reach_err: "probe failed" } });
-		} catch (patchErr) {
-			logger.error(`Could not clear reachability meta for proxy host ${row.id}: ${patchErr.message}`);
+const hasAuthRequestUpstreamConflict = (host) => {
+	const locations = (host.locations ?? []).filter(
+		({ npmplus_enabled, npmplus_auth_request = "none" }) =>
+			npmplus_enabled !== false && npmplus_auth_request !== "none",
+	);
+	return locations.some((location) => {
+		if (authProvider(host.npmplus_auth_request) === authProvider(location.npmplus_auth_request)) {
+			return Boolean(location.npmplus_auth_request_upstream);
 		}
-	}
-	return status;
+		return locations.some(
+			(other) =>
+				authProvider(other.npmplus_auth_request) === authProvider(location.npmplus_auth_request) &&
+				(other.npmplus_auth_request_upstream || "") !== (location.npmplus_auth_request_upstream || ""),
+		);
+	});
 };
 
 const replaceLocationsAndAccessLists = async (trx, proxyHostId, data) => {
@@ -92,8 +60,8 @@ const cleanForwardOptions = (item) => {
 	if (scheme !== "empty") {
 		if (!item.forward_host) throw new errs.ValidationError(`Forward host is required for the ${scheme} scheme`);
 		if (!["http", "https"].includes(scheme)) {
-			item.npmplus_proxy_request_buffering = false;
-			item.npmplus_proxy_response_buffering = false;
+			item.npmplus_disable_proxy_request_buffering = false;
+			item.npmplus_proxy_response_buffering = "on_auto";
 		}
 		if (scheme === "path") {
 			item.npmplus_upstream_compression = false;
@@ -101,8 +69,57 @@ const cleanForwardOptions = (item) => {
 			item.npmplus_fancyindex = false;
 		}
 	}
-	if (!item.npmplus_crowdsec_appsec) item.npmplus_proxy_request_buffering = false;
-	if ((item.npmplus_auth_request ?? "none") === "none") item.npmplus_auth_request_upstream = "";
+	if (!item.npmplus_disable_crowdsec_appsec) item.npmplus_disable_proxy_request_buffering = false;
+	if (["none", "global"].includes(item.npmplus_auth_request ?? "none")) item.npmplus_auth_request_upstream = "";
+};
+
+// tcp probe of the forward destination; nginx -t never checks it, but a
+// destination nothing listens on means the host serves errors, so the
+// dashboard dot should say so. Returns null when there is no tcp
+// destination to probe (path/empty schemes, unix sockets, upstream names).
+const probeForwardDestination = (scheme, host, port) => {
+	if (!["http", "https", "grpc", "grpcs"].includes(scheme)) {
+		return null;
+	}
+	if (!host || host.startsWith("/") || host.startsWith("unix") || host.startsWith("cu_")) {
+		return null;
+	}
+	const portNumber = Number(port) || (["https", "grpcs"].includes(scheme) ? 443 : 80);
+	return new Promise((resolve) => {
+		const socket = net.connect({ host, port: portNumber });
+		const finish = (ok, err) => {
+			socket.destroy();
+			resolve({ ok, err: err ? err.message : null });
+		};
+		socket.setTimeout(3_000, () => finish(false, new Error("Connection timed out")));
+		socket.once("connect", () => finish(true));
+		socket.once("error", (err) => finish(false, err));
+	});
+};
+
+// probe after the committed save and persist reachability into the host meta so
+// the create/update/enable responses and the list all carry the same state.
+// The probe is advisory: it must never fail the save of a configured, live
+// host, and a non-tcp destination clears stale reach state from whatever the
+// previous destination probed.
+const applyReachability = async (row) => {
+	try {
+		const reach = await probeForwardDestination(row.forward_scheme, row.forward_host, row.forward_port);
+		await proxyHostModel
+			.query()
+			.where("id", row.id)
+			.patch({ meta: { reach_ok: reach ? reach.ok : null, reach_err: reach ? reach.err : null } });
+	} catch (err) {
+		logger.error(`Reachability probe failed for proxy host ${row.id}: ${err.message}`);
+		try {
+			await proxyHostModel
+				.query()
+				.where("id", row.id)
+				.patch({ meta: { reach_ok: null, reach_err: "probe failed" } });
+		} catch (patchErr) {
+			logger.error(`Could not clear reachability meta for proxy host ${row.id}: ${patchErr.message}`);
+		}
+	}
 };
 
 const internalProxyHost = {
@@ -117,24 +134,27 @@ const internalProxyHost = {
 
 		if (createCertificate) {
 			delete thisData.certificate_id;
-		} else if (Number(thisData.certificate_id) > 0) {
-			// a delegated manager may only attach a certificate they can see
-			await internalCertificate.get(access, { id: thisData.certificate_id });
+		} else if (thisData.certificate_id > 0) {
+			await internalCertificate.get(access, { id: thisData.certificate_id, mtls: false });
 		}
 		if (thisData.npmplus_mtls_certificate_id > 0) {
 			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id, mtls: true });
 		}
 
 		access.can("proxy_hosts:manage");
+		internalHost.checkCustomConfig(access, thisData);
+		internalHost.checkForwardTarget(access, thisData);
 		await assertPrivilegedNginxFields(access, thisData);
 
+		if (hasDuplicateDomains(thisData.domain_names)) {
+			throw new errs.ValidationError("Domain names need to be unique");
+		}
+
 		// Get a list of the domain names and check each of them against existing records
-		const checkResults = await Promise.all(
-			thisData.domain_names.map((domainName) => internalHost.isHostnameTaken(domainName)),
-		);
-		const taken = checkResults.find((result) => result.is_taken);
-		if (taken) {
-			throw new errs.ValidationError(`${taken.hostname} is already in use`);
+		for (const domainName of thisData.domain_names) {
+			if ((await internalHost.isHostnameTaken(domainName)).is_taken) {
+				throw new errs.ValidationError(`${domainName} is already in use`);
+			}
 		}
 
 		// At this point the domains should have been checked
@@ -145,48 +165,55 @@ const internalProxyHost = {
 		if (thisData.locations?.some(({ path }) => !path)) {
 			throw new errs.ValidationError("Location paths can not be empty");
 		}
+		if (hasAuthRequestUpstreamConflict(thisData)) {
+			throw new errs.ValidationError("Each auth request provider can only have one upstream");
+		}
 		await internalProxyHostAccessList.validateAccessLists(access, thisData);
 
 		if (createCertificate) {
 			thisData.certificate_id = (await internalCertificate.createQuickCertificate(access, thisData)).id;
 		}
 
-		const createdRow = await proxyHostModel.transaction(async (trx) => {
-			const insertedRow = await proxyHostModel.query(trx).insertAndFetch(thisData);
-			await replaceLocationsAndAccessLists(trx, insertedRow.id, thisData);
-			return insertedRow;
-		});
-
-		let savedRow;
-		const finalize = async () => {
-			savedRow = await internalProxyHost.get(access, { id: createdRow.id });
-
-			// Add to audit log
-			await internalAuditLog.add(access, {
-				action: "created",
-				object_type: "proxy-host",
-				object_id: savedRow.id,
-				meta: savedRow,
-			});
-		};
+		let row;
 		try {
-			const row = await internalProxyHost.get(access, {
-				id: createdRow.id,
-				expand: ["certificate", "access_lists.[clients,items]", "locations.access_lists.[clients,items]"],
-			});
+			await proxyHostModel.transaction(async (trx) => {
+				const insertedRow = await proxyHostModel.query(trx).insertAndFetch(thisData);
+				await replaceLocationsAndAccessLists(trx, insertedRow.id, thisData);
+				row = await internalProxyHost.get(
+					access,
+					{
+						id: insertedRow.id,
+						expand: [
+							"certificate",
+							"access_lists.[clients,items]",
+							"locations.access_lists.[clients,items]",
+						],
+					},
+					trx,
+				);
 
-			// Configure nginx
-			await configureWithReachability(row);
-		} catch (operationError) {
-			// the audit write must never replace the operation's own error
-			try {
-				await finalize();
-			} catch (cleanupError) {
-				logger.error(`Error auditing proxy host create ${createdRow.id}: ${cleanupError.message}`);
+				// Configure nginx
+				await internalNginx.configure(proxyHostModel, "proxy_host", row, { trx });
+			});
+		} catch (err) {
+			if (createCertificate) err.certificate_id = thisData.certificate_id;
+			if (row) {
+				await internalProxyHostAccessList.delete(row);
+				await internalNginx.deleteConfig("proxy_host", row);
 			}
-			throw operationError;
+			throw err;
 		}
-		await finalize();
+
+		await applyReachability(row);
+		const savedRow = await internalProxyHost.get(access, { id: row.id });
+
+		// Add to audit log
+		await internalAuditLog.add(access, {
+			action: "created",
+			object_type: "proxy-host",
+			object_id: savedRow.id,
+			meta: savedRow,
+		});
 
 		return savedRow;
 	},
@@ -199,32 +226,35 @@ const internalProxyHost = {
 	 */
 	update: async (access, data) => {
 		let thisData = data;
+		const existingRow = await internalProxyHost.get(access, { id: thisData.id });
 		const createCertificate = thisData.certificate_id === "new";
 
 		if (createCertificate) {
 			delete thisData.certificate_id;
-		} else if (Number(thisData.certificate_id) > 0) {
-			// a delegated manager may only attach a certificate they can see
-			await internalCertificate.get(access, { id: thisData.certificate_id });
+		} else if (thisData.certificate_id > 0 && thisData.certificate_id !== existingRow.certificate_id) {
+			await internalCertificate.get(access, { id: thisData.certificate_id, mtls: false });
 		}
-		if (thisData.npmplus_mtls_certificate_id > 0) {
+		if (
+			thisData.npmplus_mtls_certificate_id > 0 &&
+			thisData.npmplus_mtls_certificate_id !== existingRow.npmplus_mtls_certificate_id
+		) {
 			await internalCertificate.get(access, { id: thisData.npmplus_mtls_certificate_id, mtls: true });
 		}
 
 		access.can("proxy_hosts:manage");
-
-		const existingRow = await internalProxyHost.get(access, { id: thisData.id });
+		internalHost.checkCustomConfig(access, thisData, existingRow);
+		internalHost.checkForwardTarget(access, thisData, existingRow);
+		await assertPrivilegedNginxFields(access, thisData, existingRow);
 
 		// Get a list of the domain names and check each of them against existing records
 		if (thisData.domain_names !== undefined) {
-			const checkResults = await Promise.all(
-				thisData.domain_names.map((domainName) =>
-					internalHost.isHostnameTaken(domainName, "proxy", thisData.id),
-				),
-			);
-			const taken = checkResults.find((result) => result.is_taken);
-			if (taken) {
-				throw new errs.ValidationError(`${taken.hostname} is already in use`);
+			if (hasDuplicateDomains(thisData.domain_names)) {
+				throw new errs.ValidationError("Domain names need to be unique");
+			}
+			for (const domainName of thisData.domain_names) {
+				if ((await internalHost.isHostnameTaken(domainName, "proxy", thisData.id)).is_taken) {
+					throw new errs.ValidationError(`${domainName} is already in use`);
+				}
 			}
 		}
 
@@ -234,8 +264,10 @@ const internalProxyHost = {
 		if (thisData.locations?.some(({ path }) => !path)) {
 			throw new errs.ValidationError("Location paths can not be empty");
 		}
-		await assertPrivilegedNginxFields(access, thisData, existingRow);
-		await internalProxyHostAccessList.validateAccessLists(access, thisData);
+		if (hasAuthRequestUpstreamConflict(thisData)) {
+			throw new errs.ValidationError("Each auth request provider can only have one upstream");
+		}
+		await internalProxyHostAccessList.validateAccessLists(access, thisData, existingRow);
 
 		if (createCertificate) {
 			const cert = await internalCertificate.createQuickCertificate(access, {
@@ -247,44 +279,54 @@ const internalProxyHost = {
 			thisData.certificate_id = cert.id;
 		}
 
-		await proxyHostModel.transaction(async (trx) => {
-			await proxyHostModel.query(trx).where({ id: thisData.id }).patch(thisData);
-			await replaceLocationsAndAccessLists(trx, thisData.id, thisData);
-		});
-
-		let savedRow;
-		const finalize = async () => {
-			savedRow = await internalProxyHost.get(access, { id: thisData.id });
-
-			// Add to audit log
-			await internalAuditLog.add(access, {
-				action: "updated",
-				object_type: "proxy-host",
-				object_id: savedRow.id,
-				meta: savedRow,
-			});
-		};
 		try {
-			const row = await internalProxyHost.get(access, {
-				id: thisData.id,
-				expand: ["certificate", "access_lists.[clients,items]", "locations.access_lists.[clients,items]"],
-			});
+			await proxyHostModel.transaction(async (trx) => {
+				await proxyHostModel.query(trx).where({ id: thisData.id }).patch(thisData);
+				await replaceLocationsAndAccessLists(trx, thisData.id, thisData);
 
-			// No need to add nginx config if host is disabled
-			if (row.enabled) {
 				// Configure nginx
-				await configureWithReachability(row);
-			}
-		} catch (operationError) {
-			// the audit write must never replace the operation's own error
-			try {
-				await finalize();
-			} catch (cleanupError) {
-				logger.error(`Error auditing proxy host update ${thisData.id}: ${cleanupError.message}`);
-			}
-			throw operationError;
+				await internalNginx.configure(
+					proxyHostModel,
+					"proxy_host",
+					await internalProxyHost.get(
+						access,
+						{
+							id: thisData.id,
+							expand: [
+								"certificate",
+								"access_lists.[clients,items]",
+								"locations.access_lists.[clients,items]",
+							],
+						},
+						trx,
+					),
+					{ trx },
+				);
+			});
+		} catch (err) {
+			if (createCertificate) err.certificate_id = thisData.certificate_id;
+			await internalNginx.configure(
+				proxyHostModel,
+				"proxy_host",
+				await internalProxyHost.get(access, {
+					id: thisData.id,
+					expand: ["certificate", "access_lists.[clients,items]", "locations.access_lists.[clients,items]"],
+				}),
+			);
+			throw err;
 		}
-		await finalize();
+
+		const updatedRow = await internalProxyHost.get(access, { id: thisData.id });
+		if (updatedRow.enabled) await applyReachability(updatedRow);
+		const savedRow = await internalProxyHost.get(access, { id: thisData.id });
+
+		// Add to audit log
+		await internalAuditLog.add(access, {
+			action: "updated",
+			object_type: "proxy-host",
+			object_id: savedRow.id,
+			meta: savedRow,
+		});
 
 		return savedRow;
 	},
@@ -296,11 +338,11 @@ const internalProxyHost = {
 	 * @param  {Array}    [data.expand]
 	 * @return {Promise}
 	 */
-	get: async (access, data) => {
+	get: async (access, data, trx) => {
 		access.can("proxy_hosts:view");
 
 		const query = proxyHostModel
-			.query()
+			.query(trx)
 			.where("id", data.id)
 			.allowGraph("[access_lists.[clients,items],certificate,locations.access_lists.[clients,items]]")
 			.withGraphFetched("[access_lists, locations.access_lists]")
@@ -338,7 +380,13 @@ const internalProxyHost = {
 			await proxyHostModel.query(trx).deleteById(row.id);
 		});
 
-		const finalize = async () => {
+		try {
+			// Delete Nginx Config
+			await internalNginx.deleteConfig("proxy_host", row);
+
+			await internalProxyHostAccessList.delete(row);
+			await internalNginx.reload();
+		} finally {
 			// Add to audit log
 			await internalAuditLog.add(access, {
 				action: "deleted",
@@ -346,23 +394,7 @@ const internalProxyHost = {
 				object_id: row.id,
 				meta: row,
 			});
-		};
-		try {
-			// Delete Nginx Config
-			await internalNginx.deleteConfig("proxy_host", row);
-
-			await internalProxyHostAccessList.delete(row);
-			await internalNginx.reload();
-		} catch (operationError) {
-			// the audit write must never replace the operation's own error
-			try {
-				await finalize();
-			} catch (cleanupError) {
-				logger.error(`Error auditing proxy host delete ${row.id}: ${cleanupError.message}`);
-			}
-			throw operationError;
 		}
-		await finalize();
 
 		return row;
 	},
@@ -385,12 +417,10 @@ const internalProxyHost = {
 			throw new errs.ValidationError("Host is already enabled");
 		}
 
-		const checkResults = await Promise.all(
-			row.domain_names.map((domainName) => internalHost.isHostnameTaken(domainName)),
-		);
-		const taken = checkResults.find((result) => result.is_taken);
-		if (taken) {
-			throw new errs.ValidationError(`${taken.hostname} is already in use by an active host`);
+		for (const domainName of row.domain_names) {
+			if ((await internalHost.isHostnameTaken(domainName)).is_taken) {
+				throw new errs.ValidationError(`${domainName} is already in use by an active host`);
+			}
 		}
 
 		row.enabled = 1;
@@ -404,7 +434,11 @@ const internalProxyHost = {
 		});
 
 		let savedRow;
-		const finalize = async () => {
+		try {
+			// Configure nginx
+			await internalNginx.configure(proxyHostModel, "proxy_host", row);
+			await applyReachability(await internalProxyHost.get(access, { id: row.id }));
+		} finally {
 			savedRow = await internalProxyHost.get(access, { id: row.id });
 
 			// Add to audit log
@@ -414,24 +448,7 @@ const internalProxyHost = {
 				object_id: row.id,
 				meta: savedRow,
 			});
-		};
-		try {
-			// Configure nginx
-			await configureWithReachability(
-				await internalProxyHostAccessList.populateLocationAccessLists(
-					internalProxyHostAccessList.cleanAccessListTypes(row),
-				),
-			);
-		} catch (operationError) {
-			// the audit write must never replace the operation's own error
-			try {
-				await finalize();
-			} catch (cleanupError) {
-				logger.error(`Error auditing proxy host enable ${row.id}: ${cleanupError.message}`);
-			}
-			throw operationError;
 		}
-		await finalize();
 
 		return savedRow;
 	},
@@ -456,7 +473,11 @@ const internalProxyHost = {
 		});
 
 		let savedRow;
-		const finalize = async () => {
+		try {
+			// Delete Nginx Config
+			await internalNginx.deleteConfig("proxy_host", row);
+			await internalNginx.reload();
+		} finally {
 			savedRow = await internalProxyHost.get(access, { id: row.id });
 
 			// Add to audit log
@@ -466,21 +487,7 @@ const internalProxyHost = {
 				object_id: row.id,
 				meta: savedRow,
 			});
-		};
-		try {
-			// Delete Nginx Config
-			await internalNginx.deleteConfig("proxy_host", row);
-			await internalNginx.reload();
-		} catch (operationError) {
-			// the audit write must never replace the operation's own error
-			try {
-				await finalize();
-			} catch (cleanupError) {
-				logger.error(`Error auditing proxy host disable ${row.id}: ${cleanupError.message}`);
-			}
-			throw operationError;
 		}
-		await finalize();
 
 		return savedRow;
 	},
@@ -498,7 +505,7 @@ const internalProxyHost = {
 		const query = proxyHostModel
 			.query()
 			.groupBy("id")
-			.allowGraph("[owner,access_lists,certificate,locations.access_lists]")
+			.allowGraph("[owner,access_lists,certificate,mtls_certificate,locations.access_lists]")
 			.withGraphFetched("[access_lists, locations.access_lists]")
 			.orderBy(castJsonIfNeed("domain_names"), "ASC");
 
@@ -514,15 +521,20 @@ const internalProxyHost = {
 	/**
 	 * Report use
 	 *
-	 * @param   {Number}  user_id
-	 * @param   {String}  visibility
+	 * @param   {Access}  access
 	 * @returns {Promise}
 	 */
-	getCount: (user_id, visibility) => {
+	getCount: (access) => {
+		try {
+			access.can("proxy_hosts:view");
+		} catch {
+			return 0;
+		}
+
 		const query = proxyHostModel.query();
 
-		if (visibility !== "all") {
-			query.andWhere("owner_user_id", user_id);
+		if (access.visibility !== "all") {
+			query.andWhere("owner_user_id", access.token.getUserId(1));
 		}
 
 		return query.resultSize();

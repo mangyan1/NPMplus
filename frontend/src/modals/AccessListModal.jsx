@@ -1,14 +1,14 @@
 import cn from "clsx";
-import { Field, Form, Formik } from "formik";
+import { ErrorMessage, Field, Form, Formik } from "formik";
 import { useState } from "react";
 import { Alert } from "react-bootstrap";
 import Modal from "react-bootstrap/Modal";
-import { AccessClientFields, BasicAuthFields, Button, HasPermission, Loading } from "src/components";
-import { useAccessList, useSetAccessList } from "src/hooks";
+import { AccessClientFields, BasicAuthFields, Button, Loading, toClientRows, toItemRows } from "src/components";
+import { useAccessList, useSetAccessList, useUser } from "src/hooks";
 import { intl, T } from "src/locale";
 import { hasMissingAccessPassword } from "src/modules/AccessListValidation";
 import EasyModal from "src/modules/easyModal";
-import { ACCESS_LISTS, MANAGE } from "src/modules/Permissions";
+import { ACCESS_LISTS, hasPermission, MANAGE } from "src/modules/Permissions";
 import { showTabOfInvalid, validateString } from "src/modules/Validations";
 import { showObjectSuccess } from "src/notifications";
 
@@ -16,11 +16,12 @@ const showAccessListModal = (id) => {
 	void EasyModal.show(AccessListModal, { id });
 };
 
-const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
+const AccessListModal = EasyModal.create(({ id, visible, remove, close, formRef }) => {
 	const { data, isPending, error } = useAccessList(id);
-	const { mutate: setAccessList } = useSetAccessList();
+	const { mutateAsync: setAccessList } = useSetAccessList();
+	const { data: currentUser } = useUser("me");
+	const canManage = hasPermission(ACCESS_LISTS, MANAGE, currentUser?.permissions, currentUser?.npmplusIsAdmin);
 	const [errorMsg, setErrorMsg] = useState(null);
-	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const validate = (values) => {
 		// either Auths or Clients must be defined
@@ -35,7 +36,7 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 		}
 
 		// ensure the items don't contain the same username twice
-		const usernames = values.items.map((i) => i.username);
+		const usernames = values.items.map((i) => i.username.trim());
 		const uniqueUsernames = Array.from(new Set(usernames));
 		if (usernames.length !== uniqueUsernames.length) {
 			return intl.formatMessage({ id: "error.access.duplicate-usernames" });
@@ -47,16 +48,16 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 		return null;
 	};
 
-	const onSubmit = (values, { setSubmitting }) => {
-		if (isSubmitting) return;
+	const onSubmit = async (values) => {
+		const items = values.items.filter(({ username }) => username.trim());
+		const clients = values.clients.filter(({ address }) => address.trim());
 
-		const vErr = validate(values);
+		const vErr = validate({ ...values, items, clients });
 		if (vErr) {
 			setErrorMsg(vErr);
 			return;
 		}
 
-		setIsSubmitting(true);
 		setErrorMsg(null);
 
 		const payload = {
@@ -65,35 +66,33 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 		};
 
 		// Filter out "items" to only use the "username" and "password" fields
-		payload.items = values.items.map((i) => ({
+		payload.items = items.map((i) => ({
 			username: i.username,
 			password: i.password,
 		}));
 
 		// Filter out "clients" to only use the "directive" and "address" fields
-		payload.clients = values.clients.map((i) => ({
+		payload.clients = clients.map((i) => ({
 			directive: i.directive,
 			address: i.address,
 		}));
 
-		setAccessList(payload, {
-			onError: (err) => setErrorMsg(<T id={err.message} />),
-			onSuccess: () => {
-				showObjectSuccess("access-list", "saved");
-				remove();
-			},
-			onSettled: () => {
-				setIsSubmitting(false);
-				setSubmitting(false);
-			},
-		});
+		try {
+			await setAccessList(payload);
+			showObjectSuccess("access-list", "saved");
+			remove();
+		} catch (err) {
+			setErrorMsg(<T id={err.message} />);
+		}
 	};
 
-	const toggleClasses = "form-check-input";
-	const toggleEnabled = cn(toggleClasses, "bg-cyan");
-
 	return (
-		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
+		<Modal show={visible} backdrop={canManage ? "static" : true} onHide={close}>
+			<Modal.Header closeButton>
+				<Modal.Title>
+					<T id={id !== "new" ? "object.edit" : "object.add"} tData={{ object: "access-list" }} />
+				</Modal.Title>
+			</Modal.Header>
 			{error && (
 				<Alert variant="danger" className="m-3">
 					{error?.message}
@@ -102,22 +101,18 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 			{isPending && <Loading noLogo />}
 			{data && (
 				<Formik
+					innerRef={formRef}
 					initialValues={{
 						name: data?.name,
 						satisfyAny: data?.satisfyAny,
 						passAuth: data?.passAuth,
-						items: data?.items,
-						clients: data?.clients,
+						items: toItemRows(data?.items),
+						clients: toClientRows(data?.clients),
 					}}
 					onSubmit={onSubmit}
 				>
-					{({ setFieldValue }) => (
+					{() => (
 						<Form onInvalid={showTabOfInvalid}>
-							<Modal.Header closeButton={!isSubmitting}>
-								<Modal.Title>
-									<T id={data?.id ? "object.edit" : "object.add"} tData={{ object: "access-list" }} />
-								</Modal.Title>
-							</Modal.Header>
 							<Modal.Body className="p-0">
 								<Alert variant="danger" show={errorMsg} onClose={() => setErrorMsg(null)} dismissible>
 									{errorMsg}
@@ -125,46 +120,28 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 								<div className="card m-0 border-0">
 									<div className="card-header">
 										<ul className="nav nav-tabs card-header-tabs" data-bs-toggle="tabs">
-											<li className="nav-item" role="presentation">
-												<a
-													href="#tab-details"
-													className="nav-link active"
-													data-bs-toggle="tab"
-													aria-selected="true"
-													role="tab"
-												>
+											<li className="nav-item">
+												<a href="#tab-details" className="nav-link active" data-bs-toggle="tab">
 													<T id="column.details" />
 												</a>
 											</li>
-											<li className="nav-item" role="presentation">
-												<a
-													href="#tab-auth"
-													className="nav-link"
-													data-bs-toggle="tab"
-													aria-selected="false"
-													role="tab"
-												>
+											<li className="nav-item">
+												<a href="#tab-auth" className="nav-link" data-bs-toggle="tab">
 													<T id="column.authorizations" />
 												</a>
 											</li>
-											<li className="nav-item" role="presentation">
-												<a
-													href="#tab-rules"
-													className="nav-link"
-													data-bs-toggle="tab"
-													aria-selected="false"
-													role="tab"
-												>
+											<li className="nav-item">
+												<a href="#tab-rules" className="nav-link" data-bs-toggle="tab">
 													<T id="column.rules" />
 												</a>
 											</li>
 										</ul>
 									</div>
 									<div className="card-body">
-										<div className="tab-content">
-											<div className="tab-pane active show" id="tab-details" role="tabpanel">
-												<Field name="name" validate={validateString(1, 255)}>
-													{({ field, form }) => (
+										<fieldset className="tab-content" disabled={!canManage}>
+											<div className="tab-pane active show" id="tab-details">
+												<Field name="name" validate={(value) => validateString(value, 1, 255)}>
+													{({ field, meta }) => (
 														<div>
 															<label htmlFor="name" className="form-label">
 																<T id="column.name" />
@@ -174,15 +151,15 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 																type="text"
 																required
 																autoComplete="off"
-																className={`form-control ${form.errors.name && form.touched.name ? "is-invalid" : ""}`}
+																className={`form-control ${meta.touched && meta.error ? "is-invalid" : ""}`}
 																{...field}
 															/>
 
-															{form.errors.name ? (
-																<div className="invalid-feedback">
-																	{form.touched.name ? form.errors.name : null}
-																</div>
-															) : null}
+															<ErrorMessage
+																name="name"
+																component="div"
+																className="invalid-feedback"
+															/>
 														</div>
 													)}
 												</Field>
@@ -201,21 +178,12 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 																		{({ field }) => (
 																			<span className="form-check form-check-single form-switch">
 																				<input
+																					{...field}
 																					id="satisfyAny"
-																					className={
-																						field.value
-																							? toggleEnabled
-																							: toggleClasses
-																					}
+																					className={cn("form-check-input", {
+																						"bg-cyan": field.checked,
+																					})}
 																					type="checkbox"
-																					name={field.name}
-																					checked={field.value}
-																					onChange={(e) => {
-																						setFieldValue(
-																							field.name,
-																							e.target.checked,
-																						);
-																					}}
 																				/>
 																			</span>
 																		)}
@@ -233,21 +201,12 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 																		{({ field }) => (
 																			<span className="form-check form-check-single form-switch">
 																				<input
+																					{...field}
 																					id="passAuth"
-																					className={
-																						field.value
-																							? toggleEnabled
-																							: toggleClasses
-																					}
+																					className={cn("form-check-input", {
+																						"bg-cyan": field.checked,
+																					})}
 																					type="checkbox"
-																					name={field.name}
-																					checked={field.value}
-																					onChange={(e) => {
-																						setFieldValue(
-																							field.name,
-																							e.target.checked,
-																						);
-																					}}
 																				/>
 																			</span>
 																		)}
@@ -258,31 +217,25 @@ const AccessListModal = EasyModal.create(({ id, visible, remove }) => {
 													</div>
 												</div>
 											</div>
-											<div className="tab-pane" id="tab-auth" role="tabpanel">
-												<BasicAuthFields initialValues={data?.items} />
+											<div className="tab-pane" id="tab-auth">
+												<BasicAuthFields />
 											</div>
-											<div className="tab-pane" id="tab-rules" role="tabpanel">
-												<AccessClientFields initialValues={data?.clients} />
+											<div className="tab-pane" id="tab-rules">
+												<AccessClientFields />
 											</div>
-										</div>
+										</fieldset>
 									</div>
 								</div>
 							</Modal.Body>
 							<Modal.Footer>
-								<Button onClick={remove} disabled={isSubmitting}>
-									<T id="cancel" />
+								<Button onClick={close}>
+									<T id={canManage ? "cancel" : "action.close"} />
 								</Button>
-								<HasPermission section={ACCESS_LISTS} permission={MANAGE} hideError>
-									<Button
-										type="submit"
-										color="cyan"
-										className="ms-auto"
-										isLoading={isSubmitting}
-										disabled={isSubmitting}
-									>
+								{canManage && (
+									<Button type="submit" color="cyan" className="ms-auto">
 										<T id="save" />
 									</Button>
-								</HasPermission>
+								)}
 							</Modal.Footer>
 						</Form>
 					)}

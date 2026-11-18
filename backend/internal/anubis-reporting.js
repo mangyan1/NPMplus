@@ -18,7 +18,7 @@ const METRICS = {
 	failed: "anubis_failed_validations",
 };
 const hash = (value) => createHash("sha256").update(value).digest("hex");
-const IPV4V6_CHARS = /^[0-9a-fA-F.:]+$/;
+const IPV4V6_CHARS = /^[0-9a-fA-F.:]+$/u;
 const canonicalIp = (value) => {
 	if (typeof value !== "string" || value.length > 45 || !IPV4V6_CHARS.test(value)) return null;
 	if (isIP(value) === 6) return new URL(`http://[${value}]`).hostname.slice(1, -1);
@@ -130,7 +130,7 @@ const recordAddresses = async (text, now = Date.now()) => {
 		});
 	});
 };
-const ATTEMPT_LINE = /^(\d{13}) (accepted|failed) ([0-9a-fA-F.:]{2,45}) [a-f0-9-]{36}$/;
+const ATTEMPT_LINE = /^(\d{13}) (accepted|failed) ([0-9a-fA-F.:]{2,45}) [a-f0-9-]{36}$/u;
 const recordAttempts = async (text, now = Date.now()) => {
 	await db().transaction(async (trx) => {
 		for (const line of text

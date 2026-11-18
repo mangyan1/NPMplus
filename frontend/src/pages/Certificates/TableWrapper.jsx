@@ -1,10 +1,10 @@
 import { IconSearch } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import { deleteCertificate, downloadCertificate } from "src/api/backend";
 import { certificateProviderTranslation, HasPermission, LoadingPage } from "src/components";
 import { useCertificates } from "src/hooks";
-import { formatDateTime, T } from "src/locale";
+import { formatDateTime, intl, T } from "src/locale";
 import {
 	showCustomCertificateModal,
 	showDeleteConfirmModal,
@@ -31,23 +31,15 @@ export default function TableWrapper() {
 		"mtls_streams",
 	]);
 
-	useEffect(() => {
-		// this can happen if someone deletes the last item while searching
-		if (search !== "" && !data?.length) {
-			setSearch("");
-		}
-	});
+	// this can happen if someone deletes the last item while searching
+	if (search !== "" && !data?.length) setSearch("");
 
 	if (isPending) {
 		return <LoadingPage />;
 	}
 
 	if (isError) {
-		return (
-			<Alert variant="danger">
-				<T id={error?.message || "error.unknown"} />
-			</Alert>
-		);
+		return <Alert variant="danger">{error?.message}</Alert>;
 	}
 
 	const handleDownload = async (id) => {
@@ -86,7 +78,8 @@ export default function TableWrapper() {
 											<IconSearch size={16} />
 										</span>
 										<input
-											type="text"
+											type="search"
+											placeholder={intl.formatMessage({ id: "action.search" })}
 											className="form-control form-control-sm"
 											autoComplete="off"
 											onChange={(e) => setSearch(e.target.value.toLowerCase().trim())}

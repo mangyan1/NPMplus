@@ -1,4 +1,4 @@
-import { IconCopy, IconDotsVertical, IconEdit, IconPower, IconShieldCheck, IconTrash } from "@tabler/icons-react";
+import { IconCopy, IconDotsVertical, IconPower, IconShieldCheck, IconTrash } from "@tabler/icons-react";
 import {
 	createColumnHelper,
 	createPaginatedRowModel,
@@ -11,11 +11,11 @@ import {
 	tableFeatures,
 	useTable,
 } from "@tanstack/react-table";
-import { useMemo } from "react";
 import {
 	AccessListFormatter,
 	CertificateFormatter,
 	DomainsFormatter,
+	EditButton,
 	EmptyData,
 	GravatarFormatter,
 	HasPermission,
@@ -54,154 +54,154 @@ export default function Table({
 	renderGroupLabel,
 }) {
 	const columnHelper = createColumnHelper();
-	const columns = useMemo(
-		() => [
-			columnHelper.accessor((row) => row.owner?.name, {
-				id: "owner",
-				cell: (info) => {
-					const value = info.row.original.owner;
-					return (
-						<GravatarFormatter
-							url={value ? value.avatar : ""}
-							name={value ? value.name : intl.formatMessage({ id: "user.deleted" })}
-						/>
-					);
-				},
-				meta: {
-					className: "w-1",
-				},
-			}),
-			columnHelper.accessor((row) => row.domainNames.join(", "), {
-				id: "domainNames",
-				header: intl.formatMessage({ id: "column.source" }),
+	const columns = [
+		columnHelper.accessor((row) => row.owner?.name, {
+			id: "owner",
+			cell: (info) => {
+				const value = info.row.original.owner;
+				return (
+					<GravatarFormatter
+						url={value ? value.avatar : ""}
+						name={value ? value.name : intl.formatMessage({ id: "user.deleted" })}
+					/>
+				);
+			},
+			meta: {
+				className: "w-1",
+			},
+		}),
+		columnHelper.accessor((row) => row.domainNames.join(", "), {
+			id: "domainNames",
+			header: intl.formatMessage({ id: "column.source" }),
+			cell: (info) => {
+				const value = info.row.original;
+				const usesAnubis =
+					value.npmplusAuthRequest === "anubis" ||
+					value.locations?.some((location) => location.npmplusAuthRequest === "anubis");
+				return (
+					<div className="d-flex flex-column align-items-start gap-1">
+						<DomainsFormatter domains={value.domainNames} createdOn={value.createdOn} />
+						{usesAnubis ? (
+							<span
+								className="badge bg-lime-lt"
+								title={intl.formatMessage({ id: "host.anubis-enabled-help" })}
+							>
+								<IconShieldCheck size={14} className="me-1" aria-hidden="true" />
+								<T id="host.anubis-enabled" />
+							</span>
+						) : null}
+					</div>
+				);
+			},
+		}),
+		columnHelper.accessor(forwardSummary, {
+			id: "forwardHost",
+			header: intl.formatMessage({ id: "column.destination" }),
+			cell: (info) => {
+				if (info.row.original.forwardScheme === "path" || !info.getValue()) {
+					return info.getValue();
+				}
+				return (
+					<a href={info.getValue()} target="_blank" rel="noopener">
+						{info.getValue()}
+					</a>
+				);
+			},
+		}),
+		columnHelper.accessor((row) => (row.certificate ? row.certificate.provider : "http-only"), {
+			id: "certificate",
+			header: intl.formatMessage({ id: "column.ssl" }),
+			cell: (info) => (
+				<CertificateFormatter
+					certificate={info.row.original.certificate}
+					mtlsCertificate={info.row.original.mtlsCertificate}
+				/>
+			),
+		}),
+		columnHelper.accessor(
+			(row) => {
+				const { accessLists } = row;
+				const triggerLabel = intl.formatMessage({
+					id: row.npmplusAccessListType === "custom" ? "access-list.custom" : "access-list.public",
+				});
+				if (accessLists.length === 1) {
+					return accessLists[0].name;
+				}
+				return triggerLabel;
+			},
+			{
+				id: "accessList",
+				header: intl.formatMessage({ id: "column.access" }),
+				cell: (info) => (
+					<AccessListFormatter
+						proxyHostId={info.row.original.id}
+						locations={info.row.original.locations}
+						access={info.row.original.accessLists}
+						type={info.row.original.npmplusAccessListType}
+					/>
+				),
+			},
+		),
+		columnHelper.accessor(
+			(row) => {
+				if (!row.enabled) return "4disabled";
+				if (!row.npmplusNginxOnline) return "1offline";
+				if (row.meta?.reachOk === false) return "2unreachable";
+				return "3online";
+			},
+			{
+				id: "enabled",
+				header: intl.formatMessage({ id: "column.status" }),
 				cell: (info) => {
 					const value = info.row.original;
-					const usesAnubis =
-						value.npmplusAuthRequest === "anubis" ||
-						value.locations?.some((location) => location.npmplusAuthRequest === "anubis");
 					return (
-						<div className="d-flex flex-column align-items-start gap-1">
-							<DomainsFormatter domains={value.domainNames} createdOn={value.createdOn} />
-							{usesAnubis ? (
-								<span
-									className="badge bg-lime-lt"
-									title={intl.formatMessage({ id: "host.anubis-enabled-help" })}
-								>
-									<IconShieldCheck size={14} className="me-1" aria-hidden="true" />
-									<T id="host.anubis-enabled" />
-								</span>
-							) : null}
-						</div>
-					);
-				},
-			}),
-			columnHelper.accessor(forwardSummary, {
-				id: "forwardHost",
-				header: intl.formatMessage({ id: "column.destination" }),
-				cell: (info) => {
-					if (info.row.original.forwardScheme === "path" || !info.getValue()) {
-						return info.getValue();
-					}
-					return (
-						<a href={info.getValue()} target="_blank" rel="noopener">
-							{info.getValue()}
-						</a>
-					);
-				},
-			}),
-			columnHelper.accessor((row) => (row.certificate ? row.certificate.provider : "http-only"), {
-				id: "certificate",
-				header: intl.formatMessage({ id: "column.ssl" }),
-				cell: (info) => <CertificateFormatter certificate={info.row.original.certificate} />,
-			}),
-			columnHelper.accessor(
-				(row) => {
-					const { accessLists } = row;
-					const triggerLabel = intl.formatMessage({
-						id: row.npmplusAccessListType === "custom" ? "access-list.custom" : "access-list.public",
-					});
-					if (accessLists.length === 1) {
-						return accessLists[0].name;
-					}
-					return triggerLabel;
-				},
-				{
-					id: "accessList",
-					header: intl.formatMessage({ id: "column.access" }),
-					cell: (info) => (
-						<AccessListFormatter
-							proxyHostId={info.row.original.id}
-							locations={info.row.original.locations}
-							access={info.row.original.accessLists}
-							type={info.row.original.npmplusAccessListType}
+						<StatusFormatter
+							enabled={value.enabled}
+							nginxOnline={value.npmplusNginxOnline}
+							nginxErr={value.npmplusNginxErr}
+							reachable={value.meta?.reachOk}
+							reachErr={value.meta?.reachErr}
 						/>
-					),
+					);
 				},
-			),
-			columnHelper.accessor(
-				(row) => {
-					if (!row.enabled) return "4disabled";
-					if (!row.npmplusNginxOnline) return "1offline";
-					if (row.meta.reachOk === false) return "2unreachable";
-					return "3online";
-				},
-				{
-					id: "enabled",
-					header: intl.formatMessage({ id: "column.status" }),
-					cell: (info) => {
-						const value = info.row.original;
-						return (
-							<StatusFormatter
-								enabled={value.enabled}
-								nginxOnline={value.npmplusNginxOnline}
-								nginxErr={value.npmplusNginxErr}
-								reachable={value.meta.reachOk}
-								reachErr={value.meta.reachErr}
-							/>
-						);
-					},
-				},
-			),
-			columnHelper.accessor((row) => row.id, {
-				id: "id",
-				header: "ID",
-				cell: (info) => info.getValue(),
-				meta: {
-					className: "text-end w-1",
-				},
-			}),
-			columnHelper.display({
-				id: "actions",
-				cell: (info) => (
-					<span className="dropdown">
-						<button
-							type="button"
-							className="btn dropdown-toggle btn-action btn-sm px-1"
-							data-bs-boundary="viewport"
-							data-bs-toggle="dropdown"
-							data-bs-popper-config='{"strategy":"fixed"}'
-						>
-							<IconDotsVertical />
-						</button>
-						<div className="dropdown-menu dropdown-menu-end">
-							<span className="dropdown-header">
-								<T
-									id="object.actions-title"
-									tData={{ object: "proxy-host" }}
-									data={{ id: info.row.original.id }}
-								/>
-							</span>
+			},
+		),
+		columnHelper.accessor((row) => row.id, {
+			id: "id",
+			header: "ID",
+			cell: (info) => info.getValue(),
+			meta: {
+				className: "text-end w-1",
+			},
+		}),
+		columnHelper.display({
+			id: "actions",
+			cell: (info) => (
+				<div className="d-flex justify-content-end gap-1">
+					<EditButton section={PROXY_HOSTS} onClick={() => onEdit?.(info.row.original.id)} />
+					<HasPermission section={PROXY_HOSTS} permission={MANAGE} hideError>
+						<span className="dropdown">
 							<button
 								type="button"
-								className="dropdown-item"
-								onClick={() => {
-									onEdit?.(info.row.original.id);
-								}}
+								title={intl.formatMessage(
+									{ id: "object.actions" },
+									{ object: intl.formatMessage({ id: "proxy-host" }), id: info.row.original.id },
+								)}
+								className="btn dropdown-toggle btn-action btn-sm px-1"
+								data-bs-boundary="viewport"
+								data-bs-toggle="dropdown"
+								data-bs-popper-config='{"strategy":"fixed"}'
 							>
-								<IconEdit size={16} />
-								<T id="action.edit" />
+								<IconDotsVertical />
 							</button>
-							<HasPermission section={PROXY_HOSTS} permission={MANAGE} hideError>
+							<div className="dropdown-menu dropdown-menu-end">
+								<span className="dropdown-header">
+									<T
+										id="object.actions-title"
+										tData={{ object: "proxy-host" }}
+										data={{ id: info.row.original.id }}
+									/>
+								</span>
 								<button
 									type="button"
 									className="dropdown-item"
@@ -233,17 +233,16 @@ export default function Table({
 									<IconTrash size={16} />
 									<T id="action.delete" />
 								</button>
-							</HasPermission>
-						</div>
-					</span>
-				),
-				meta: {
-					className: "text-end w-1",
-				},
-			}),
-		],
-		[columnHelper, onEdit, onClone, onDisableToggle, onDelete],
-	);
+							</div>
+						</span>
+					</HasPermission>
+				</div>
+			),
+			meta: {
+				className: "text-end w-1",
+			},
+		}),
+	];
 
 	const tableInstance = useTable({
 		features,
@@ -263,6 +262,7 @@ export default function Table({
 	return (
 		<TableLayout
 			tableInstance={tableInstance}
+			isFiltered={isFiltered}
 			showHeader={showHeader}
 			groupBy={groupBy}
 			renderGroupLabel={renderGroupLabel}

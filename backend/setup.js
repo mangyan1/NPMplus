@@ -8,6 +8,7 @@ import internalUser from "./internal/user.js";
 import Access from "./lib/access.js";
 import { installPlugins } from "./lib/certbot.js";
 import errs from "./lib/error.js";
+import { readSecret } from "./lib/helpers.js";
 import utils from "./lib/utils.js";
 import { setup as logger } from "./logger.js";
 import certificateModel from "./models/certificate.js";
@@ -80,10 +81,22 @@ const removeSetupToken = async () => {
  * @returns {Promise}
  */
 const setupDefaultUser = async () => {
-	const initialAdminEmail = process.env.INITIAL_ADMIN_EMAIL?.toLowerCase().trim();
-	const initialAdminPassword = process.env.INITIAL_ADMIN_PASSWORD_FILE
-		? await readFile(process.env.INITIAL_ADMIN_PASSWORD_FILE, "utf8")
-		: process.env.INITIAL_ADMIN_PASSWORD;
+	if (await isSetup()) {
+		if (
+			process.env.INITIAL_ADMIN_EMAIL ||
+			process.env.INITIAL_ADMIN_EMAIL_FILE ||
+			process.env.INITIAL_ADMIN_PASSWORD ||
+			process.env.INITIAL_ADMIN_PASSWORD_FILE
+		) {
+			logger.warn(
+				"INITIAL_ADMIN_EMAIL(_FILE) and INITIAL_ADMIN_PASSWORD(_FILE) are only used on the first start, since a user already exists you can remove them.",
+			);
+		}
+		return;
+	}
+
+	const initialAdminEmail = (await readSecret("INITIAL_ADMIN_EMAIL"))?.toLowerCase().trim();
+	const initialAdminPassword = await readSecret("INITIAL_ADMIN_PASSWORD");
 
 	// This will only create a new user when there are no active users in the database
 	// and the email plus either the password value or password file are set.
@@ -94,26 +107,23 @@ const setupDefaultUser = async () => {
 		return;
 	}
 
-	const userIsetup = await isSetup();
-	if (!userIsetup) {
-		// Create a new user and set password
-		logger.info(`Creating a new user: ${initialAdminEmail}`);
+	// Create a new user and set password
+	logger.info(`Creating initial user: ${initialAdminEmail}`);
 
-		const access = new Access(null);
-		await access.load(true);
+	const access = new Access(null);
+	await access.load(true);
 
-		await internalUser.create(access, {
-			email: initialAdminEmail,
-			name: "Administrator",
-			roles: ["admin"],
-			auth: {
-				type: "password",
-				secret: initialAdminPassword,
-			},
-		});
-		await removeSetupToken();
-		logger.info(`Initial admin user creation completed: ${initialAdminEmail}`);
-	}
+	await internalUser.create(access, {
+		email: initialAdminEmail,
+		name: "Administrator",
+		npmplus_is_admin: true,
+		auth: {
+			type: "password",
+			secret: initialAdminPassword,
+		},
+	});
+	logger.info(`Initial admin user creation completed: ${initialAdminEmail}`);
+	await removeSetupToken();
 };
 
 /**
@@ -131,13 +141,23 @@ const setupDefaultSettings = async () => {
 			meta: {},
 		});
 		logger.info("Default settings added");
+	} else if (process.env.INITIAL_DEFAULT_PAGE) {
+		logger.warn(
+			"INITIAL_DEFAULT_PAGE is only used on the first start, since the default site already exists you can remove it.",
+		);
 	}
 
 	if ((await settingModel.query().select("id").where({ id: "oidc-config" }).first())?.id) {
 		await settingModel.query().deleteById("oidc-config");
 	}
 
-	await internalNginx.generateConfig("default", await settingModel.query().where({ id: "default-site" }).first());
+	const defaultSite = await settingModel.query().where({ id: "default-site" }).first();
+	try {
+		await internalNginx.generateConfig("default", defaultSite);
+	} catch (err) {
+		logger.error(`Default site could not be generated, falling back to the congratulations page: ${err.message}`);
+		await internalNginx.generateConfig("default", { ...defaultSite, value: "congratulations" });
+	}
 };
 
 /**
@@ -266,9 +286,9 @@ const setupAio = async () => {
 			forward_scheme: "http",
 			forward_host: "127.0.0.1",
 			forward_port: 11000,
-			npmplus_crowdsec_appsec: false,
-			npmplus_proxy_request_buffering: true,
-			npmplus_proxy_response_buffering: true,
+			npmplus_disable_crowdsec_appsec: true,
+			npmplus_disable_proxy_request_buffering: true,
+			npmplus_proxy_response_buffering: "ram_only_forced",
 			npmplus_upstream_compression: true,
 			certificate_id: "new",
 			ssl_forced: true,

@@ -1,7 +1,7 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { beforeEach, test } from "node:test";
+import { beforeEach, test as it } from "node:test";
 import db from "../db.js";
 import { readTelemetry, recordSnapshot, refusalState } from "../internal/security-telemetry.js";
 import { migrateUp } from "../migrate.js";
@@ -22,7 +22,7 @@ const counters = (count) => ({
 });
 const sample = (count, epoch = "one") => ({ epoch, overflow: 0, hosts: [{ id: 42, counters: counters(count) }] });
 
-test("telemetry records per-host deltas once and survives persisted-baseline reuse", async () => {
+it("telemetry records per-host deltas once and survives persisted-baseline reuse", async () => {
 	await recordSnapshot("nginx", sample(10), start);
 	await recordSnapshot("nginx", sample(15), start + 60_000);
 	await recordSnapshot("nginx", sample(15), start + 60_000);
@@ -35,7 +35,7 @@ test("telemetry records per-host deltas once and survives persisted-baseline reu
 	assert.equal(result.nginx.incomplete, true);
 	assert.equal((await readTelemetry(1, start - 60_000)).nginx.status, "stale");
 });
-test("epochs, counter resets and collection gaps cannot inflate history", async () => {
+it("epochs, counter resets and collection gaps cannot inflate history", async () => {
 	await recordSnapshot("nginx", sample(100), start);
 	await recordSnapshot("nginx", sample(200, "two"), start + 60_000);
 	await recordSnapshot("nginx", sample(1, "two"), start + 120_000);
@@ -45,7 +45,7 @@ test("epochs, counter resets and collection gaps cannot inflate history", async 
 	assert.equal(result.nginx.incomplete, true);
 	assert.equal(result.nginx.status, "stale");
 });
-test("firewall samples are timestamped packet observations and stale repeats are rejected", async () => {
+it("firewall samples are timestamped packet observations and stale repeats are rejected", async () => {
 	const firewall = {
 		epoch: "boot:service",
 		collected_at: start,
@@ -66,14 +66,14 @@ test("firewall samples are timestamped packet observations and stale repeats are
 	assert.equal(result.firewall.forward_rule, false);
 	await assert.rejects(recordSnapshot("firewall", firewall, start + 600_000));
 });
-test("a refused reading is a state only for a code this reader knows", async () => {
+it("a refused reading is a state only for a code this reader knows", async () => {
 	// the exporter's code and the one recognized here are one contract in two
 	// languages; rewording either side alone would silently turn this into a fault
 	const lua = await readFile(
 		new URL("../../rootfs/usr/local/share/lua/5.1/npmplus_telemetry.lua", import.meta.url),
 		"utf8",
 	);
-	assert.match(lua, /"reason":"bouncer-not-installed"/);
+	assert.match(lua, /"reason":"bouncer-not-installed"/u);
 	assert.deepEqual(refusalState('{"error":"CrowdSec observation disabled","reason":"bouncer-not-installed"}'), {
 		disabled: true,
 	});
@@ -81,7 +81,7 @@ test("a refused reading is a state only for a code this reader knows", async () 
 	assert.equal(refusalState('{"reason":"bouncer-not-installed-anyway"}'), null);
 	assert.equal(refusalState("telemetry unavailable"), null);
 });
-test("a switched-off bouncer is reported as disabled without fabricating observation", async () => {
+it("a switched-off bouncer is reported as disabled without fabricating observation", async () => {
 	await recordSnapshot("nginx", { disabled: true }, start);
 	const result = await readTelemetry(1, start + 60_000);
 	assert.equal(result.nginx.status, "disabled");
@@ -94,7 +94,7 @@ test("a switched-off bouncer is reported as disabled without fabricating observa
 	await recordSnapshot("nginx", sample(10), start + 600_000);
 	assert.equal((await readTelemetry(1, start + 660_000)).nginx.status, "observed");
 });
-test("a disabled marker keeps no counter baseline, so resuming cannot replay counters", async () => {
+it("a disabled marker keeps no counter baseline, so resuming cannot replay counters", async () => {
 	await recordSnapshot("nginx", sample(100), start);
 	await recordSnapshot("nginx", { disabled: true }, start + 60_000);
 	await recordSnapshot("nginx", sample(600), start + 120_000);
@@ -107,7 +107,7 @@ test("a disabled marker keeps no counter baseline, so resuming cannot replay cou
 	assert.equal(result.nginx.incomplete, true);
 	assert.equal(result.nginx.status, "observed");
 });
-test("invalid/oversized host cardinality is rejected and old buckets are pruned", async () => {
+it("invalid/oversized host cardinality is rejected and old buckets are pruned", async () => {
 	await assert.rejects(
 		recordSnapshot(
 			"nginx",

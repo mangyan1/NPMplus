@@ -18,16 +18,16 @@ try {
 		console.error(error.stack);
 	});
 	page.on("console", (message) => {
-		if (message.type() === "error" && !/status of (400|401|403|503)/.test(message.text()))
+		if (message.type() === "error" && !/status of (400|401|403|503)/u.test(message.text()))
 			errors.push(message.text());
 	});
 	await page.goto(base, { waitUntil: "networkidle" });
 	await page.getByLabel("Full Name", { exact: true }).fill("Security Browser Fixture");
-	await page.getByLabel(/email/i).fill("browser-audit@example.test");
+	await page.getByLabel(/email/iu).fill("browser-audit@example.test");
 	await page
 		.getByLabel("One-time setup token")
 		.fill(process.env.SMOKE_SETUP_TOKEN || "local-security-setup-token-20260919-only");
-	await page.getByLabel(/new password/i).fill("Browser-Security-Fixture-1");
+	await page.getByLabel(/new password/iu).fill("Browser-Security-Fixture-1");
 	await page.getByRole("button", { name: "Save", exact: true }).click();
 	await page.getByRole("link", { name: "Open user menu" }).waitFor({ timeout: 20000 });
 	console.log("PASS fresh first-admin setup through the browser");
@@ -49,12 +49,12 @@ try {
 	console.log("PASS MFA enrollment and backup-code acknowledgement");
 	await page.getByRole("link", { name: "Open user menu" }).click();
 	await page.getByRole("link", { name: "Logout", exact: true }).click();
-	await page.getByLabel(/email/i).fill("browser-audit@example.test");
+	await page.getByLabel(/email/iu).fill("browser-audit@example.test");
 	await page
-		.getByLabel(/password/i)
+		.getByLabel(/password/iu)
 		.first()
 		.fill("Browser-Security-Fixture-1");
-	await page.getByRole("button", { name: /sign in|log in/i }).click();
+	await page.getByRole("button", { name: /sign in|log in/iu }).click();
 	await page.locator('input[name="code"]').waitFor();
 	await page.locator('input[name="code"]').fill(code);
 	const replayed = page.waitForResponse((response) => response.url().endsWith("/tokens/totp"));
@@ -62,7 +62,7 @@ try {
 	assert.equal((await replayed).status(), 403);
 	await page
 		.getByRole("alert")
-		.filter({ hasText: /invalid/i })
+		.filter({ hasText: /invalid/iu })
 		.waitFor();
 	await page.screenshot({ path: "backend/.smoke/security-replay-desktop.png" });
 	await page.setViewportSize({ width: 390, height: 844 });
@@ -76,11 +76,11 @@ try {
 	console.log("PASS a fresh authenticator code logs in successfully");
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.goto(`${base}/nginx/proxy`, { waitUntil: "networkidle" });
-	await page.getByRole("button", { name: /add proxy host/i }).click();
+	await page.getByRole("button", { name: /add proxy host/iu }).click();
 	const domainNames = page.getByLabel("Domain Names", { exact: true });
 	await domainNames.fill("browser-audit.example.test");
 	await domainNames.press("Enter");
-	await page.getByLabel(/^Forward Hostname \/ IP/).fill("127.0.0.1");
+	await page.getByLabel(/^Forward Hostname \/ IP/u).fill("127.0.0.1");
 	await page.getByLabel("Forward Port", { exact: true }).fill("81");
 	const saved = page.waitForResponse(
 		(response) => response.request().method() === "POST" && response.url().endsWith("/nginx/proxy-hosts"),
@@ -91,7 +91,7 @@ try {
 	await page.getByText("browser-audit.example.test", { exact: true }).waitFor();
 	await page.screenshot({ path: "backend/.smoke/security-proxy-desktop.png" });
 	console.log("PASS normal proxy creation through the real UI");
-	await page.getByRole("button", { name: /add proxy host/i }).click();
+	await page.getByRole("button", { name: /add proxy host/iu }).click();
 	await page.getByRole("button", { name: "Cancel", exact: true }).click();
 	await page.getByRole("dialog").waitFor({ state: "hidden" });
 	console.log("PASS proxy editor cancel closes cleanly");

@@ -8,8 +8,8 @@ const optionalFiniteNumber = (value) => {
 };
 
 // manual ban input: an ip or a cidr range, the same targets crowdsec accepts
-const PREFIX_RE = /^(0|[1-9]\d{0,2})$/;
-const DURATION_RE = /^([1-9][0-9]{0,18})(ns|us|µs|ms|s|m|h|d)$/;
+const PREFIX_RE = /^(0|[1-9]\d{0,2})$/u;
+const DURATION_RE = /^([1-9][0-9]{0,18})(ns|us|µs|ms|s|m|h|d)$/u;
 const DURATION_NANOSECONDS = {
 	ns: 1n,
 	us: 1000n,
@@ -21,14 +21,14 @@ const DURATION_NANOSECONDS = {
 	d: 86400000000000n,
 };
 const BAN_TYPES = new Set(["ban", "captcha"]);
-const REASONS_RE = /^[\w .,:;#@-]{1,64}$/;
-const PROMETHEUS_LINE_SPLIT_RE = /\r?\n/;
-const PROMETHEUS_SAMPLE_RE = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?\s+([^\s]+)(?:\s+\d+)?$/;
+const REASONS_RE = /^[\w .,:;#@-]{1,64}$/u;
+const PROMETHEUS_LINE_SPLIT_RE = /\r?\n/u;
+const PROMETHEUS_SAMPLE_RE = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?\s+([^\s]+)(?:\s+\d+)?$/u;
 const LOCAL_DECISION_ORIGINS = new Set(["crowdsec", "cscli", "cscli-import"]);
 const COMMUNITY_DECISION_ORIGINS = new Set(["capi", "lists"]);
-const ALERT_FIELD_TOKEN_RE = /^(scenario|country|ip|target|asn|machine):(.*)$/;
-const WHITESPACE_RE = /\s+/;
-const QUOTE_RE = /^["']|["']$/g;
+const ALERT_FIELD_TOKEN_RE = /^(scenario|country|ip|target|asn|machine):(.*)$/u;
+const WHITESPACE_RE = /\s+/u;
+const QUOTE_RE = /^["']|["']$/gu;
 
 const parseCrowdsecDecisionId = (value) => {
 	const id = typeof value === "number" ? value : Number(value);
@@ -80,7 +80,7 @@ const EVENT_META_KEYS = new Set([
 ]);
 
 const EVENT_LIMIT = 10;
-const URI_SUFFIX_RE = /[?#]/;
+const URI_SUFFIX_RE = /[?#]/u;
 // The LAPI serialises per-event timestamps with Go's time.Time String()
 // ("2026-09-20 03:02:35.123456789 +0000 UTC"), which is not RFC3339. date-fns
 // parseISO rejects it and formatDateTime then echoes the raw string, so the
@@ -89,7 +89,7 @@ const URI_SUFFIX_RE = /[?#]/;
 // Normalise at this boundary so every reader gets a parseable value. Go appends
 // the zone name, which is not always "UTC" (a LAPI left on local time prints
 // "CEST" and friends), so accept either shape rather than only "UTC".
-const GO_TIME_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d+)?) ([+-]\d{2})(\d{2})(?: [A-Za-z]+)?$/;
+const GO_TIME_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d+)?) ([+-]\d{2})(\d{2})(?: [A-Za-z]+)?$/u;
 const rfc3339Timestamp = (value) => {
 	const parts = GO_TIME_RE.exec(value);
 	return parts ? `${parts[1]}T${parts[2]}${parts[3]}:${parts[4]}` : value;
@@ -254,8 +254,8 @@ const filterCrowdsecAlerts = (alerts, { search = "", scenario = "", country = ""
 
 const parsePrometheusLabels = (raw = "") => {
 	const labels = {};
-	for (const match of raw.matchAll(/([a-zA-Z_][a-zA-Z0-9_]*)="((?:\\.|[^"\\])*)"/g)) {
-		labels[match[1]] = match[2].replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+	for (const match of raw.matchAll(/([a-zA-Z_][a-zA-Z0-9_]*)="((?:\\.|[^"\\])*)"/gu)) {
+		labels[match[1]] = match[2].replace(/\\n/gu, "\n").replace(/\\"/gu, '"').replace(/\\\\/gu, "\\");
 	}
 	return labels;
 };
@@ -335,9 +335,9 @@ const summarizeCrowdsecMetrics = (samples) => {
 // community blocklist syncs arrive as alerts with the literal scenario
 // "update : +N/-M IPs" (origin capi) - they are bookkeeping, not attacks,
 // so the dashboard keeps them out of attack counts and rankings
-const BLOCKLIST_SYNC_SCENARIO_RE = /^update : \+\d+\/-\d+ IPs$/;
+const BLOCKLIST_SYNC_SCENARIO_RE = /^update : \+\d+\/-\d+ IPs$/u;
 const isBlocklistSyncAlert = (alert) => BLOCKLIST_SYNC_SCENARIO_RE.test(alert?.scenario ?? "");
-const MANUAL_SCENARIO_RE = /^manual '/i;
+const MANUAL_SCENARIO_RE = /^manual '/iu;
 const isAttackAlert = (alert) =>
 	!alert.simulated &&
 	!isBlocklistSyncAlert(alert) &&
@@ -350,7 +350,7 @@ const coordinate = (value, limit) => {
 	return number !== null && Math.abs(number) <= limit ? number : null;
 };
 
-const CRS_NATIVE_ID = /^9\d{5}$/;
+const CRS_NATIVE_ID = /^9\d{5}$/u;
 // CRS observations have their own panel; keep other rule matches here, including
 // custom CRS in-band matches. Do not duplicate out-of-band CRS bookkeeping.
 const summarizeAppsecRules = (samples, limit = 10) => {
@@ -372,7 +372,7 @@ const summarizeAppsecRules = (samples, limit = 10) => {
 // blocked request. Count attack-pattern rules, not CRS bookkeeping.
 // Initialization, anomaly-score evaluation and correlation rules are diagnostics,
 // not additional attack-pattern detections (901xxx, 949xxx, 959xxx, 980xxx).
-const CRS_RULE_ID = /^9(?:[1-3]\d|4[0-8]|5[0-8])\d{3}$/;
+const CRS_RULE_ID = /^9(?:[1-3]\d|4[0-8]|5[0-8])\d{3}$/u;
 const summarizeCrsRules = (samples) => {
 	const counts = { inband: new Map(), outofband: new Map() };
 	for (const sample of samples) {

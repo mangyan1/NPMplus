@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import test from "node:test";
+import it from "node:test";
 
-test("the UTC upgrade converts local SQLite dates once and keeps UTC certificate expiry and backup", {
+it("the UTC upgrade converts local SQLite dates once and keeps UTC certificate expiry and backup", {
 	skip: process.platform === "win32" ? "SQLite on Windows does not use the POSIX TZ setting" : false,
 }, () => {
 	const result = execFileSync(
@@ -53,5 +53,5 @@ console.log("UTC_UPGRADE_OK");
 		],
 		{ cwd: new URL("../", import.meta.url), env: { ...process.env, TZ: "America/Edmonton" }, encoding: "utf8" },
 	);
-	assert.match(result, /UTC_UPGRADE_OK/);
+	assert.match(result, /UTC_UPGRADE_OK/u);
 });

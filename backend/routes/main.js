@@ -1,10 +1,11 @@
 import express from "express";
 import errs from "../lib/error.js";
-import requireLogin from "../lib/express/require-login.js";
+import jwtdecode from "../lib/express/jwt-decode.js";
+import validate from "../lib/express/validate.js";
+import { readSecret } from "../lib/helpers.js";
 import { isSetup } from "../setup.js";
 import auditLogRoutes from "./audit-log.js";
 import crowdsecRoutes from "./crowdsec.js";
-import docsRoutes from "./docs.js";
 import accessListsRoutes from "./nginx/access_lists.js";
 import certificatesHostsRoutes from "./nginx/certificates.js";
 import deadHostsRoutes from "./nginx/dead_hosts.js";
@@ -28,15 +29,15 @@ const router = express.Router({
 const isOIDCenabled = Boolean(
 	process.env.OIDC_REDIRECT_DOMAIN &&
 		process.env.OIDC_ISSUER_URL &&
-		process.env.OIDC_CLIENT_ID &&
-		process.env.OIDC_CLIENT_SECRET,
+		(await readSecret("OIDC_CLIENT_ID")) &&
+		(await readSecret("OIDC_CLIENT_SECRET")),
 );
 
 /**
  * Health Check
  * GET /api
  */
-router.get(["/api", "/api/"], async (_, res /*, next*/) => {
+router.get("/api", validate, async (_, res /*, next*/) => {
 	res.status(200).send({
 		status: "OK",
 		setup: await isSetup(),
@@ -49,7 +50,7 @@ router.get(["/api", "/api/"], async (_, res /*, next*/) => {
  * Auth Check, used by the nginx auth_request directive
  * GET /api/auth
  */
-router.get("/api/auth", requireLogin(), (_, res) => {
+router.get("/api/auth", jwtdecode, validate, (_, res) => {
 	res.sendStatus(200);
 });
 
@@ -57,12 +58,13 @@ router.get("/api/auth", requireLogin(), (_, res) => {
  * Admin Auth Check, used by the nginx auth_request directive
  * GET /api/auth/admin
  */
-router.get("/api/auth/admin", requireLogin(), (_, res) => {
+router.get("/api/auth/admin", jwtdecode, validate, (_, res) => {
 	res.locals.access.canAdmin();
 	res.sendStatus(200);
 });
 
-router.use("/api/docs", docsRoutes);
+router.options(/(?<path>.+)/u, (req, _, next) => next(new errs.ItemNotFoundError(req.params.path)));
+
 router.use("/api/schema", schemaRoutes);
 router.use("/api/tokens", tokensRoutes);
 if (isOIDCenabled) router.use("/api/oidc", oidcRoutes);
@@ -78,6 +80,8 @@ router.use("/api/nginx/dead-hosts", deadHostsRoutes);
 router.use("/api/nginx/streams", streamsRoutes);
 router.use("/api/nginx/access-lists", accessListsRoutes);
 router.use("/api/nginx/certificates", certificatesHostsRoutes);
+
+router.options(/(?<path>.+)/u, (req, _, next) => next(new errs.ItemNotFoundError(req.params.path)));
 
 /**
  * API 404 for all other routes

@@ -49,21 +49,21 @@ const ACRONYMS = new Set([
 	"wp",
 ]);
 
-const communityBlocklistSyncRe = /^update : \+\d+\/-\d+ IPs$/;
+const communityBlocklistSyncRe = /^update : \+\d+\/-\d+ IPs$/u;
 
 // hoisted so the hot path does not rebuild them per call
-const splitTokensRe = /[-_]+/;
-const firstCharRe = /^./;
-const vpatchPrefixRe = /^vpatch-/i;
-const appsecPrefixRe = /^appsec/i;
-const appsecStripRe = /^appsec-?/i;
-const cveProbeRe = /^http-cve-(\d{4}-\d+)$/i;
-const bruteForceSuffixRe = /^(.*)-bf$/i;
-const bruteForceWordsRe = /(^|\s)(bf|brute\s?force)(\s|$)/i;
-const injectionWordsRe = /sqli|sql|xss|traversal|rce|lfi|xxe|xpath|inject/i;
-const probingWordsRe = /probing|crawl|scan|enum|fpath|glob/i;
-const suspiciousClientWordsRe = /bad-user-agent|http-ua|user-agent/i;
-const floodingWordsRe = /flood|dos\b/i;
+const splitTokensRe = /[-_]+/u;
+const firstCharRe = /^./u;
+const vpatchPrefixRe = /^vpatch-/iu;
+const appsecPrefixRe = /^appsec/iu;
+const appsecStripRe = /^appsec-?/iu;
+const cveProbeRe = /^http-cve-(\d{4}-\d+)$/iu;
+const bruteForceSuffixRe = /^(.*)-bf$/iu;
+const bruteForceWordsRe = /(^|\s)(bf|brute\s?force)(\s|$)/iu;
+const injectionWordsRe = /sqli|sql|xss|traversal|rce|lfi|xxe|xpath|inject/iu;
+const probingWordsRe = /probing|crawl|scan|enum|fpath|glob/iu;
+const suspiciousClientWordsRe = /bad-user-agent|http-ua|user-agent/iu;
+const floodingWordsRe = /flood|dos\b/iu;
 
 // strip the hub author ("crowdsecurity/", "firewallservices/", ...) from a
 // scenario id; plain names and manual/sync strings pass through untouched

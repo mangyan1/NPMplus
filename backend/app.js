@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import cookieParser from "cookie-parser";
 import express from "express";
 import multer from "multer";
-import { jsonReplacer } from "./lib/helpers.js";
+import { jsonReplacer, readSecret } from "./lib/helpers.js";
 import { debug, express as logger } from "./logger.js";
 import mainRoutes from "./routes/main.js";
 
@@ -18,7 +18,7 @@ app.disable("x-powered-by");
 app.set("json spaces", 2);
 app.set("json replacer", jsonReplacer);
 
-app.use(cookieParser(process.env.COOKIE_SECRET || crypto.randomBytes(16).toString("hex")));
+app.use(cookieParser((await readSecret("COOKIE_SECRET")) ?? crypto.randomBytes(16).toString("hex")));
 // The API sends uncompressed bodies. Reject encoded input before decompression
 // (GHSA-27r3-jxmh-p828) while the patched parser ages through quarantine.
 app.use(express.json({ limit: "1mb", inflate: false }));
@@ -58,7 +58,7 @@ app.use("/", mainRoutes);
 // no stacktraces leaked to user
 app.use((err, req, res, _) => {
 	const status = err.status || 500;
-	const exposed = err.public || err.expose;
+	const exposed = err.public || err.expose || err instanceof URIError;
 	const requestId = crypto.randomUUID();
 	const payload = {
 		error: {
@@ -76,6 +76,10 @@ app.use((err, req, res, _) => {
 	// server-side, including when the public message is deliberately generic.
 	// The upstream "error.output" variant would publish raw certbot stdout and
 	// stderr to the browser, so it is intentionally not merged here.
+
+	if (err.certificate_id) {
+		payload.error.certificate_id = err.certificate_id;
+	}
 
 	// Not every error is worth logging - but this is good for now until it gets annoying.
 	if (typeof err.stack !== "undefined" && err.stack) {

@@ -1,24 +1,24 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import it from "node:test";
 import remoteVersion, { isCommitUpdateAvailable } from "../internal/remote-version.js";
 
-const USER_AGENT_PATTERN = /^NPMplus\//;
+const USER_AGENT_PATTERN = /^NPMplus\//u;
 
-test("commit update comparison accepts short and full matching revisions", () => {
+it("commit update comparison accepts short and full matching revisions", () => {
 	assert.equal(isCommitUpdateAvailable("53e524b", "53e524b"), false);
 	assert.equal(isCommitUpdateAvailable("a".repeat(40), "aaaaaaa"), false);
 });
 
-test("commit update comparison detects a different fork revision", () => {
+it("commit update comparison detects a different fork revision", () => {
 	assert.equal(isCommitUpdateAvailable("53e524b", "6454c6d"), true);
 });
 
-test("release and unknown strings do not produce false update notices", () => {
+it("release and unknown strings do not produce false update notices", () => {
 	assert.equal(isCommitUpdateAvailable("1.2.3", "53e524b"), false);
 	assert.equal(isCommitUpdateAvailable("53e524b", "unknown"), false);
 });
 
-test("the remote check reads this fork's develop commit with a bounded request", async () => {
+it("the remote check reads this fork's develop commit with a bounded request", async () => {
 	const originalFetch = globalThis.fetch;
 	try {
 		globalThis.fetch = (url, options) => {

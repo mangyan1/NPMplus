@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Alert } from "react-bootstrap";
 import Modal from "react-bootstrap/Modal";
 import { renewCertificate } from "src/api/backend";
-import { Button, Loading } from "src/components";
+import { Button, CommandOutput, Loading } from "src/components";
 import { useCertificate } from "src/hooks";
 import { T } from "src/locale";
 import EasyModal from "src/modules/easyModal";
@@ -30,13 +30,7 @@ const RenewCertificateModal = EasyModal.create(({ id, visible, remove }) => {
 				remove();
 			} catch (err) {
 				if (err.payload?.error?.output) {
-					setErrorMsg(
-						<div className="w-100">
-							<pre>
-								<code>{err.payload.error.output}</code>
-							</pre>
-						</div>,
-					);
+					setErrorMsg(<CommandOutput output={err.payload.error.output} />);
 				} else {
 					setErrorMsg(<T id={err.message} />);
 				}
@@ -47,8 +41,8 @@ const RenewCertificateModal = EasyModal.create(({ id, visible, remove }) => {
 	}, [id, data, isFresh, remove]);
 
 	return (
-		<Modal show={visible} onHide={isSubmitting ? undefined : remove}>
-			<Modal.Header closeButton={!isSubmitting}>
+		<Modal show={visible} backdrop="static" onHide={isSubmitting ? undefined : remove}>
+			<Modal.Header closeButton>
 				<Modal.Title>
 					<T id="certificate.renew" />
 				</Modal.Title>
@@ -63,7 +57,11 @@ const RenewCertificateModal = EasyModal.create(({ id, visible, remove }) => {
 						{error?.message}
 					</Alert>
 				)}
-				{isSubmitting ? <p className="text-center mt-3">Please wait ...</p> : null}
+				{isSubmitting && (
+					<p className="text-center mt-3">
+						<T id="please-wait" />
+					</p>
+				)}
 			</Modal.Body>
 			<Modal.Footer>
 				<Button onClick={remove} disabled={isSubmitting}>

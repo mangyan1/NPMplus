@@ -22,7 +22,7 @@ import pjson from "../package.json" with { type: "json" };
 import internalAuditLog from "./audit-log.js";
 import internalNginx from "./nginx.js";
 
-const cnPattern = /\bCN=([^\n]+)/i;
+const cnPattern = /\bCN=([^\n]+)/iu;
 
 const internalCertificate = {
 	allowedSslFiles: ["certificate", "certificate_key"],
@@ -549,7 +549,7 @@ const internalCertificate = {
 			}
 
 			if (cert.issuer) {
-				certData.issuer = cert.issuer.replace(/\n/g, ", ");
+				certData.issuer = cert.issuer.replace(/\n/gu, ", ");
 			}
 
 			const validFrom = Math.floor(new Date(cert.validFrom).getTime() / 1000);
@@ -597,7 +597,7 @@ const internalCertificate = {
 			`Requesting Certbot certificates for Cert #${certificate.id}: ${certificate.domain_names.join(", ")}`,
 		);
 
-		certificate.domain_names = certificate.domain_names.map((v) => v.replace(/^\[|\]$/g, ""));
+		certificate.domain_names = certificate.domain_names.map((v) => v.replace(/^\[|\]$/gu, ""));
 		const { ips = [], domains = [] } = Object.groupBy(certificate.domain_names, (entry) =>
 			net.isIP(entry) === 0 ? "domains" : "ips",
 		);

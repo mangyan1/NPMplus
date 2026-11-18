@@ -1,12 +1,12 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import { mkdir, readFile } from "node:fs/promises";
-import test from "node:test";
+import it from "node:test";
 import internalNginx from "../internal/nginx.js";
 
 for (const scheme of ["auto", "$scheme", "http", "https"]) {
 	for (const preservePath of [false, true]) {
-		test(`redirection scheme ${scheme} preserves path=${preservePath}`, async () => {
+		it(`redirection scheme ${scheme} preserves path=${preservePath}`, async () => {
 			await mkdir("/data/nginx/redirection_host", { recursive: true });
 			const host = {
 				id: 72,

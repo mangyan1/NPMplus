@@ -127,7 +127,7 @@ const internalProxyHostAccessList = {
 			items: getMergedItems(lists),
 			clients,
 			satisfy_any: Boolean(first?.satisfy_any),
-			pass_auth: Boolean(first?.pass_auth),
+			pass_auth: lists.every((l) => l.pass_auth || !l.items?.length),
 			source_acl_ids: lists.map((l) => l.id).filter((id) => Number.isInteger(id)),
 		};
 	},
@@ -277,7 +277,7 @@ const internalProxyHostAccessList = {
 	 * @param {*} proxyHost
 	 * @returns
 	 */
-	validateAccessLists: async (access, proxyHost) => {
+	validateAccessLists: async (access, proxyHost, existingHost = {}) => {
 		if (!proxyHost) {
 			return;
 		}
@@ -289,30 +289,36 @@ const internalProxyHostAccessList = {
 		if (proxyHost.npmplus_access_list_type === "global") {
 			throw new errs.ValidationError("The global access list type is only allowed for locations");
 		}
-		const aclIds = new Set(); // make sure no ACLs are being submitted that have been deleted
-		const validateCustomSelection = (accessListType, accessListIds) => {
-			if (accessListType === "custom") {
-				if (!Array.isArray(accessListIds) || accessListIds.length === 0) {
-					throw new errs.ValidationError(
-						"Custom Access Lists require at least 1 access list to be specified",
-					);
-				}
-				// This should never happen unless a different frontend is used. Proper deduplication happens later
-				if (new Set(accessListIds).size !== accessListIds.length) {
-					throw new errs.ValidationError("Duplicate Access Lists Found");
-				}
-				for (const id of accessListIds) {
-					aclIds.add(id);
-				}
-			}
-		};
 
-		validateCustomSelection(proxyHost.npmplus_access_list_type, proxyHost.npmplus_access_list_ids);
-		if (Array.isArray(proxyHost.locations)) {
-			for (const location of proxyHost.locations) {
-				validateCustomSelection(location.npmplus_access_list_type, location.npmplus_access_list_ids);
-			}
+		const existingByKey = new Map();
+		for (const item of [existingHost, ...(existingHost.locations ?? [])]) {
+			const key = item === existingHost ? "host" : `${item.path}|${item.location_type}`;
+			existingByKey.set(key, item);
 		}
+		const items = [[proxyHost, existingHost]];
+		for (const location of proxyHost.locations ?? existingHost.locations ?? []) {
+			const key = `${location.path}|${location.location_type}`;
+			items.push([location, existingByKey.get(key) ?? {}]);
+		}
+
+		const aclIds = new Set(); // make sure no ACLs are being submitted that have been deleted
+		for (const [item, existing] of items) {
+			const accessListType = item.npmplus_access_list_type ?? existing.npmplus_access_list_type;
+			if (accessListType !== "custom") continue;
+			const accessListIds =
+				item.npmplus_access_list_ids ??
+				existing.npmplus_access_list_ids ??
+				(existing.access_lists ?? []).map((entry) => entry.id);
+			if (!Array.isArray(accessListIds) || accessListIds.length === 0) {
+				throw new errs.ValidationError("Custom Access Lists require at least 1 access list to be specified");
+			}
+			// This should never happen unless a different frontend is used. Proper deduplication happens later
+			if (new Set(accessListIds).size !== accessListIds.length) {
+				throw new errs.ValidationError("Duplicate Access Lists Found");
+			}
+			for (const id of accessListIds) aclIds.add(id);
+		}
+
 		// make sure no ACLs that are being uploaded have been deleted
 		if (aclIds.size > 0) {
 			// canAdmin throws for non-admins; the try/catch turns it into a
@@ -329,15 +335,21 @@ const internalProxyHostAccessList = {
 				.andWhere("is_deleted", 0);
 			// A non-admin may only attach access lists they own: otherwise the
 			// ACL id becomes a handle onto another user's allow/deny rules and
-			// basic-auth usernames via the expand endpoints (IDOR).
+			// basic-auth usernames via the expand endpoints (IDOR). Keeping an
+			// already attached list (possibly attached by an admin) is allowed.
+			const keptIds = new Set();
+			for (const item of [existingHost, ...(existingHost.locations ?? [])]) {
+				for (const entry of item.access_lists ?? []) keptIds.add(entry.id);
+			}
 			if (!isAdminAccess) {
-				query.andWhere("owner_user_id", access.token.getUserId(1));
+				query.where((builder) => {
+					builder.where("owner_user_id", access.token.getUserId(1)).orWhereIn("id", [...keptIds]);
+				});
 			}
 			const rows = await query.select("id");
 
 			const validIds = new Set(rows.map((row) => row.id));
 			const invalidIds = [...aclIds].filter((id) => !validIds.has(id));
-
 			if (invalidIds.length > 0) {
 				throw new errs.ValidationError("One or more selected Access Lists no longer exist");
 			}

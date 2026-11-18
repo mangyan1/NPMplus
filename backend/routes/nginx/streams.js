@@ -38,7 +38,7 @@ const router = express.Router({
  */
 router
 	.route("/")
-	.all(jwtdecode()) // preferred so it doesn't apply to nonexistent routes
+	.all(jwtdecode) // preferred so it doesn't apply to nonexistent routes
 
 	/**
 	 * GET /api/nginx/streams
@@ -71,7 +71,7 @@ router
  */
 router
 	.route("/:stream_id")
-	.all(jwtdecode()) // preferred so it doesn't apply to nonexistent routes
+	.all(jwtdecode) // preferred so it doesn't apply to nonexistent routes
 
 	/**
 	 * GET /api/nginx/streams/123
@@ -94,7 +94,7 @@ router
 	 * Update an existing stream
 	 */
 	.put(async (req, res) => {
-		const payload = apiValidator(getValidationSchema("/nginx/streams/{streamID}", "put"), req.body);
+		const payload = apiValidator(getValidationSchema("/nginx/streams/{stream_id}", "put"), req.body);
 		payload.id = Number.parseInt(req.params.stream_id, 10);
 		const result = await internalStream.update(res.locals.access, payload);
 		res.status(200).send(result);
@@ -119,7 +119,7 @@ router
  */
 router
 	.route("/:stream_id/enable")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * POST /api/nginx/streams/123/enable
@@ -138,7 +138,7 @@ router
  */
 router
 	.route("/:stream_id/disable")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * POST /api/nginx/streams/123/disable

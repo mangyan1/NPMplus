@@ -71,8 +71,8 @@ load_secret() {
     fi
 }
 
-for secret_name in COOKIE_SECRET OIDC_CLIENT_SECRET INITIAL_ADMIN_PASSWORD INITIAL_SETUP_TOKEN \
-    ACME_EAB_HMAC_KEY DB_MYSQL_PASSWORD DB_POSTGRES_PASSWORD; do
+for secret_name in COOKIE_SECRET OIDC_CLIENT_ID OIDC_CLIENT_SECRET INITIAL_ADMIN_EMAIL INITIAL_ADMIN_PASSWORD \
+    INITIAL_SETUP_TOKEN ACME_EMAIL ACME_EAB_KID ACME_EAB_HMAC_KEY DB_MYSQL_PASSWORD DB_POSTGRES_PASSWORD; do
     load_secret "$secret_name"
 done
 unset secret_name secret_value secret_file
@@ -153,12 +153,17 @@ export NGINX_FORCE_X25519MLKEM768="${NGINX_FORCE_X25519MLKEM768:-false}"
 export NGINX_DISABLE_TLS12="${NGINX_DISABLE_TLS12:-false}"
 export NGINX_TRUST_SECPR1="${NGINX_TRUST_SECPR1:-true}"
 export NGINX_TRUST_RSA_PKCS1="${NGINX_TRUST_RSA_PKCS1:-false}"
-export DISABLE_NGINX_BEAUTIFIER="${DISABLE_NGINX_BEAUTIFIER:-false}"
 export TRUST_CLOUDFLARE="${TRUST_CLOUDFLARE:-false}"
 export LOGROTATE="${LOGROTATE:-false}"
 export LOGROTATIONS="${LOGROTATIONS:-3}"
 export CERTBOT_RUN_INTERVAL="${CERTBOT_RUN_INTERVAL:-3}"
 export ECH_ROTATION_INTERVAL="${ECH_ROTATION_INTERVAL:-1}"
+#tmp
+if [ -n "$DISABLE_NGINX_BEAUTIFIER" ]; then
+    echo "DISABLE_NGINX_BEAUTIFIER env is not supported anymore."
+    sleep inf
+fi
+
 export GOA="${GOA:-false}"
 export GOACLA="${GOACLA:-"--agent-list --real-os --double-decode --anonymize-ip --anonymize-level=1 --keep-last=30 --with-output-resolver --no-query-string"}"
 export PHP83="${PHP83:-false}"
@@ -357,6 +362,20 @@ if [ -z "$TZ" ] || [ ! -s /usr/share/zoneinfo/"$TZ" ]; then
     sleep inf
 fi
 
+
+for env in ACME_SERVER ACME_EMAIL ACME_EAB_KID ACME_EAB_HMAC_KEY INITIAL_ADMIN_EMAIL COOKIE_SECRET NC_DOMAIN OIDC_REDIRECT_DOMAIN OIDC_ISSUER_URL OIDC_CLIENT_ID OIDC_CLIENT_SECRET AUTH_REQUEST_ANUBIS_UPSTREAM AUTH_REQUEST_TINYAUTH_UPSTREAM AUTH_REQUEST_OAUTH2PROXY_UPSTREAM AUTH_REQUEST_VOIDAUTH_UPSTREAM AUTH_REQUEST_AUTHELIA_UPSTREAM AUTH_REQUEST_AUTHENTIK_UPSTREAM; do
+    if printenv "$env" | grep -q "[[:space:]]"; then
+        echo "$env must not contain whitespace."
+        sleep inf
+    fi
+done
+
+for env in TRUST_IP GOACLA PHP83_APKS PHP84_APKS PHP85_APKS PHP_APKS INITIAL_ADMIN_PASSWORD; do
+    if printenv "$env" | grep -q "^[[:space:]]\|[[:space:]]$"; then
+        echo "$env must not start or end with whitespace."
+        sleep inf
+    fi
+done
 
 if ! echo "$ACME_SERVER" | grep -q "^https\?://"; then
     echo "ACME_SERVER needs to start with http:// or https://"
@@ -573,10 +592,6 @@ if ! echo "$NGINX_DISABLE_TLS12" | grep -q "^true$\|^false$"; then
     sleep inf
 fi
 
-if ! echo "$DISABLE_NGINX_BEAUTIFIER" | grep -q "^true$\|^false$"; then
-    echo "DISABLE_NGINX_BEAUTIFIER needs to be true or false."
-    sleep inf
-fi
 
 if [ -n "$TRUST_IP" ] && ! echo "$TRUST_IP" | grep -q "^[0-9a-fA-F.:/ ]\+$"; then
     echo "TRUST_IP can consist of space separated IPv4/IPv6 addresses or subnets."

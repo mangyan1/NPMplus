@@ -1,7 +1,7 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import test from "node:test";
+import it from "node:test";
 import db from "../db.js";
 import internalAudit from "../internal/audit-log.js";
 import internalNginx from "../internal/nginx.js";
@@ -10,7 +10,7 @@ import { migrateUp } from "../migrate.js";
 import Setting from "../models/setting.js";
 
 await migrateUp();
-const configPath = "/usr/local/nginx/conf/conf.d/default.conf";
+const configPath = "/data/nginx/default.conf";
 const htmlPath = "/data/html/index.html";
 const originalHtml = "<p>Previous page</p>";
 const originalConfig = "previous valid config";
@@ -28,7 +28,7 @@ const seed = async (t) => {
 	await Setting.query().delete();
 	await db()("audit_log").delete();
 	await Setting.query().insert(original);
-	await mkdir("/usr/local/nginx/conf/conf.d", { recursive: true });
+	await mkdir("/data/nginx", { recursive: true });
 	await mkdir("/data/html", { recursive: true });
 	await writeFile(configPath, originalConfig);
 	await writeFile(htmlPath, originalHtml);
@@ -55,7 +55,7 @@ const previousState = {
 	audits: 0,
 };
 
-test("default-site success persists settings and one audit event after reload", async (t) => {
+it("default-site success persists settings and one audit event after reload", async (t) => {
 	await seed(t);
 	t.mock.method(internalNginx, "reload", async () => {
 		assert.deepEqual((await Setting.query().findById("default-site")).meta, original.meta);
@@ -68,18 +68,18 @@ test("default-site success persists settings and one audit event after reload", 
 });
 
 for (const stage of ["generateConfig", "test", "reload"]) {
-	test(`default-site ${stage} failure restores database, HTML, config and audit state`, async (t) => {
+	it(`default-site ${stage} failure restores database, HTML, config and audit state`, async (t) => {
 		await seed(t);
 		let attempts = 0;
 		t.mock.method(internalNginx, stage, async () => {
 			if (++attempts === 1) throw new Error(`rejected ${stage}`);
 		});
-		await assert.rejects(internalSetting.update(access, candidate), /Could not reconfigure/);
+		await assert.rejects(internalSetting.update(access, candidate), /Could not reconfigure/u);
 		assert.deepEqual(await restoredState(), previousState);
 	});
 }
 
-test("a failed default-site audit insertion rolls back database and restored files", async (t) => {
+it("a failed default-site audit insertion rolls back database and restored files", async (t) => {
 	await seed(t);
 	t.mock.method(internalAudit, "add", async () => {
 		throw new Error("rejected audit");
@@ -88,7 +88,7 @@ test("a failed default-site audit insertion rolls back database and restored fil
 	assert.deepEqual(await restoredState(), previousState);
 });
 
-test("default-site database failure restores the previous serving configuration", async (t) => {
+it("default-site database failure restores the previous serving configuration", async (t) => {
 	await seed(t);
 	await db().raw(
 		"CREATE TRIGGER reject_setting BEFORE UPDATE ON setting BEGIN SELECT RAISE(ABORT, 'rejected setting'); END",
@@ -101,7 +101,7 @@ test("default-site database failure restores the previous serving configuration"
 	}
 });
 
-test("default-site recovery failure is internal and does not claim successful restoration", async (t) => {
+it("default-site recovery failure is internal and does not claim successful restoration", async (t) => {
 	await seed(t);
 	t.mock.method(internalNginx, "test", async () => {
 		throw new Error("invalid candidate");
@@ -116,7 +116,7 @@ test("default-site recovery failure is internal and does not claim successful re
 	assert.deepEqual(await restoredState(), previousState);
 });
 
-test("concurrent default-site updates cannot restore over the preceding successful update", async (t) => {
+it("concurrent default-site updates cannot restore over the preceding successful update", async (t) => {
 	await seed(t);
 	let release;
 	let entered;
@@ -142,7 +142,7 @@ test("concurrent default-site updates cannot restore over the preceding successf
 	const first = internalSetting.update(access, candidate);
 	await started;
 	const second = internalSetting.update(access, { ...candidate, meta: { html: "second page", status: 200 } });
-	const rejected = assert.rejects(second, /Could not reconfigure/);
+	const rejected = assert.rejects(second, /Could not reconfigure/u);
 	await new Promise((resolve) => setTimeout(resolve, 100));
 	const simultaneousGenerations = generations;
 	release();
@@ -158,7 +158,7 @@ test("concurrent default-site updates cannot restore over the preceding successf
 	});
 });
 
-test("failed default-site creation restores originally absent files", async (t) => {
+it("failed default-site creation restores originally absent files", async (t) => {
 	await seed(t);
 	await rm(configPath);
 	await rm(htmlPath);
@@ -166,7 +166,7 @@ test("failed default-site creation restores originally absent files", async (t) 
 	t.mock.method(internalNginx, "test", async () => {
 		if (++attempts === 1) throw new Error("invalid candidate");
 	});
-	await assert.rejects(internalSetting.update(access, candidate), /Could not reconfigure/);
+	await assert.rejects(internalSetting.update(access, candidate), /Could not reconfigure/u);
 	await assert.rejects(readFile(configPath), { code: "ENOENT" });
 	await assert.rejects(readFile(htmlPath), { code: "ENOENT" });
 	assert.deepEqual((await Setting.query().findById("default-site")).meta, original.meta);

@@ -1,6 +1,6 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
-import test from "node:test";
+import it from "node:test";
 import bcrypt from "bcryptjs";
 import mfa from "../internal/mfa.js";
 import { hash } from "../lib/argon2.js";
@@ -9,7 +9,7 @@ import authModel from "../models/auth.js";
 
 await migrateUp();
 
-test("a recovery code is accepted by only one concurrent request", async () => {
+it("a recovery code is accepted by only one concurrent request", async () => {
 	const recoveryHash = await bcrypt.hash("ABCDEF12", 10);
 	await authModel.query().insert({ user_id: 1, type: "password", secret: "unused", meta: {} });
 	await authModel.query().insert({ user_id: 1, type: "totp", secret: "JBSWY3DPEHPK3PXP", meta: {} });
@@ -22,7 +22,7 @@ test("a recovery code is accepted by only one concurrent request", async () => {
 	assert.equal(await authModel.query().where("user_id", 1).andWhere("type", "totp").resultSize(), 1);
 });
 
-test("using a recovery code does not consume other recovery codes", async () => {
+it("using a recovery code does not consume other recovery codes", async () => {
 	const hashes = await Promise.all([bcrypt.hash("11111111", 10), bcrypt.hash("22222222", 10)]);
 	await authModel.query().insert({ user_id: 2, type: "password", secret: "unused", meta: {} });
 	for (const secret of hashes) {
@@ -33,7 +33,7 @@ test("using a recovery code does not consume other recovery codes", async () => 
 	assert.equal(await mfa.verifyForLogin(2, "22222222"), true);
 });
 
-test("Argon2 recovery codes remain single-use under concurrent requests", async () => {
+it("Argon2 recovery codes remain single-use under concurrent requests", async () => {
 	const codeHash = await hash("AABBCCDD", true);
 	await authModel.query().insert({ user_id: 3, type: "password", secret: "unused", meta: {} });
 	await authModel.query().insert({ user_id: 3, type: "backup_code", secret: codeHash, meta: {} });

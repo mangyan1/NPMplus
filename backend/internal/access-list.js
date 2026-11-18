@@ -14,9 +14,11 @@ import internalNginx from "./nginx.js";
 import internalProxyHostAccessList from "./proxy-host-access-list.js";
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: reject htpasswd record delimiters and control bytes
-const invalidUsername = /[:\u0000-\u001f\u007f]/;
+const invalidUsername = /[:\u0000-\u001f\u007f]/u;
 
 const omissions = () => ["is_deleted", "owner.is_deleted"];
+
+const hasDuplicateUsernames = (items = []) => new Set(items.map(({ username }) => username)).size !== items.length;
 
 const validatePasswordBytes = (items) => {
 	if ((items ?? []).some((item) => item.password && bcrypt.truncates(item.password))) {
@@ -36,6 +38,9 @@ const internalAccessList = {
 			throw Object.assign(new errs.ValidationError("A password is required for new access-list users"), {
 				message_i18n: "error.access.password-required",
 			});
+		}
+		if (hasDuplicateUsernames(data.items)) {
+			throw new errs.ValidationError("Access list usernames need to be unique");
 		}
 		validatePasswordBytes(data.items);
 
@@ -122,6 +127,9 @@ const internalAccessList = {
 			});
 			const existingUsernames = new Set((row.items || []).map((item) => item.username));
 			validatePasswordBytes(data.items);
+			if (hasDuplicateUsernames(data.items)) {
+				throw new errs.ValidationError("Access list usernames need to be unique");
+			}
 			if ((data.items || []).some((item) => !item.password && !existingUsernames.has(item.username))) {
 				throw Object.assign(
 					new errs.ValidationError("A password is required for new or renamed access-list users"),

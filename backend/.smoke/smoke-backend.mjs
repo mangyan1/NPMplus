@@ -56,7 +56,7 @@ await reporting.recordAddresses("", Date.now() - 120_000);
 await reporting.recordAddresses("203.0.113.9\n2001:db8::1\n", Date.now() - 60_000);
 await (await import("../models/user.js")).default
 	.query()
-	.insert({ email: "smoke@example.com", name: "Smoke", nickname: "smoke", avatar: "", roles: ["admin"] });
+	.insert({ email: "smoke@example.com", name: "Smoke", nickname: "smoke", avatar: "", npmplus_is_admin: 1 });
 
 const app = express();
 app.use(express.json());
@@ -121,7 +121,7 @@ const server = app.listen(13000, "127.0.0.1", async () => {
 	//     trailing '=' stripped) so cookie-parser accepts it as signed and
 	//     jwt.verify then rejects the payload as not-a-jwt.
 	const signCookieValue = (value) =>
-		`s:${value}.${createHmac("sha256", COOKIE_SECRET).update(value).digest("base64").replace(/[=]+$/, "")}`;
+		`s:${value}.${createHmac("sha256", COOKIE_SECRET).update(value).digest("base64").replace(/[=]+$/u, "")}`;
 	const ghost = await fetch(`${base}/decisions`, {
 		headers: { cookie: `__Host-Http-token=${signCookieValue("not.a.jwt")}` },
 	});

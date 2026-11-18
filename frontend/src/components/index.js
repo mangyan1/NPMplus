@@ -1,4 +1,6 @@
 export * from "./Button";
+export * from "./CommandOutput";
+export * from "./CopyButton";
 export * from "./EmptyData";
 export { default as ErrorBoundary } from "./ErrorBoundary";
 export * from "./ErrorNotFound";

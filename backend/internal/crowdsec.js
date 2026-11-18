@@ -18,7 +18,7 @@ const LAPI_URL = process.env.CROWDSEC_LAPI_URL || "http://127.0.0.1:8080";
 const LAPI_MACHINE_ID = process.env.CROWDSEC_LAPI_MACHINE_ID || "npmplus-ui";
 const LAPI_MACHINE_KEY_FILE = process.env.CROWDSEC_LAPI_MACHINE_KEY_FILE || "/data/crowdsec/lapi-ui-machine.key";
 const CROWDSEC_BOUNCER_CONFIG_FILE = process.env.CROWDSEC_BOUNCER_CONFIG_FILE || "/data/crowdsec/crowdsec.conf";
-const CRS_OBSERVE_MARKER = /^# NPMPLUS_CRS_MODE=observe\r?$/m;
+const CRS_OBSERVE_MARKER = /^# NPMPLUS_CRS_MODE=observe\r?$/mu;
 const MACHINE_TOKEN_TTL_MS = 30 * 1000;
 // crowdsec's lapi validates the client user agent against the registered
 // machine (a bare "node" agent is rejected as "bad user agent"), so every
@@ -54,7 +54,7 @@ export const readCrowdsecJson = async (response, maxBytes = LAPI_MAX_RESPONSE_BY
 export const readAppsecConfiguration = async () => {
 	try {
 		const text = (await readFile(CROWDSEC_BOUNCER_CONFIG_FILE, "utf8")).slice(0, 64 * 1024);
-		const setting = (name) => text.match(new RegExp(`^${name}=(.*)$`, "m"))?.[1]?.trim() ?? "";
+		const setting = (name) => text.match(new RegExp(`^${name}=(.*)$`, "mu"))?.[1]?.trim() ?? "";
 		const url = setting("APPSEC_URL");
 		const failureAction = setting("APPSEC_FAILURE_ACTION");
 		const unreadableBody = setting("APPSEC_DROP_UNREADABLE_BODY");

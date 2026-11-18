@@ -5,10 +5,10 @@
 // setup route uses.
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
-import test from "node:test";
+import it from "node:test";
 import Access from "../lib/access.js";
 
-test("can() fails closed on a permission string without a type:level shape", () => {
+it("can() fails closed on a permission string without a type:level shape", () => {
 	const access = new Access(null);
 	assert.throws(
 		() => access.can("proxy_hosts"),
@@ -25,7 +25,7 @@ test("can() fails closed on a permission string without a type:level shape", () 
 	assert.equal(admin.can("proxy_hosts:manage"), true);
 });
 
-test("canUser() rejects the anonymous-session sentinel and non-ids", () => {
+it("canUser() rejects the anonymous-session sentinel and non-ids", () => {
 	const access = new Access(null);
 	// 0 is the anonymous sentinel (Token.getUserId(0)), not a real user id
 	assert.throws(

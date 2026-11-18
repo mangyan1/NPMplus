@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test as it } from "node:test";
 
 const fresh = async () => (await import(`../internal/home-location.js?test=${Math.random()}`)).getHomeLocation;
 
-test("home lookup bounds streaming bodies and shares concurrent requests", async (t) => {
+it("home lookup bounds streaming bodies and shares concurrent requests", async (t) => {
 	delete process.env.HOME_LATITUDE;
 	delete process.env.HOME_LONGITUDE;
 	delete process.env.HOME_GEOLOCATION;
@@ -19,7 +19,7 @@ test("home lookup bounds streaming bodies and shares concurrent requests", async
 	assert.equal(calls, 1, "failed lookup backs off");
 });
 
-test("explicit coordinates and disabled geolocation never contact the provider", async (t) => {
+it("explicit coordinates and disabled geolocation never contact the provider", async (t) => {
 	t.mock.method(globalThis, "fetch", () => {
 		throw new Error("unexpected external request");
 	});
@@ -33,7 +33,7 @@ test("explicit coordinates and disabled geolocation never contact the provider",
 	assert.deepEqual(await lookup(), { latitude: 0, longitude: 0 });
 });
 
-test("valid home locations are cached and null coordinates are rejected", async (t) => {
+it("valid home locations are cached and null coordinates are rejected", async (t) => {
 	delete process.env.HOME_LATITUDE;
 	delete process.env.HOME_LONGITUDE;
 	delete process.env.HOME_GEOLOCATION;

@@ -3,7 +3,7 @@ import { useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import { LoadingPage, Pagination } from "src/components";
 import { useAuditLogs } from "src/hooks";
-import { T } from "src/locale";
+import { intl, T } from "src/locale";
 import { showEventDetailsModal } from "src/modals";
 import Table from "./Table";
 
@@ -18,11 +18,7 @@ export default function TableWrapper() {
 	}
 
 	if (isError) {
-		return (
-			<Alert variant="danger">
-				<T id={error?.message || "error.unknown"} />
-			</Alert>
-		);
+		return <Alert variant="danger">{error?.message}</Alert>;
 	}
 
 	const paginationProps = {
@@ -54,9 +50,11 @@ export default function TableWrapper() {
 											<IconSearch size={16} />
 										</span>
 										<input
-											type="text"
+											type="search"
+											placeholder={intl.formatMessage({ id: "action.search" })}
 											className="form-control form-control-sm"
 											autoComplete="off"
+											maxLength={255}
 											onChange={(e) => {
 												setSearch(e.target.value.trim());
 												setPage(0);
@@ -69,12 +67,7 @@ export default function TableWrapper() {
 					</div>
 				</div>
 				<Pagination top {...paginationProps} />
-				<Table
-					data={data.results}
-					isFetching={isFetching}
-					search={search}
-					onSelectItem={showEventDetailsModal}
-				/>
+				<Table data={data.results} isFetching={isFetching} onSelectItem={showEventDetailsModal} />
 				<Pagination {...paginationProps} />
 			</div>
 		</div>

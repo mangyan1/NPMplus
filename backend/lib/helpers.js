@@ -1,10 +1,12 @@
+import { readFile } from "node:fs/promises";
+import { domainToASCII } from "node:url";
 import dayjs from "dayjs";
 import { ref } from "objection";
 import { isPostgres } from "./config.js";
 
 const localDateTimePattern = /^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$/u;
 
-const datePeriodPattern = /^([0-9]+)(y|Q|M|w|d|h|m|s|ms)$/m;
+const datePeriodPattern = /^([0-9]+)(y|Q|M|w|d|h|m|s|ms)$/mu;
 
 /**
  * Takes an expression such as 30d and returns a dayjs object of that date in future
@@ -81,6 +83,16 @@ const jsonReplacer = (key, value) => {
 	return value;
 };
 
+const readSecret = async (name) => {
+	if (process.env[name]) return process.env[name];
+	if (process.env[`${name}_FILE`]) return (await readFile(process.env[`${name}_FILE`], "utf8")).trim();
+};
+
+const toAsciiDomain = (domain) => (domain.startsWith("~") ? domain : domainToASCII(domain) || domain);
+
+const hasDuplicateDomains = (domains) =>
+	new Set(domains.map((domain) => toAsciiDomain(domain).toLowerCase())).size !== domains.length;
+
 /**
  * Casts a column to json if using postgres
  *
@@ -93,8 +105,11 @@ export {
 	castJsonIfNeed,
 	convertBoolFieldsToInt,
 	convertIntFieldsToBool,
+	hasDuplicateDomains,
 	jsonReplacer,
 	parseDatePeriod,
 	pickCertificateFields,
+	readSecret,
 	removeCertificateFields,
+	toAsciiDomain,
 };

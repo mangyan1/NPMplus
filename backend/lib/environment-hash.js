@@ -10,7 +10,7 @@ const getEnvironmentHash = async () => {
 	const names = new Set();
 	for (const filename of await readdir(templateDirectory)) {
 		const content = await readFile(`${templateDirectory}/${filename}`, "utf8");
-		for (const match of content.match(/env\.[A-Z0-9_]+/g) || []) names.add(match.slice(4));
+		for (const match of content.match(/env\.[A-Z0-9_]+/gu) || []) names.add(match.slice(4));
 	}
 	const entries = [...names].sort().map((name) => [name, process.env[name] || ""]);
 	const serialized = JSON.stringify(["npmplus-env-v2", process.env.TV || "", entries]);

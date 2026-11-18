@@ -1,44 +1,40 @@
 import { intl } from "src/locale";
 
 const emailPattern = /@/u;
-const domainPattern = /^(?!.*:[0-9]+$).+$/;
+const domainPattern = /^(?:~\S{0,252}|(?!.*:[0-9]+$)[^\s/\\?#%]{1,253})$/u;
 const certificateHttpDomainPattern =
 	/^(?:(?:[\p{L}\p{Mn}\p{Mc}\p{Nd}-]+\.)+[\p{L}\p{Mn}\p{Mc}\p{Nd}-]+|\[[0-9a-fA-F:]+\])$/u;
 const certificateDnsDomainPattern =
 	/^(?![0-9.]+$)(?:\*\.)?(?:[\p{L}\p{Mn}\p{Mc}\p{Nd}-]+\.)+[\p{L}\p{Mn}\p{Mc}\p{Nd}-]+$/u;
-const upstreamUrlPattern = /^https?:\/\/(([^\s/:]+|\[[a-fA-F0-9:]+\]):[0-9]+|cu_[^\s/:]+)$/;
+const upstreamUrlPattern = /^https?:\/\/(?:(?:[^\s/:]+|\[[a-fA-F0-9:]+\]):[0-9]+|cu_[^\s/:]+)$/u;
 
-const validateString =
-	(minLength = 0, maxLength = 0, trim = true) =>
-	(value) => {
-		const { length } = trim ? value.trim() : value;
-		if (minLength && length === 0) {
-			return intl.formatMessage({ id: "error.required" });
-		}
-		if (length < minLength) {
-			return intl.formatMessage({ id: "error.min-character-length" }, { min: minLength });
-		}
-		if (maxLength && length > maxLength) {
-			return intl.formatMessage({ id: "error.max-character-length" }, { max: maxLength });
-		}
-	};
+const validateString = (value, minLength = 0, maxLength = 0, trim = true) => {
+	const { length } = [...(trim ? value.trim() : value)];
+	if (minLength && length === 0) {
+		return intl.formatMessage({ id: "error.required" });
+	}
+	if (length < minLength) {
+		return intl.formatMessage({ id: "error.min-character-length" }, { min: minLength });
+	}
+	if (maxLength && length > maxLength) {
+		return intl.formatMessage({ id: "error.max-character-length" }, { max: maxLength });
+	}
+};
 
-const validateNumber =
-	(min = -1, max = -1) =>
-	(value) => {
-		const int = Number(value);
-		if (min > -1 && !int) {
-			return intl.formatMessage({ id: "error.required" });
-		}
-		if (min > -1 && int < min) {
-			return intl.formatMessage({ id: "error.minimum" }, { min });
-		}
-		if (max > -1 && int > max) {
-			return intl.formatMessage({ id: "error.maximum" }, { max });
-		}
-	};
+const validateNumber = (value, min = -1, max = -1) => {
+	const int = Number(value);
+	if (min > -1 && !int) {
+		return intl.formatMessage({ id: "error.required" });
+	}
+	if (min > -1 && int < min) {
+		return intl.formatMessage({ id: "error.minimum" }, { min });
+	}
+	if (max > -1 && int > max) {
+		return intl.formatMessage({ id: "error.maximum" }, { max });
+	}
+};
 
-const validateEmail = () => (value) => {
+const validateEmail = (value) => {
 	if (value.length === 0) {
 		return intl.formatMessage({ id: "error.required" });
 	}
@@ -85,15 +81,25 @@ const showTabOfInvalid = ({ currentTarget }) => {
 	field?.scrollIntoView({ block: "center" });
 };
 
-const validateUpstreamUrl = () => (value) => {
+const validateUpstreamUrl = (value) => {
 	if (value && !upstreamUrlPattern.test(value)) {
 		return intl.formatMessage({ id: "error.invalid-upstream-url" });
 	}
 };
 
+const isAdminTarget = (value) => value?.toLowerCase().startsWith("unix:") || value?.includes("$");
+
+const validateAdminTarget = (value, isAdmin, allowed, scheme) => {
+	if (!isAdmin && (scheme === "path" || isAdminTarget(value)) && value !== allowed) {
+		return intl.formatMessage({ id: "proxy-host.target-admin-only" });
+	}
+};
+
 export {
+	isAdminTarget,
 	showTabOfInvalid,
 	upstreamUrlPattern,
+	validateAdminTarget,
 	validateDomain,
 	validateDomains,
 	validateEmail,

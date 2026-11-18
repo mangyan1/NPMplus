@@ -1,7 +1,7 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import test from "node:test";
+import it from "node:test";
 import db from "../db.js";
 import internalAccessList from "../internal/access-list.js";
 import internalAuditLog from "../internal/audit-log.js";
@@ -35,7 +35,7 @@ const seed = async () => {
 	return list;
 };
 
-test("a blank password on create rejects before inserting the list or any credentials", async () => {
+it("a blank password on create rejects before inserting the list or any credentials", async () => {
 	await assert.rejects(
 		internalAccessList.create(access, {
 			name: "Created",
@@ -46,7 +46,7 @@ test("a blank password on create rejects before inserting the list or any creden
 	assert.equal(await AccessList.query().where("name", "Created").first(), undefined);
 });
 
-test("a blank-password rename rejects before changing any access-list fields or credentials", async (t) => {
+it("a blank-password rename rejects before changing any access-list fields or credentials", async (t) => {
 	t.mock.method(internalNginx, "reload", async () => {});
 	t.mock.method(internalNginx, "test", async () => {});
 	const list = await seed();
@@ -62,7 +62,7 @@ test("a blank-password rename rejects before changing any access-list fields or 
 	assert.equal((await AccessListAuth.query().where("access_list_id", list.id).first()).username, "original");
 });
 
-test("a blank masked password keeps the matching existing credential unchanged", async (t) => {
+it("a blank masked password keeps the matching existing credential unchanged", async (t) => {
 	t.mock.method(internalNginx, "reload", async () => {});
 	t.mock.method(internalNginx, "test", async () => {});
 	const list = await seed();
@@ -78,7 +78,7 @@ for (const [table, key, replacement] of [
 	["access_list_auth", "items", [{ username: "replacement", password: "new-password" }]],
 	["access_list_client", "clients", [{ directive: "deny", address: "all" }]],
 ]) {
-	test(`a failed ${key} insertion preserves the complete previous policy`, async () => {
+	it(`a failed ${key} insertion preserves the complete previous policy`, async () => {
 		const list = await seed();
 		await AccessListClient.query().insert({ access_list_id: list.id, directive: "deny", address: "all" });
 		await db().raw(
@@ -87,7 +87,7 @@ for (const [table, key, replacement] of [
 		try {
 			await assert.rejects(
 				internalAccessList.update(access, { id: list.id, name: "Changed", [key]: replacement }),
-				/injected insertion failure/,
+				/injected insertion failure/u,
 			);
 			assert.equal((await AccessList.query().findById(list.id)).name, "Original");
 			assert.equal((await AccessListAuth.query().where("access_list_id", list.id).first()).username, "original");
@@ -98,7 +98,7 @@ for (const [table, key, replacement] of [
 	});
 }
 
-test("a failed audit restores both database rows and the previously generated password file", async (t) => {
+it("a failed audit restores both database rows and the previously generated password file", async (t) => {
 	t.mock.method(internalNginx, "reload", async () => {});
 	t.mock.method(internalNginx, "test", async () => {});
 	t.mock.method(internalAuditLog, "add", async () => {
@@ -112,7 +112,7 @@ test("a failed audit restores both database rows and the previously generated pa
 			name: "Changed",
 			items: [{ username: "replacement", password: "new-password" }],
 		}),
-		/injected audit failure/,
+		/injected audit failure/u,
 	);
 	assert.equal((await AccessList.query().findById(list.id)).name, "Original");
 	assert.equal((await AccessListAuth.query().where("access_list_id", list.id).first()).username, "original");
@@ -169,7 +169,7 @@ const attach = async (list) => {
 };
 
 for (const phase of ["generate", "validate", "reload", "audit"]) {
-	test(`a ${phase} failure restores host and custom-location enforcement`, async (t) => {
+	it(`a ${phase} failure restores host and custom-location enforcement`, async (t) => {
 		const list = await seed();
 		const host = await attach(list);
 		const files = [
@@ -200,15 +200,15 @@ for (const phase of ["generate", "validate", "reload", "audit"]) {
 				id: list.id,
 				items: [{ username: "replacement", password: "new-password" }],
 			}),
-			/injected/,
+			/injected/u,
 		);
 		assert.equal((await AccessListAuth.query().where("access_list_id", list.id).first()).username, "original");
 		assert.deepEqual(await Promise.all(files.map((filename) => readFile(filename, "utf8"))), before);
-		assert.match(await readFile(files[3], "utf8"), /auth_basic\s+"/);
+		assert.match(await readFile(files[3], "utf8"), /auth_basic\s+"/u);
 	});
 }
 
-test("a successful replacement updates attached host and custom-location files and commits one audit", async (t) => {
+it("a successful replacement updates attached host and custom-location files and commits one audit", async (t) => {
 	t.mock.method(internalNginx, "reload", async () => {});
 	t.mock.method(internalNginx, "test", async () => {});
 	const list = await seed();
@@ -223,7 +223,7 @@ test("a successful replacement updates attached host and custom-location files a
 		`/data/access/host-${host.id}`,
 		`/data/access/host-${host.id}-location-${host.locations[0].id}`,
 	])
-		assert.match(await readFile(filename, "utf8"), /^replacement:/m);
+		assert.match(await readFile(filename, "utf8"), /^replacement:/mu);
 	assert.equal((await ProxyHost.query().findById(host.id)).npmplus_nginx_online, true);
 	assert.equal(
 		await db()("audit_log")
@@ -235,7 +235,7 @@ test("a successful replacement updates attached host and custom-location files a
 	);
 });
 
-test("hosts attached after initial validation are included in failure recovery", async (t) => {
+it("hosts attached after initial validation are included in failure recovery", async (t) => {
 	const list = await seed();
 	const originalGet = internalAccessList.get;
 	let attached = false;
@@ -262,7 +262,7 @@ test("hosts attached after initial validation are included in failure recovery",
 			id: list.id,
 			items: [{ username: "replacement", password: "new-password" }],
 		}),
-		/injected validation failure/,
+		/injected validation failure/u,
 	);
 	assert.deepEqual(await Promise.all(files.map((filename) => readFile(filename, "utf8"))), before);
 });

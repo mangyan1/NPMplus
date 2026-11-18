@@ -101,8 +101,7 @@ const internalUser = {
 		const auth = data.auth || null;
 		delete data.auth;
 
-		data.avatar = data.avatar || "";
-		data.roles = data.roles || [];
+		data.avatar ||= "";
 
 		data.email = data.email.toLowerCase();
 
@@ -128,11 +127,9 @@ const internalUser = {
 			}
 
 			// Create permissions row as well
-			const isAdmin = data.roles.indexOf("admin") !== -1;
-
 			await userPermissionModel.query(trx).insert({
 				user_id: createdUser.id,
-				visibility: isAdmin ? "all" : "user",
+				visibility: data.npmplus_is_admin ? "all" : "user",
 				proxy_hosts: "hidden",
 				redirection_hosts: "hidden",
 				dead_hosts: "hidden",
@@ -217,10 +214,12 @@ const internalUser = {
 		}
 
 		access.canUser(data.id);
-		try {
-			access.canAdmin();
-		} catch {
-			delete data.roles;
+		if (data.npmplus_is_admin !== undefined) access.canAdmin();
+		if (
+			data.id === access.token.getUserId(0) &&
+			(data.npmplus_is_admin !== undefined || data.is_disabled !== undefined)
+		) {
+			throw new errs.PermissionError("You cannot change your own roles or disable yourself.");
 		}
 		const existingUser = await internalUser.get(access, { id: data.id });
 		// 2. if email is to be changed, find other users with that email
@@ -299,7 +298,7 @@ const internalUser = {
 		}
 
 		if (row.id === access.token.getUserId(0)) {
-			row.goaccess = process.env.GOA === "true" && row.roles.includes("admin");
+			row.goaccess = process.env.GOA === "true" && Boolean(row.npmplus_is_admin);
 		}
 		return row;
 	},
@@ -343,9 +342,12 @@ const internalUser = {
 			throw new errs.PermissionError("You cannot delete yourself.");
 		}
 
-		await userModel.query().where("id", user.id).patch({
-			is_deleted: 1,
+		await userModel.transaction(async (trx) => {
+			await authModel.query(trx).where("user_id", user.id).delete();
+			await userPermissionModel.query(trx).where("user_id", user.id).delete();
+			await userModel.query(trx).deleteById(user.id);
 		});
+		await internalUser.deleteAvatarFiles(user.id);
 
 		await internalAuditLog.add(access, {
 			action: "deleted",
@@ -398,7 +400,10 @@ const internalUser = {
 			});
 		}
 
-		return await query;
+		const users = await query;
+		const mfaUserIds = new Set((await authModel.query().where("type", "totp")).map(({ user_id }) => user_id));
+		for (const user of users) user.mfa_enabled = mfaUserIds.has(user.id);
+		return users;
 	},
 
 	/**
@@ -488,7 +493,17 @@ const internalUser = {
 		const { id, ...permissionData } = data;
 		const existing_auth = await userPermissionModel.query().where("user_id", user.id).first();
 
-		const merged = { ...existing_auth, ...permissionData };
+		const merged = {
+			visibility: "user",
+			proxy_hosts: "hidden",
+			redirection_hosts: "hidden",
+			dead_hosts: "hidden",
+			streams: "hidden",
+			access_lists: "hidden",
+			certificates: "hidden",
+			...existing_auth,
+			...permissionData,
+		};
 		if (merged.proxy_hosts !== "hidden" && merged.access_lists === "hidden") {
 			throw new errs.ValidationError("Access lists can not be hidden while proxy hosts are visible");
 		}

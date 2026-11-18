@@ -1,133 +1,140 @@
-import { IconX } from "@tabler/icons-react";
+import { IconArrowDown, IconArrowUp, IconX } from "@tabler/icons-react";
 import cn from "clsx";
-import { useFormikContext } from "formik";
-import { useState } from "react";
+import { Field, FieldArray, useFormikContext } from "formik";
 import { intl, T } from "src/locale";
 
-export function AccessClientFields({ initialValues, name = "clients" }) {
-	const [values, setValues] = useState(
-		initialValues.at(-1)?.address?.toLowerCase() === "all"
-			? initialValues
-			: [...initialValues, { directive: "deny", address: "all" }],
-	);
-	const { setFieldValue } = useFormikContext();
+const blankClient = { directive: "allow", address: "" };
 
-	const blankClient = { directive: "allow", address: "" };
+export const toClientRows = (clients) => {
+	const rows = [...clients];
+	if (rows.at(-1)?.address.toLowerCase() !== "all") rows.push({ directive: "deny", address: "all" });
+	if (rows.length === 1) rows.unshift(blankClient);
+	return rows;
+};
 
-	if (values?.length === 1) {
-		setValues([blankClient, ...values]);
-	}
-
-	const handleAdd = () => {
-		setValues(values.toSpliced(values.length - 1, 0, blankClient));
-	};
-
-	const handleRemove = (idx) => {
-		const newValues = values.toSpliced(idx, 1);
-		setValues(newValues);
-		setFormField(newValues);
-	};
-
-	const handleChange = (idx, field, fieldValue) => {
-		const newValues = values.with(idx, { ...values[idx], [field]: fieldValue });
-		setValues(newValues);
-		setFormField(newValues);
-	};
-
-	const setFormField = (newValues) => {
-		const filtered = newValues.filter((v) => v?.address?.trim() !== "");
-		void setFieldValue(name, filtered);
-	};
+export function AccessClientFields({ name = "clients" }) {
+	const { values } = useFormikContext();
+	const clients = values[name];
 
 	return (
 		<>
 			<p className="text-secondary">
 				<T id="access-list.help.rules-order" />
 			</p>
-			{values.slice(0, -1).map((client, idx) => (
-				<div className="row mb-1" key={idx}>
-					<div className="col-11">
-						<div className="input-group mb-2">
-							<select
-								className={cn(
-									"form-select",
-									"w-auto",
-									"flex-grow-0",
-									client.directive === "allow" ? "bg-lime-lt" : "bg-orange-lt",
-								)}
-								name={`clients[${idx}].directive`}
-								value={client.directive}
-								onChange={(e) => handleChange(idx, "directive", e.target.value)}
+			<FieldArray name={name} validateOnChange={false}>
+				{({ insert, remove, replace, swap }) => (
+					<>
+						{clients.slice(0, -1).map((_, idx) => (
+							<div className="row mb-1" key={idx}>
+								<div className="col-8">
+									<div className="input-group mb-2">
+										<Field name={`${name}.${idx}.directive`}>
+											{({ field }) => (
+												<select
+													className={cn(
+														"form-select",
+														"w-auto",
+														"flex-grow-0",
+														field.value === "allow" ? "bg-lime-lt" : "bg-orange-lt",
+													)}
+													{...field}
+												>
+													<option value="allow">
+														<T id="action.allow" />
+													</option>
+													<option value="deny">
+														<T id="action.deny" />
+													</option>
+												</select>
+											)}
+										</Field>
+										<Field name={`${name}.${idx}.address`}>
+											{({ field }) => (
+												<input
+													type="text"
+													className="form-control"
+													autoComplete="off"
+													pattern="[^\slL]{1,255}"
+													{...field}
+													placeholder={intl.formatMessage({
+														id: "access-list.rule-source.placeholder",
+													})}
+												/>
+											)}
+										</Field>
+									</div>
+								</div>
+								<div className="col-4 d-flex gap-1 mb-2">
+									{idx > 0 && (
+										<button
+											type="button"
+											title={intl.formatMessage({ id: "action.move-up" })}
+											className="btn"
+											onClick={() => swap(idx - 1, idx)}
+										>
+											<IconArrowUp size={16} />
+										</button>
+									)}
+									{idx < clients.length - 2 && (
+										<button
+											type="button"
+											title={intl.formatMessage({ id: "action.move-down" })}
+											className="btn"
+											onClick={() => swap(idx, idx + 1)}
+										>
+											<IconArrowDown size={16} />
+										</button>
+									)}
+									<button
+										type="button"
+										title={intl.formatMessage({ id: "action.delete" })}
+										className="btn btn-ghost btn-danger p-0 ms-auto"
+										onClick={() => (clients.length === 2 ? replace(idx, blankClient) : remove(idx))}
+									>
+										<IconX size={16} />
+									</button>
+								</div>
+							</div>
+						))}
+						<div className="mb-3">
+							<button
+								type="button"
+								className="btn btn-sm"
+								onClick={() => insert(clients.length - 1, blankClient)}
 							>
-								<option value="allow">
-									<T id="action.allow" />
-								</option>
-								<option value="deny">
-									<T id="action.deny" />
-								</option>
-							</select>
-							<input
-								name={`clients[${idx}].address`}
-								type="text"
-								className="form-control"
-								autoComplete="off"
-								pattern="(?![aA][lL][lL]$)\S{1,255}"
-								value={client.address}
-								onChange={(e) => handleChange(idx, "address", e.target.value)}
-								placeholder={intl.formatMessage({
-									id: "access-list.rule-source.placeholder",
-								})}
-							/>
+								<T id="action.add" />
+							</button>
 						</div>
-					</div>
-					<div className="col-1">
-						<button
-							type="button"
-							className="btn btn-ghost btn-danger p-0"
-							onClick={() => handleRemove(idx)}
-						>
-							<IconX size={16} />
-						</button>
-					</div>
-				</div>
-			))}
-			<div className="mb-3">
-				<button type="button" className="btn btn-sm" onClick={handleAdd}>
-					<T id="action.add" />
-				</button>
-			</div>
+					</>
+				)}
+			</FieldArray>
 			<div className="row mb-3">
 				<p className="text-secondary">
 					<T id="access-list.help.rules-last" />
 				</p>
-				<div className="col-11">
+				<div className="col-8">
 					<div className="input-group mb-2">
-						<select
-							className={cn(
-								"form-select",
-								"w-auto",
-								"flex-grow-0",
-								values[values.length - 1].directive === "allow" ? "bg-lime-lt" : "bg-orange-lt",
+						<Field name={`${name}.${clients.length - 1}.directive`}>
+							{({ field }) => (
+								<select
+									className={cn(
+										"form-select",
+										"w-auto",
+										"flex-grow-0",
+										field.value === "allow" ? "bg-lime-lt" : "bg-orange-lt",
+									)}
+									{...field}
+								>
+									<option value="allow">
+										<T id="action.allow" />
+									</option>
+									<option value="deny">
+										<T id="action.deny" />
+									</option>
+								</select>
 							)}
-							name="clients[last].directive"
-							value={values[values.length - 1].directive}
-							onChange={(e) => handleChange(values.length - 1, "directive", e.target.value)}
-						>
-							<option value="allow">
-								<T id="action.allow" />
-							</option>
-							<option value="deny">
-								<T id="action.deny" />
-							</option>
-						</select>
-						<input
-							name="clients[last].address"
-							type="text"
-							className="form-control"
-							autoComplete="off"
-							value="all"
-							disabled
-						/>
+						</Field>
+						<input type="text" className="form-control" autoComplete="off" value="all" disabled />
 					</div>
 				</div>
 			</div>

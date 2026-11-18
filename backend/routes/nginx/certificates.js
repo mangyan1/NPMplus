@@ -73,7 +73,7 @@ const uploadCerts = multer({
  */
 router
 	.route("/")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * GET /api/nginx/certificates
@@ -130,7 +130,7 @@ router
  */
 router
 	.route("/test-http")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * POST /api/nginx/certificates/test-http
@@ -152,7 +152,7 @@ router
  */
 router
 	.route("/validate")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * POST /api/nginx/certificates/validate
@@ -175,7 +175,7 @@ router
  */
 router
 	.route("/:certificate_id")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * GET /api/nginx/certificates/123
@@ -211,7 +211,7 @@ router
  */
 router
 	.route("/:certificate_id/upload")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * POST /api/nginx/certificates/123/upload
@@ -235,7 +235,7 @@ router
  */
 router
 	.route("/:certificate_id/renew")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * POST /api/nginx/certificates/123/renew
@@ -257,7 +257,7 @@ router
  */
 router
 	.route("/:certificate_id/download")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * GET /api/nginx/certificates/123/download

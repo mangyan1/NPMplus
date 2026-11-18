@@ -41,7 +41,7 @@ const router = express.Router({ caseSensitive: true, strict: true, mergeParams: 
 router
 	.route("/anubis-report")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.get(async (req, res) => {
 		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
 		const hours = queryInteger(req.query.window, 24, 1, 168);
@@ -101,7 +101,7 @@ const HISTORY_MAX_RESPONSE_BYTES = 12 * 1024 * 1024;
 const METRICS_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const METRICS_TIMEOUT_MS = 3000;
 const MANUAL_BAN_SCENARIO = "manual/web-ui";
-const SCOPE_PATTERN = /^[a-zA-Z]{1,32}$/;
+const SCOPE_PATTERN = /^[a-zA-Z]{1,32}$/u;
 const metricsUrlFromLapi = () => {
 	try {
 		const url = new URL(process.env.CROWDSEC_LAPI_URL || "http://127.0.0.1:8080");
@@ -150,7 +150,7 @@ const crsControlLimit = rateLimit({
 router
 	.route("/crs")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.get(async (_, res) => {
 		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
 		res.set("Cache-Control", "no-store");
@@ -257,7 +257,7 @@ const attackSpike = (buckets) => {
 router
 	.route("/anubis")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.get(async (_req, res) => {
 		if (!(await requireAdmin(res))) {
 			res.status(403).send({ error: { message: "access.denied" } });
@@ -366,7 +366,7 @@ router
 router
 	.route("/decisions")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.get(async (req, res) => {
 		if (!(await requireAdmin(res))) {
 			res.status(403).send({ error: { message: "access.denied" } });
@@ -429,7 +429,7 @@ router
 router
 	.route("/decisions/delete")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.post(async (req, res) => {
 		if (!(await requireAdmin(res))) {
 			res.status(403).send({ error: { message: "access.denied" } });
@@ -488,7 +488,7 @@ router
 router
 	.route("/alerts")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.get(async (req, res) => {
 		if (!(await requireAdmin(res))) {
 			res.status(403).send({ error: { message: "access.denied" } });
@@ -531,7 +531,7 @@ router
 router
 	.route("/history/alerts")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.get(async (req, res) => {
 		if (!(await requireAdmin(res))) {
 			res.status(403).send({ error: { message: "access.denied" } });
@@ -592,7 +592,7 @@ router
 router
 	.route("/attackers")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.get(async (req, res) => {
 		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
 		res.set("Cache-Control", "no-store");
@@ -611,7 +611,7 @@ router
 router
 	.route("/attackers/timeline")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.get(async (req, res) => {
 		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
 		const ip = canonicalIp(req.query.ip);
@@ -655,7 +655,7 @@ router
 router
 	.route("/attackers/events/:id")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.get(async (req, res) => {
 		if (!(await requireAdmin(res))) return res.status(403).send({ error: { message: "access.denied" } });
 		const id = parseCrowdsecDecisionId(req.params.id);
@@ -688,7 +688,7 @@ router
 router
 	.route("/decisions")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.post(async (req, res) => {
 		if (!(await requireAdmin(res))) {
 			res.status(403).send({ error: { message: "access.denied" } });
@@ -782,7 +782,7 @@ router
 router
 	.route("/insights")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.get(async (req, res) => {
 		if (!(await requireAdmin(res))) {
 			res.status(403).send({ error: { message: "access.denied" } });
@@ -900,7 +900,7 @@ router
 router
 	.route("/metrics")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.get(async (_req, res) => {
 		if (!(await requireAdmin(res))) {
 			res.status(403).send({ error: { message: "access.denied" } });
@@ -948,7 +948,7 @@ router
 router
 	.route("/telemetry")
 	.options((_, res) => res.sendStatus(204))
-	.all(jwtdecode())
+	.all(jwtdecode)
 	.get(async (req, res) => {
 		if (!(await requireAdmin(res))) {
 			res.status(403).send({ error: { message: "access.denied" } });

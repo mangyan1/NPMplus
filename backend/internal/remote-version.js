@@ -2,7 +2,7 @@ import { fetchWithTimeout, readBoundedJson } from "../lib/bounded-fetch.js";
 import { remoteVersion as logger } from "../logger.js";
 import pjson from "../package.json" with { type: "json" };
 
-const COMMIT_PATTERN = /^[0-9a-f]{7,40}$/i;
+const COMMIT_PATTERN = /^[0-9a-f]{7,40}$/iu;
 const isCommitUpdateAvailable = (currentVersion, latestVersion) =>
 	COMMIT_PATTERN.test(currentVersion) &&
 	COMMIT_PATTERN.test(latestVersion) &&

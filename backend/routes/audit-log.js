@@ -53,7 +53,7 @@ const router = express.Router({
  */
 router
 	.route("/")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * GET /api/audit-log
@@ -78,7 +78,7 @@ router
  */
 router
 	.route("/:event_id")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * GET /api/audit-log/123

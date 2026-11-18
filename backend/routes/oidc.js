@@ -12,6 +12,8 @@ import {
 } from "openid-client";
 import internalToken from "../internal/token.js";
 import errs from "../lib/error.js";
+import validate from "../lib/express/validate.js";
+import { readSecret } from "../lib/helpers.js";
 import { oidc as logger } from "../logger.js";
 
 const router = express.Router({
@@ -39,12 +41,12 @@ router
 	 *
 	 * OAuth Authorization Code flow initialisation
 	 */
-	.get(async (_, res) => {
+	.get(validate, async (_, res) => {
 		try {
 			const config = await discovery(
 				new URL(process.env.OIDC_ISSUER_URL),
-				process.env.OIDC_CLIENT_ID,
-				process.env.OIDC_CLIENT_SECRET,
+				await readSecret("OIDC_CLIENT_ID"),
+				await readSecret("OIDC_CLIENT_SECRET"),
 			);
 
 			const code_verifier = randomPKCECodeVerifier();
@@ -86,7 +88,10 @@ router
 
 			res.redirect(buildAuthorizationUrl(config, parameters).toString());
 		} catch (err) {
-			logger.error(`Init error: ${err.message}`);
+			logger.error(
+				`Init error: ${err.message}`,
+				err.cause?.message ?? err.cause?.status ?? JSON.stringify(err.cause) ?? "",
+			);
 			res.cookie("__Host-npmplus_oidc_no_redirect", "true", {
 				secure: true,
 				sameSite: "Strict",
@@ -123,8 +128,8 @@ router
 		try {
 			const config = await discovery(
 				new URL(process.env.OIDC_ISSUER_URL),
-				process.env.OIDC_CLIENT_ID,
-				process.env.OIDC_CLIENT_SECRET,
+				await readSecret("OIDC_CLIENT_ID"),
+				await readSecret("OIDC_CLIENT_SECRET"),
 			);
 
 			const tokens = await authorizationCodeGrant(
@@ -204,7 +209,10 @@ router
 			}
 			res.redirect("/");
 		} catch (err) {
-			logger.error(`Callback error: ${err.message}`);
+			logger.error(
+				`Callback error: ${err.message}`,
+				err.cause?.message ?? err.cause?.status ?? JSON.stringify(err.cause) ?? "",
+			);
 			res.cookie("__Host-npmplus_oidc_no_redirect", "true", {
 				secure: true,
 				sameSite: "Strict",

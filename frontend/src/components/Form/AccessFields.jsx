@@ -7,8 +7,8 @@ import {
 	IconWorld,
 	IconX,
 } from "@tabler/icons-react";
-import { useFormikContext } from "formik";
-import { useState } from "react";
+import { Field, FieldArray, getIn, useFormikContext } from "formik";
+import { useMemo } from "react";
 import Select, { components } from "react-select";
 import { useAccessLists } from "src/hooks";
 import { formatDateTime, intl, T } from "src/locale";
@@ -34,33 +34,25 @@ const TypeOption = (props) => (
 	</components.Option>
 );
 
-export function AccessFields({
-	initialAccessListType,
-	location,
-	initialAccessListIds,
-	name,
-	typeFieldName,
-	onChange,
-	authRequest,
-}) {
-	const [values, setValues] = useState(initialAccessListIds);
-	const [aclValue, setAclValue] = useState(initialAccessListType);
-	const { values: formValues, setFieldValue } = useFormikContext();
-	const { isPending, isError, error, data } = useAccessLists(["owner", "items", "clients"]);
+const createDefaultItem = (item) => ({
+	value: item.id,
+	label: item.name,
+	subLabel: intl.formatMessage(
+		{ id: "access-list.subtitle" },
+		{
+			users: item?.items?.length,
+			rules: item?.clients?.filter(({ address }) => address.toLowerCase() !== "all").length,
+			date: formatDateTime(item?.createdOn),
+		},
+	),
+	meta: item,
+});
 
-	const createDefaultItem = (item) => ({
-		value: item.id,
-		label: item.name,
-		subLabel: intl.formatMessage(
-			{ id: "access-list.subtitle" },
-			{
-				users: item?.items?.length,
-				rules: item?.clients?.length,
-				date: formatDateTime(item?.createdOn),
-			},
-		),
-		meta: item,
-	});
+export function AccessFields({ location, name, typeFieldName, authRequest, disabled }) {
+	const { values: formValues, setFieldValue } = useFormikContext();
+	const values = getIn(formValues, name);
+	const aclValue = getIn(formValues, typeFieldName);
+	const { isPending, isError, error, data } = useAccessLists(["owner", "items", "clients"]);
 
 	const createOption = (type) => {
 		if (type === "global") {
@@ -87,7 +79,7 @@ export function AccessFields({
 		};
 	};
 
-	const defaultOptions = data?.map(createDefaultItem) || [];
+	const defaultOptions = useMemo(() => data?.map(createDefaultItem) || [], [data]);
 	const valuesSet = new Set(values);
 	const options = defaultOptions.filter((option) => !valuesSet.has(option.value));
 
@@ -103,61 +95,18 @@ export function AccessFields({
 		return ret;
 	};
 
-	const applyUpdatedValues = (newValues) => {
-		setValues(newValues);
-		if (onChange) {
-			onChange({ npmplusAccessListIds: newValues });
-		} else {
-			void setFieldValue(name, newValues);
-		}
+	const handleTypeChange = (e, push) => {
+		void setFieldValue(typeFieldName, e.type);
+		if (e.type === "custom" && values.length === 0) push(options[0].value);
 	};
 
-	const onAccessListChange = (acl, idx) => {
-		const newValues = values.map((id, i) => (i === idx ? acl.id : id));
-		applyUpdatedValues(newValues);
-	};
-
-	const handleAdd = () => {
-		const newAccessOption = options[0];
-		const newValues = [...values, newAccessOption.meta.id];
-		applyUpdatedValues(newValues);
-	};
-
-	const handleMoveUp = (idx) => {
-		if (idx > 0) {
-			const newIdx = idx - 1;
-			const newValues = [...values];
-			const aclId = newValues[idx];
-			newValues[idx] = newValues[newIdx];
-			newValues[newIdx] = aclId;
-			applyUpdatedValues(newValues);
-		}
-	};
-
-	const handleMoveDown = (idx) => {
-		if (idx < values.length - 1) {
-			const newIdx = idx + 1;
-			const newValues = [...values];
-			const aclId = newValues[idx];
-			newValues[idx] = newValues[newIdx];
-			newValues[newIdx] = aclId;
-			applyUpdatedValues(newValues);
-		}
-	};
-
-	const handleRemove = (aclId) => {
-		const newValues = values.filter((id) => id !== aclId);
-		applyUpdatedValues(newValues);
-	};
-
-	const acls = (
+	const aclIds =
 		{
 			custom: values,
 			global: formValues.npmplusAccessListType === "custom" ? formValues.npmplusAccessListIds : [],
-		}[aclValue] ?? []
-	)
-		.map((id) => data?.find((acl) => acl.id === id))
-		.filter(Boolean);
+		}[aclValue] ?? [];
+	const acls = aclIds.map((id) => data?.find((acl) => acl.id === id)).filter(Boolean);
+	const first = data?.find((acl) => acl.id === aclIds[0]);
 
 	return (
 		<div className="mb-3">
@@ -167,123 +116,125 @@ export function AccessFields({
 					<T id={error.message} />
 				</div>
 			) : null}
-			<div className="row">
-				<div className="col-md-10">
-					<div className="input-group mb-3 shadow-none">
-						<Select
-							className="col-md-8"
-							unstyled
-							classNames={selectClassNames}
-							isSearchable={false}
-							getOptionValue={(o) => o.type}
-							defaultValue={createOption(initialAccessListType)}
-							options={typeOptions()}
-							components={{ Option: TypeOption }}
-							styles={{
-								option: (base) => ({
-									...base,
-									height: "100%",
-								}),
-							}}
-							onChange={(e) => {
-								const value = e.type;
-								setAclValue(value);
-								if (onChange) {
-									onChange({ npmplusAccessListType: value });
-								} else {
-									void setFieldValue(typeFieldName, value);
-								}
-							}}
-						/>
-					</div>
-				</div>
-			</div>
-			{!isPending && !isError && aclValue === "custom" ? (
-				<>
-					{values.map((item, idx) => (
-						<div key={item} className="input-group mb-1 shadow-none">
-							<Select
-								className="col-md-8 mb-1"
-								unstyled
-								classNames={selectClassNames}
-								value={
-									defaultOptions.find((o) => o.value === item) ?? { value: item, label: `#${item}` }
-								}
-								options={options}
-								components={{ Option }}
-								styles={{
-									option: (base) => ({
-										...base,
-										height: "100%",
-									}),
-								}}
-								onChange={(e) => {
-									onAccessListChange(e.meta, idx);
-								}}
-							/>
-
-							{idx > 0 ? (
-								<button
-									type="button"
-									aria-label="Move up"
-									className="btn mb-1 ms-1"
-									onClick={() => {
-										handleMoveUp(idx);
-									}}
-								>
-									<IconArrowUp size={16} />
-								</button>
-							) : null}
-							{idx < values.length - 1 ? (
-								<button
-									type="button"
-									aria-label="Move down"
-									className="btn mb-1 ms-1"
-									onClick={() => {
-										handleMoveDown(idx);
-									}}
-								>
-									<IconArrowDown size={16} />
-								</button>
-							) : null}
-							<button
-								type="button"
-								aria-label="Remove"
-								className="btn btn-ghost btn-danger p-0 mb-1"
-								onClick={() => {
-									handleRemove(item);
-								}}
-							>
-								<IconX size={16} />
-							</button>
-						</div>
-					))}
-					{values.length === 0 ? (
-						<>
-							<input className="visually-hidden" tabIndex={-1} required defaultValue="" />
-							<div className="invalid-feedback d-block">
-								<T id="error.required" />
+			<FieldArray name={name} validateOnChange={false}>
+				{({ push, remove, replace, swap }) => (
+					<>
+						<div className="row mb-3">
+							<div className="col-md-10">
+								<div className="input-group shadow-none">
+									<Field name={typeFieldName}>
+										{({ field }) => (
+											<Select
+												className="col-md-8"
+												unstyled
+												classNames={selectClassNames}
+												isSearchable={false}
+												isDisabled={disabled}
+												getOptionValue={(o) => o.type}
+												value={createOption(field.value)}
+												options={typeOptions()}
+												components={{ Option: TypeOption }}
+												onChange={(e) => handleTypeChange(e, push)}
+											/>
+										)}
+									</Field>
+								</div>
 							</div>
-						</>
-					) : null}
-					{options.length > 0 && ( // only show add button if there are more acls that can be added
-						<div className="text-center">
-							<button type="button" className="btn my-3" onClick={handleAdd}>
-								<T id="action.add" />
-							</button>
 						</div>
-					)}
-				</>
-			) : null}
+						{!isPending && !isError && aclValue === "custom" ? (
+							<>
+								{values.map((item, idx) => (
+									<div key={item} className="input-group mb-1 shadow-none">
+										<Select
+											className="col-md-8 mb-1"
+											unstyled
+											classNames={selectClassNames}
+											value={
+												defaultOptions.find((o) => o.value === item) ?? {
+													value: item,
+													label: `#${item}`,
+												}
+											}
+											options={options}
+											components={{ Option }}
+											isDisabled={disabled}
+											onChange={(e) => replace(idx, e.meta.id)}
+										/>
+
+										{idx > 0 ? (
+											<button
+												type="button"
+												title={intl.formatMessage({ id: "action.move-up" })}
+												className="btn mb-1 ms-1"
+												onClick={() => swap(idx - 1, idx)}
+											>
+												<IconArrowUp size={16} />
+											</button>
+										) : null}
+										{idx < values.length - 1 ? (
+											<button
+												type="button"
+												title={intl.formatMessage({ id: "action.move-down" })}
+												className="btn mb-1 ms-1"
+												onClick={() => swap(idx, idx + 1)}
+											>
+												<IconArrowDown size={16} />
+											</button>
+										) : null}
+										{values.length > 1 && (
+											<button
+												type="button"
+												title={intl.formatMessage({ id: "action.remove" })}
+												className="btn btn-ghost btn-danger p-0 mb-1"
+												onClick={() => remove(idx)}
+											>
+												<IconX size={16} />
+											</button>
+										)}
+									</div>
+								))}
+								{options.length > 0 && ( // only show add button if there are more acls that can be added
+									<div className="text-center">
+										<button
+											type="button"
+											className="btn my-3"
+											onClick={() => push(options[0].value)}
+										>
+											<T id="action.add" />
+										</button>
+									</div>
+								)}
+							</>
+						) : null}
+					</>
+				)}
+			</FieldArray>
 			{authRequest !== "none" &&
-				acls[0]?.satisfyAny &&
-				acls.some(
-					(acl) =>
-						acl.items?.length > 0 || acl.clients?.some((client) => client.address?.toLowerCase() !== "all"),
-				) && (
+				data &&
+				aclIds.length > 0 &&
+				(!first ||
+					(first.satisfyAny &&
+						(acls.length !== aclIds.length ||
+							acls.some(
+								(acl) =>
+									acl.items?.length > 0 ||
+									acl.clients?.some((client) => client.address?.toLowerCase() !== "all"),
+							)))) && (
 					<p className="text-warning">
 						<IconAlertTriangle size={16} className="me-1" />
-						<T id="access-list.satisfy-any-warning" data={{ name: acls[0].name }} />
+						<T
+							id="access-list.satisfy-any-warning"
+							data={{ name: first?.name ?? `#${aclIds[0]}`, visible: first ? "yes" : "no" }}
+						/>
+					</p>
+				)}
+			{data &&
+				(acls.length !== aclIds.length ||
+					(acls.some((acl) => acl.passAuth && acl.items?.length > 0) &&
+						acls.some((acl) => !acl.passAuth && acl.items?.length > 0))) && (
+					<p className="text-warning">
+						<IconAlertTriangle size={16} className="me-1" />
+						<T id="access-list.pass-auth-warning" />
 					</p>
 				)}
 		</div>

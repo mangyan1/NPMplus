@@ -1,8 +1,14 @@
 import { Field, useFormikContext } from "formik";
 import CreatableSelect from "react-select/creatable";
+import { useUser } from "src/hooks";
 import { intl, T } from "src/locale";
 import { selectClassNames } from "src/modules/Select";
 import { validateDomain, validateDomains } from "src/modules/Validations";
+
+const normalizeDomain = (domain) => {
+	if (domain.startsWith("~") || !URL.canParse(`http://${domain}`)) return domain.toLowerCase();
+	return new URL(`http://${domain}`).hostname;
+};
 
 export function DomainNamesField({
 	name = "domainNames",
@@ -12,8 +18,10 @@ export function DomainNamesField({
 	dnsProviderWildcardSupported,
 	forCertificate,
 	onChange,
+	disabled,
 }) {
 	const { setFieldValue } = useFormikContext();
+	const { data: currentUser } = useUser("me");
 
 	const handleChange = (v, _actionMeta) => {
 		const doms = [...new Set(v?.map((i) => i.value.trim()))];
@@ -51,12 +59,15 @@ export function DomainNamesField({
 						inputId={id}
 						closeMenuOnSelect={true}
 						isClearable={false}
+						isDisabled={disabled}
 						isValidNewOption={(input, selected) =>
 							validateDomain(
 								input,
 								isWildcardPermitted && dnsProviderWildcardSupported,
 								forCertificate,
-							) && !selected.some(({ value }) => value.toLowerCase() === input.trim().toLowerCase())
+							) &&
+							(currentUser?.npmplusIsAdmin || !input.trim().startsWith("~")) &&
+							!selected.some(({ value }) => normalizeDomain(value) === normalizeDomain(input.trim()))
 						}
 						isMulti
 						required

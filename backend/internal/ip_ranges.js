@@ -1,14 +1,9 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { fetchWithTimeout, readBoundedText } from "../lib/bounded-fetch.js";
 import utils from "../lib/utils.js";
 import { ipRanges as logger } from "../logger.js";
 import pjson from "../package.json" with { type: "json" };
 import internalNginx from "./nginx.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 const CLOUDFLARE_V4_URL = "https://www.cloudflare.com/ips-v4";
 const CLOUDFLARE_V6_URL = "https://www.cloudflare.com/ips-v6";
@@ -28,13 +23,7 @@ const internalIpRanges = {
 	},
 
 	fetchUrl: async (url) => {
-		const res = await fetchWithTimeout(
-			url,
-			{
-				headers: { "User-Agent": `NPMplus/${pjson.version}` },
-			},
-			10_000,
-		);
+		const res = await fetchWithTimeout(url, { headers: { "User-Agent": `NPMplus/${pjson.version}` } }, 10_000);
 
 		if (!res.ok) {
 			throw new Error(`Status code: ${res.status}`);
@@ -87,10 +76,10 @@ const internalIpRanges = {
 	 */
 	generateConfig: async (ip_ranges) => {
 		try {
-			const renderEngine = utils.getRenderEngine();
-			const template = await utils.getParsedTemplate(`${__dirname}/../templates/ip_ranges.conf`);
-			const newConfig = await renderEngine.render(template, { ip_ranges, env: process.env });
-			const filePath = "/usr/local/nginx/conf/conf.d/ip_ranges.conf";
+			const newConfig = utils.reindent(
+				await utils.renderEngine.renderFile("ip_ranges.conf", { ip_ranges, env: process.env }),
+			);
+			const filePath = "/data/nginx/ip_ranges.conf";
 
 			try {
 				const oldConfig = await readFile(filePath, {

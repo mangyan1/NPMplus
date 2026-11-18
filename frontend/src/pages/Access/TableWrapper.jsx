@@ -1,10 +1,10 @@
 import { IconSearch } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import { deleteAccessList } from "src/api/backend";
 import { Button, HasPermission, LoadingPage } from "src/components";
 import { useAccessLists } from "src/hooks";
-import { T } from "src/locale";
+import { intl, T } from "src/locale";
 import { showAccessListModal, showDeleteConfirmModal } from "src/modals";
 import { ACCESS_LISTS, MANAGE } from "src/modules/Permissions";
 import { showObjectSuccess } from "src/notifications";
@@ -14,23 +14,15 @@ export default function TableWrapper() {
 	const [search, setSearch] = useState("");
 	const { isFetching, isPending, isError, error, data } = useAccessLists(["owner", "items", "clients"]);
 
-	useEffect(() => {
-		// this can happen if someone deletes the last item while searching
-		if (search !== "" && !data?.length) {
-			setSearch("");
-		}
-	});
+	// this can happen if someone deletes the last item while searching
+	if (search !== "" && !data?.length) setSearch("");
 
 	if (isPending) {
 		return <LoadingPage />;
 	}
 
 	if (isError) {
-		return (
-			<Alert variant="danger">
-				<T id={error?.message || "error.unknown"} />
-			</Alert>
-		);
+		return <Alert variant="danger">{error?.message}</Alert>;
 	}
 
 	let filtered = null;
@@ -58,7 +50,8 @@ export default function TableWrapper() {
 											<IconSearch size={16} />
 										</span>
 										<input
-											type="text"
+											type="search"
+											placeholder={intl.formatMessage({ id: "action.search" })}
 											className="form-control form-control-sm"
 											autoComplete="off"
 											onChange={(e) => setSearch(e.target.value.toLowerCase().trim())}

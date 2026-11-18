@@ -1,10 +1,10 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import test from "node:test";
+import it from "node:test";
 import { readAppsecConfiguration } from "../internal/crowdsec.js";
 
-test("CRS installer choice is non-secret and does not imply live rule loading", async () => {
+it("CRS installer choice is non-secret and does not imply live rule loading", async () => {
 	await mkdir("/data/crowdsec", { recursive: true });
 	const path = "/data/crowdsec/crowdsec.conf";
 	await writeFile(

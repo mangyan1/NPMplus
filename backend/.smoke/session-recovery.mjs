@@ -14,7 +14,7 @@ try {
 			const errors = [];
 			page.on("pageerror", (error) => errors.push(error.message));
 			page.on("console", (message) => {
-				if (message.type() === "error" && !/status of (401|403|503)/.test(message.text()))
+				if (message.type() === "error" && !/status of (401|403|503)/u.test(message.text()))
 					errors.push(message.text());
 			});
 			let restored = false;
@@ -59,7 +59,7 @@ try {
 						id: 1,
 						name: "Session fixture",
 						email: "admin@example.test",
-						roles: ["admin"],
+						npmplus_is_admin: 1,
 						permissions: { visibility: "all" },
 					});
 				}
@@ -68,7 +68,7 @@ try {
 			await page.goto(`${base}/users`);
 			if (["rejected-cookie", "missing-cookie"].includes(scenario)) {
 				// Recover immediately, not after the five-minute refresh interval.
-				await page.getByLabel(/password/i).waitFor({ timeout: 5000 });
+				await page.getByLabel(/password/iu).waitFor({ timeout: 5000 });
 				assert.equal(await page.evaluate(() => localStorage.getItem("auth")), null);
 				await page.waitForTimeout(1000);
 				assert.ok(refreshes <= 3, `session checks looped: ${refreshes}`);

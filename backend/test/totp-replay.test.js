@@ -1,6 +1,6 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
-import test from "node:test";
+import it from "node:test";
 import { generate, generateSecret } from "otplib";
 import internalToken from "../internal/token.js";
 import { assertTokenSession, issueSessionToken } from "../internal/token-session.js";
@@ -18,7 +18,7 @@ const fixture = async () => {
 		name: "TOTP fixture",
 		avatar: "",
 		nickname: "fixture",
-		roles: [],
+		npmplus_is_admin: 0,
 		npmplus_token_valid_after: 0,
 	});
 	const secret = generateSecret();
@@ -27,7 +27,7 @@ const fixture = async () => {
 	return { user, secret };
 };
 
-test("TOTP is single-use across sequential and concurrent attempts, then accepts the next step", async (t) => {
+it("TOTP is single-use across sequential and concurrent attempts, then accepts the next step", async (t) => {
 	let epoch = 1900000000;
 	t.mock.method(Date, "now", () => epoch * 1000);
 	const { user, secret } = await fixture();
@@ -45,7 +45,7 @@ test("TOTP is single-use across sequential and concurrent attempts, then accepts
 	assert.equal(await totp.verifyCode(user.id, code), false);
 });
 
-test("enrollment consumes its code and re-enrollment resets the replay counter", async (t) => {
+it("enrollment consumes its code and re-enrollment resets the replay counter", async (t) => {
 	t.mock.method(Date, "now", () => 1900000000000);
 	const { user } = await fixture();
 	const access = { token: { getUserId: () => user.id }, canUser: () => true };
@@ -63,7 +63,7 @@ test("enrollment consumes its code and re-enrollment resets the replay counter",
 	assert.equal(await totp.verifyCode(user.id, code), false);
 });
 
-test("a stale enrollment read cannot authenticate after the secret is replaced", async (t) => {
+it("a stale enrollment read cannot authenticate after the secret is replaced", async (t) => {
 	const { user, secret } = await fixture();
 	const stale = await Auth.getTotpEnrollment(user.id);
 	await Auth.query().where("user_id", user.id).andWhere("type", "totp").delete();
@@ -72,7 +72,7 @@ test("a stale enrollment read cannot authenticate after the secret is replaced",
 	assert.equal(await totp.verifyCode(user.id, await generate({ secret })), false);
 });
 
-test("MFA challenge completion creates a new session and rejects replay across challenges", async (t) => {
+it("MFA challenge completion creates a new session and rejects replay across challenges", async (t) => {
 	let epoch = 1900000000;
 	t.mock.method(Date, "now", () => epoch * 1000);
 	const { user, secret } = await fixture();
@@ -92,7 +92,7 @@ test("MFA challenge completion creates a new session and rejects replay across c
 	assert.ok((await internalToken.verifyTotp(other.token, await generate({ secret }))).token);
 });
 
-test("a concurrent challenge exchange has exactly one winner even with separate valid factors", async (t) => {
+it("a concurrent challenge exchange has exactly one winner even with separate valid factors", async (t) => {
 	const { default: mfa } = await import("../internal/mfa.js");
 	const { user } = await fixture();
 	const challenge = await issueSessionToken(Token(), {

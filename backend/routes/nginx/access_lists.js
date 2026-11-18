@@ -42,7 +42,7 @@ const router = express.Router({
  */
 router
 	.route("/")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * GET /api/nginx/access-lists
@@ -75,7 +75,7 @@ router
  */
 router
 	.route("/:list_id")
-	.all(jwtdecode())
+	.all(jwtdecode)
 
 	/**
 	 * GET /api/nginx/access-lists/123
@@ -100,7 +100,7 @@ router
 	 * Update and existing access-list
 	 */
 	.put(async (req, res) => {
-		const payload = apiValidator(getValidationSchema("/nginx/access-lists/{listID}", "put"), req.body);
+		const payload = apiValidator(getValidationSchema("/nginx/access-lists/{list_id}", "put"), req.body);
 		payload.id = Number.parseInt(req.params.list_id, 10);
 		const result = await internalAccessList.update(res.locals.access, payload);
 		res.status(200).send(result);

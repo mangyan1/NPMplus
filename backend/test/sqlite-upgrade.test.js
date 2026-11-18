@@ -1,7 +1,7 @@
 import "./helpers/environment.js";
 import assert from "node:assert/strict";
 import { readdir } from "node:fs/promises";
-import test from "node:test";
+import it from "node:test";
 import knex from "knex";
 import { generate, generateSecret } from "otplib";
 import db from "../db.js";
@@ -12,7 +12,7 @@ import Auth from "../models/auth.js";
 import ProxyHost from "../models/proxy_host.js";
 import User from "../models/user.js";
 
-test("an existing SQLite MFA account and proxy survive the factor and replay migrations", async (t) => {
+it("an existing SQLite MFA account and proxy survive the factor and replay migrations", async (t) => {
 	let epoch = 1900000000;
 	t.mock.method(Date, "now", () => epoch * 1000);
 	// Reconstruct the schema shipped immediately before replay protection.
@@ -41,7 +41,7 @@ test("an existing SQLite MFA account and proxy survive the factor and replay mig
 		email: "upgrade@example.test",
 		nickname: "fixture",
 		avatar: "",
-		roles: ["admin"],
+		roles: '["admin"]',
 		npmplus_token_valid_after: 0,
 	});
 	const secret = generateSecret();

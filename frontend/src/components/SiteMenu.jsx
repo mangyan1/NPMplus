@@ -141,7 +141,7 @@ const getMenuDropown = (item, onClick, pathname) => (
 		key={`item-${item.label}`}
 		className={`nav-item dropdown${item.items.some((subitem) => pathname.startsWith(subitem.to)) ? " active" : ""}`}
 	>
-		<button type="button" className="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+		<button type="button" className="nav-link dropdown-toggle" data-bs-toggle="dropdown">
 			<span className="nav-link-icon">{React.createElement(item.icon, { height: 24, width: 24 })}</span>
 			<span className="nav-link-title">
 				<T id={item.label} />
@@ -168,17 +168,14 @@ export function SiteMenu() {
 	const { data: user } = useUser("me");
 	const { pathname } = useLocation();
 
-	const closeMenu = () =>
-		setTimeout(() => {
-			const navbarToggler = document.querySelector(".navbar-toggler");
-			const navbarMenu = document.querySelector("#navbar-menu");
-			if (navbarToggler && navbarMenu?.classList.contains("show")) {
-				navbarToggler.click();
-			}
-		}, 300);
+	const closeMenu = () => {
+		const navbarToggler = document.querySelector(".navbar-toggler");
+		const navbarMenu = document.querySelector("#navbar-menu");
+		if (navbarToggler && navbarMenu?.classList.contains("show")) navbarToggler.click();
+	};
 
 	return (
-		<header className="navbar-expand-lg">
+		<nav className="navbar-expand-lg">
 			<div className="collapse navbar-collapse" id="navbar-menu">
 				<div className="navbar">
 					<div className="container-xl">
@@ -195,7 +192,7 @@ export function SiteMenu() {
 													item.permissionSection,
 													item.permission,
 													user?.permissions,
-													user?.roles,
+													user?.npmplusIsAdmin,
 												);
 											}),
 										)
@@ -216,6 +213,6 @@ export function SiteMenu() {
 					</div>
 				</div>
 			</div>
-		</header>
+		</nav>
 	);
 }

@@ -17,7 +17,7 @@ interface State {
 // keep the boundary up so the operator can retry manually instead of staring
 // at an empty dashboard.
 const RELOAD_KEY = "npmplus-error-boundary-reload";
-const CHUNK_FAILURE_PATTERN = /import|Failed to fetch|Loading chunk|dynamically imported module/i;
+const CHUNK_FAILURE_PATTERN = /import|Failed to fetch|Loading chunk|dynamically imported module/iu;
 
 class ErrorBoundary extends Component<Props, State> {
 	state: State = { error: null };

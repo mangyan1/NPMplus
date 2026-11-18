@@ -1,7 +1,7 @@
 import { useCheckVersion } from "src/hooks";
 import { T } from "src/locale";
 
-const COMMIT_PATTERN = /^[0-9a-f]{7,40}$/i;
+const COMMIT_PATTERN = /^[0-9a-f]{7,40}$/iu;
 
 export function SiteFooter() {
 	const { data: versionData } = useCheckVersion();

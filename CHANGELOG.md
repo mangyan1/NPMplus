@@ -4,6 +4,8 @@ All notable changes to the NPMplus Security Fork are documented here. The fork u
 
 ## Unreleased
 
+- Reconcile upstream through November 17: adopt Caddy 2.11.9 (source build without the obsolete module replacements), the nginx 1.31.8 module bumps and checked-in patch layout, the `npmplus_is_admin` permission model with schema-key renames, the relocated frontend Swagger page and table/modal refactors, and the renamed per-host disable flags with their forward migration. Preserve the fork's JWT/session revocation format, pinned-pip Certbot DNS pipeline, CrowdSec/Anubis telemetry and installer hardening, ACL ownership scoping, nginx-syntax neutralization, upstream-sync guard, and no-store admin UI. Existing databases migrate through the new `user_is_admin`, `proxy_buffering` and `disable_columns` migrations; roll back with the safe updater's matching database and image snapshot.
+
 - Return to login when an update leaves a rejected or missing admin session cookie. Validate saved browser sessions immediately, preserve genuine permission denials and temporary outage handling, and cover stale sessions in API and browser regressions.
 
 - Coordinate rollback with the firewall bouncer's startup gate before restoring CrowdSec data. Installer v1.72 stops independent container activation while the public guard is closed, and retains detailed controller errors when disconnected-host recovery drills fail.
