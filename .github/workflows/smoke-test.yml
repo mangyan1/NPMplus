@@ -433,7 +433,11 @@ jobs:
             exit 1
           fi
           rm -f "$update_log"
-          sudo test -x /opt/npmplus/setup-npmplus.sh
+          # Check the mode bits, not test -x: on the hosted runners access(2)
+          # X_OK is denied even for root on files the runner user owns, while
+          # execve of the same 0700 file works. The contract is "root-executable
+          # and private", which is exactly mode 700.
+          test "$(sudo stat -c '%a' /opt/npmplus/setup-npmplus.sh)" = 700
           sudo grep -qx '# NPMPLUS_SAFE_UPDATE_WRAPPER_VERSION=10' /usr/local/bin/npmplus-safe-update
           sudo test -f /var/backups/npmplus-last-good/override.yaml
           test "$(stat -c '%u:%g' /opt/anubis-data)" = '1000:1000'
