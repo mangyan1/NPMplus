@@ -52,7 +52,10 @@ RUN make -j2 build BUILD_VERSION=v1.8.1 BUILD_TAG=909b515-mangyan1.security.3 \
 
 FROM docker.io/crowdsecurity/crowdsec:latest@sha256:0f2523fa61ef507f15d953045cface490cc880670c62f2755ced17524107f71a
 # CVE-2026-85091: invalidate older runtime layers and require the patched zlib.
-RUN apk upgrade --no-cache -a && apk add --no-cache "rsync>=3.5.2-r0" "zlib>=1.4-r0"
+# CVE-2026-88822, CVE-2026-88823, CVE-2026-95691, CVE-2026-95692 and
+# CVE-2026-107496: require the patched Alpine OpenSSL (also breaks the
+# cached apk layer that predates 3.5.9-r1).
+RUN apk upgrade --no-cache -a && apk add --no-cache "rsync>=3.5.2-r0" "zlib>=1.4-r0" "libcrypto3>=3.5.9-r1" "libssl3>=3.5.9-r1"
 COPY --from=builder /out/crowdsec /out/cscli /usr/local/bin/
 COPY --from=builder /out/yq /usr/local/bin/yq
 COPY --from=builder /out/plugins/ /usr/local/lib/crowdsec/plugins/
