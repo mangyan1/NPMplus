@@ -10,6 +10,9 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # Only to file and resolve one blocked-merge tracking issue in this fork, so a
+  # conflict that a human has already been told about cannot re-notify daily.
+  issues: write
 
 concurrency:
   group: upstream-sync

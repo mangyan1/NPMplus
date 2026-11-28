@@ -46,8 +46,18 @@ script refreshes ZoeyVid's `develop` tracking ref and prepares a merge on
 - A conflict stops the run and lists the files in its summary. The existing
   proposal, `develop`, and release tags remain untouched. Other merge/GitHub
   failures are reported as failures, rather than being mistaken for no changes.
-- The workflow does not auto-merge, deploy, create a release, or post issues to
-  either repository. Check the job summary when a scheduled run is red.
+- A conflict is expected, transitional state that repeats until a reconciliation
+  merge lands, so reporting is edge-triggered. One open issue labeled
+  `upstream-sync` holds that state, and its body ends with
+  `upstream-sync:<signature>` — a digest of the upstream revision plus the sorted
+  conflicted paths. The first blocked run creates the label and the issue and fails.
+  A scheduled run that finds the same signature writes only its summary and exits
+  green, so one known conflict cannot send a notification once per day. A changed
+  signature, and any manual run, reports again on that same issue. Once upstream is
+  mergeable again the run closes it.
+- The workflow does not auto-merge, deploy, or create a release. Its only issue
+  writes are that single tracking issue in this fork; it never writes to the upstream
+  repository. Check the job summary when a run is red.
 
 GitHub may put PR checks created with `GITHUB_TOKEN` into an approval-required
 state. Select **Approve workflows to run** on the PR and wait for required checks.
