@@ -156,6 +156,7 @@ export NGINX_TRUST_RSA_PKCS1="${NGINX_TRUST_RSA_PKCS1:-false}"
 export TRUST_CLOUDFLARE="${TRUST_CLOUDFLARE:-false}"
 export LOGROTATE="${LOGROTATE:-false}"
 export LOGROTATIONS="${LOGROTATIONS:-3}"
+export LOGROTATE_MAXSIZE="${LOGROTATE_MAXSIZE:-}"
 export CERTBOT_RUN_INTERVAL="${CERTBOT_RUN_INTERVAL:-3}"
 export ECH_ROTATION_INTERVAL="${ECH_ROTATION_INTERVAL:-1}"
 #tmp
@@ -166,9 +167,6 @@ fi
 
 export GOA="${GOA:-false}"
 export GOACLA="${GOACLA:-"--agent-list --real-os --double-decode --anonymize-ip --anonymize-level=1 --keep-last=30 --with-output-resolver --no-query-string"}"
-export PHP83="${PHP83:-false}"
-export PHP84="${PHP84:-false}"
-export PHP85="${PHP85:-false}"
 export DISABLE_GRAVATAR="${DISABLE_GRAVATAR:-false}"
 export NGINX_LOAD_NJS_MODULE="${NGINX_LOAD_NJS_MODULE:-false}"
 export NGINX_LOAD_LDAP_MODULE="${NGINX_LOAD_LDAP_MODULE:-false}"
@@ -256,6 +254,12 @@ fi
 #tmp
 if [ -n "$NGINX_LOAD_OPENAPPSEC_ATTACHMENT_MODULE" ]; then
     echo "NGINX_LOAD_OPENAPPSEC_ATTACHMENT_MODULE env is not supported. The module was removed."
+    sleep inf
+fi
+
+#tmp
+if [ -n "$PHP81$PHP82$PHP83$PHP84$PHP85$PHP81_APKS$PHP82_APKS$PHP83_APKS$PHP84_APKS$PHP85_APKS$PHP_APKS" ]; then
+    echo "PHP81, PHP82, PHP83, PHP84, PHP85, PHP81_APKS, PHP82_APKS, PHP83_APKS, PHP84_APKS, PHP85_APKS and PHP_APKS envs are not supported anymore. The inbuilt php-fpm was removed, please use a dedicated php-fpm container, see README."
     sleep inf
 fi
 
@@ -370,7 +374,7 @@ for env in ACME_SERVER ACME_EMAIL ACME_EAB_KID ACME_EAB_HMAC_KEY INITIAL_ADMIN_E
     fi
 done
 
-for env in TRUST_IP GOACLA PHP83_APKS PHP84_APKS PHP85_APKS PHP_APKS INITIAL_ADMIN_PASSWORD; do
+for env in TRUST_IP GOACLA INITIAL_ADMIN_PASSWORD; do
     if printenv "$env" | grep -q "^[[:space:]]\|[[:space:]]$"; then
         echo "$env must not start or end with whitespace."
         sleep inf
@@ -613,6 +617,11 @@ if [ -n "$LOGROTATIONS" ] && ! echo "$LOGROTATIONS" | grep -q "^[0-9]\+$"; then
     sleep inf
 fi
 
+if [ -n "$LOGROTATE_MAXSIZE" ] && ! echo "$LOGROTATE_MAXSIZE" | grep -q "^[0-9]\+[kKMG]\?$"; then
+    echo "LOGROTATE_MAXSIZE needs to be a number optionally followed by k, K, M or G."
+    sleep inf
+fi
+
 if ! echo "$CERTBOT_RUN_INTERVAL" | grep -q "^[0-9]\+$" || [ "$CERTBOT_RUN_INTERVAL" -lt 1 ] || [ "$CERTBOT_RUN_INTERVAL" -ge 500 ]; then
     echo "CERTBOT_RUN_INTERVAL must be a number between 1 and 499."
     sleep inf
@@ -651,62 +660,9 @@ if [ -n "$GOACLA" ] && ! echo "$GOACLA" | grep -q "^-[a-zA-Z0-9 =/_.-]\+$"; then
 fi
 
 
-if ! echo "$PHP83" | grep -q "^true$\|^false$"; then
-    echo "PHP83 needs to be true or false."
-    sleep inf
-fi
-
-if [ -n "$PHP83_APKS" ] && [ "$PHP83" = "false" ]; then
-    export PHP83="true"
-    echo "setting PHP83 to true, since PHP83_APKS is set."
-fi
-
-if [ -n "$PHP83_APKS" ] && ! echo "$PHP83_APKS" | grep -q "^[a-z0-9 _-]\+$"; then
-    echo "PHP83_APKS can consist of lower letters a-z, numbers 0-9, spaces, underscores and hyphens."
-    sleep inf
-fi
-
-
-if ! echo "$PHP84" | grep -q "^true$\|^false$"; then
-    echo "PHP84 needs to be true or false."
-    sleep inf
-fi
-
-if [ -n "$PHP84_APKS" ] && [ "$PHP84" = "false" ]; then
-    export PHP84="true"
-    echo "setting PHP84 to true, since PHP84_APKS is set."
-fi
-
-if [ -n "$PHP84_APKS" ] && ! echo "$PHP84_APKS" | grep -q "^[a-z0-9 _-]\+$"; then
-    echo "PHP84_APKS can consist of lower letters a-z, numbers 0-9, spaces, underscores and hyphens."
-    sleep inf
-fi
-
-
-if ! echo "$PHP85" | grep -q "^true$\|^false$"; then
-    echo "PHP85 needs to be true or false."
-    sleep inf
-fi
-
-if [ -n "$PHP85_APKS" ] && [ "$PHP85" = "false" ]; then
-    export PHP85="true"
-    echo "setting PHP85 to true, since PHP85_APKS is set."
-fi
-
-if [ -n "$PHP85_APKS" ] && ! echo "$PHP85_APKS" | grep -q "^[a-z0-9 _-]\+$"; then
-    echo "PHP85_APKS can consist of lower letters a-z, numbers 0-9, spaces, underscores and hyphens."
-    sleep inf
-fi
-
-
-if [ -n "$PHP_APKS" ] && [ "$PHP83" = "false" ] && [ "$PHP84" = "false" ] && [ "$PHP85" = "false" ]; then
-    echo "PHP_APKS is set, but PHP83, PHP84 and PHP85 is disabled."
-    sleep inf
-fi
-
-
-if [ -n "$INITIAL_ADMIN_EMAIL" ] && ! echo "$INITIAL_ADMIN_EMAIL" | grep -q "@.*\."; then
-    echo "INITIAL_ADMIN_EMAIL needs to contains a @ and one dot."
+if { [ -n "$INITIAL_ADMIN_EMAIL" ] && ! echo "$INITIAL_ADMIN_EMAIL" | grep -q "@.*\."; } || { [ -n "$INITIAL_ADMIN_EMAIL_FILE" ] && ! grep -q "@.*\." "$INITIAL_ADMIN_EMAIL_FILE"; }; then
+    echo "INITIAL_ADMIN_EMAIL/INITIAL_ADMIN_EMAIL_FILE needs to contains a @ and one dot."
+ theirs
     sleep inf
 fi
 

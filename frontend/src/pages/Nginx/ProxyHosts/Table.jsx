@@ -80,7 +80,11 @@ export default function Table({
 					value.locations?.some((location) => location.npmplusAuthRequest === "anubis");
 				return (
 					<div className="d-flex flex-column align-items-start gap-1">
-						<DomainsFormatter domains={value.domainNames} createdOn={value.createdOn} />
+						<DomainsFormatter
+							domains={value.domainNames}
+							createdOn={value.createdOn}
+							ssl={value.certificateId > 0}
+						/>
 						{usesAnubis ? (
 							<span
 								className="badge bg-lime-lt"

@@ -181,6 +181,7 @@ const setupCertbotPlugins = async () => {
 					`/tmp/certbot-credentials/credentials-${certificate.id}`,
 					certificate.npmplus_dns_provider_credentials,
 					{ mode: 0o600 },
+ theirs
 				);
 			}
 		}
