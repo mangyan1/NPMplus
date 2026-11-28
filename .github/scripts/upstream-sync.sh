@@ -25,7 +25,7 @@ upstream=$(git rev-parse upstream/develop)
   printf 'Fork: %s\n\nBase: %s\n\nUpstream: %s\n\n' "$GH_REPO" "$base" "$upstream"
 } >>"$GITHUB_STEP_SUMMARY"
 
-label=upstream-sync
+label='upstream-sync'
 # One open tracking issue holds the blocked-merge state. Its body ends with
 # `upstream-sync:<signature>` so a later run can tell "still the same conflict"
 # from "the conflict changed" without keeping state anywhere else.
