@@ -13,7 +13,6 @@ if [ "$NPM_IPV4_BINDING" = "0.0.0.0" ] || [ "$NPM_LISTEN_LOCALHOST" = "true" ]; 
 fi
 
 if (if [ "$GOA" = "true" ]; then [ -f /tmp/goa/index.html ] && [ -S /run/goaccess.sock ]; fi && [ "$(curl -A "NPMplus/healthcheck" -sSk https://"$NPM_IPV4_BINDING":"$NPM_PORT"/api | jq --raw-output .status)" = "OK" ]); then
- theirs
 	echo "OK"
 	exit 0
 else

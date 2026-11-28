@@ -118,7 +118,6 @@ const internalCertificate = {
 		access.can("certificates:manage");
 		data.owner_user_id = access.token.getUserId(1);
 
- theirs
 		if (data.provider === "letsencrypt") {
 			data.nice_name = data.domain_names.join(", ");
 		}
@@ -725,7 +724,6 @@ const internalCertificate = {
 	 * @returns {Promise}
 	 */
 	renewCertbot: async (certificate) => {
- theirs
 		logger.info(
 			`Renewing Certbot certificates for Cert #${certificate.id}: ${certificate.domain_names.join(", ")}`,
 		);

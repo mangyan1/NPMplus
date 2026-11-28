@@ -662,7 +662,6 @@ fi
 
 if { [ -n "$INITIAL_ADMIN_EMAIL" ] && ! echo "$INITIAL_ADMIN_EMAIL" | grep -q "@.*\."; } || { [ -n "$INITIAL_ADMIN_EMAIL_FILE" ] && ! grep -q "@.*\." "$INITIAL_ADMIN_EMAIL_FILE"; }; then
     echo "INITIAL_ADMIN_EMAIL/INITIAL_ADMIN_EMAIL_FILE needs to contains a @ and one dot."
- theirs
     sleep inf
 fi
 
