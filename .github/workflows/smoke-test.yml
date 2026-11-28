@@ -35,7 +35,7 @@ jobs:
           # caddy on, cloudflare trust off, private-LAN admin, and unattended upgrades
           - name: alternate
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
       - name: point the script self-check at this tree
         # The script compares itself against SELF_URL (the published develop
         # copy) before --update/safe-update runs. On a branch or PR that
@@ -775,7 +775,7 @@ jobs:
       image: debian:13
       options: --privileged -v /var/run/docker.sock:/var/run/docker.sock
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
       - name: prepare debian environment
         shell: bash
         run: |

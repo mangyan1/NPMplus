@@ -25,7 +25,7 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
       - name: Validate release tag and notes
         id: release
         env:
@@ -76,9 +76,9 @@ jobs:
       caddy: ${{ steps.images.outputs.caddy }}
       crowdsec: ${{ steps.images.outputs.crowdsec }}
     steps:
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/setup-buildx-action@v4.3.0
       - name: Log in to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -119,10 +119,10 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: actions/checkout@v7.0.1
+      - uses: docker/setup-buildx-action@v4.3.0
       - name: Log in to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -136,7 +136,7 @@ jobs:
           jq --arg v "$RELEASE_VERSION" '.version = $v' backend/package.json > backend/package.json.tmp
           mv backend/package.json.tmp backend/package.json
       - name: Build and push AMD64 candidate
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@v7.3.0
         with:
           context: .
           platforms: linux/amd64
@@ -160,10 +160,10 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: actions/checkout@v7.0.1
+      - uses: docker/setup-buildx-action@v4.3.0
       - name: Log in to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -177,7 +177,7 @@ jobs:
           jq --arg v "$RELEASE_VERSION" '.version = $v' backend/package.json > backend/package.json.tmp
           mv backend/package.json.tmp backend/package.json
       - name: Build and push ARM64 candidate
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@v7.3.0
         with:
           context: .
           platforms: linux/arm64
@@ -209,9 +209,9 @@ jobs:
           - architecture: arm64
             platform: linux/arm64
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
       - name: Log in to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -235,7 +235,7 @@ jobs:
             "ghcr.io/${{ github.repository_owner }}/npmplus:release-${{ github.sha }}-$ARCHITECTURE"
       - name: Upload vulnerability report
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: trivy-release-${{ matrix.architecture }}
           path: trivy-release-${{ matrix.architecture }}.txt
@@ -254,9 +254,9 @@ jobs:
         service: [caddy, crowdsec, anubis]
         architecture: [amd64, arm64]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
       - name: Log in to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -290,7 +290,7 @@ jobs:
             "$image"
       - name: Upload auxiliary vulnerability report
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: trivy-stack-${{ matrix.service }}-${{ matrix.architecture }}
           path: trivy-stack-${{ matrix.service }}-*.txt
@@ -309,9 +309,9 @@ jobs:
       digest: ${{ steps.publish.outputs.digest }}
       image: ${{ steps.publish.outputs.image }}
     steps:
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/setup-buildx-action@v4.3.0
       - name: Log in to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -337,7 +337,7 @@ jobs:
             echo "image=$image:$RELEASE_TAG"
           } >> "$GITHUB_OUTPUT"
       - name: Attest the published container image
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        uses: actions/attest@v4.2.2
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/npmplus
           subject-digest: ${{ steps.publish.outputs.digest }}
@@ -352,7 +352,7 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
       - name: Build pinned installer asset
         env:
           PRERELEASE: ${{ needs.validate.outputs.prerelease }}
@@ -373,7 +373,7 @@ jobs:
           bash -n release-assets/setup-npmplus.sh
           (cd release-assets && sha256sum setup-npmplus.sh > setup-npmplus.sh.sha256)
       - name: Attest the installer assets
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        uses: actions/attest@v4.2.2
         with:
           subject-path: release-assets/*
       - name: Publish GitHub prerelease or release
