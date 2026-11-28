@@ -185,7 +185,7 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove, close, 
 												<DomainNamesField
 													disabled={!canManage}
 													isWildcardPermitted={
-														values.certificateId !== "new" || values.npmplusDnsChallenge
+														values.certificateId !== "new" || values.npmplusDnsProvider
 													}
 													dnsProviderWildcardSupported
 													forCertificate={values.certificateId === "new"}
@@ -306,10 +306,7 @@ const ProxyHostModal = EasyModal.create(({ id, isClone, visible, remove, close, 
 																			{ id: "example" },
 																			{ value: "8081" },
 																		)}
-																		disabled={
-																			!currentUser?.npmplusIsAdmin &&
-																			form.values.forwardScheme === "path"
-																		}
+																		disabled={form.values.forwardScheme === "path"}
 																		{...field}
 																	/>
 

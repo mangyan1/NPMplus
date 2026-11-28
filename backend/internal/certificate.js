@@ -128,7 +128,7 @@ const internalCertificate = {
 		try {
 			if (certificate.provider === "letsencrypt") {
 				// Request a new Cert with Certbot. Let the fun begin.
-				if (certificate.npmplus_dns_challenge) {
+				if (certificate.npmplus_dns_provider) {
 					await internalCertificate.requestCertbotWithDnsChallenge(certificate);
 				} else {
 					await internalCertificate.requestCertbot(certificate);

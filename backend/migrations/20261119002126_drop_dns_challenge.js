@@ -1,6 +1,6 @@
 import { migrate as logger } from "../logger.js";
 
-const migrateName = "reset_button_values";
+const migrateName = "drop_dns_challenge";
 
 /**
  * Migrate
@@ -13,13 +13,17 @@ const migrateName = "reset_button_values";
 const up = async (knex) => {
 	logger.info(`[${migrateName}] Migrating Up...`);
 
-	await knex("proxy_host").update({
-		caching_enabled: 0,
-		block_exploits: 0,
-		allow_websocket_upgrade: 0,
+	await knex("certificate").where("npmplus_dns_challenge", 0).update({
+		npmplus_dns_provider: "",
+		npmplus_dns_provider_credentials: "",
+		npmplus_propagation_seconds: 0,
 	});
 
-	logger.info(`[${migrateName}] proxy_host values reset`);
+	await knex.schema.table("certificate", (certificate) => {
+		certificate.dropColumn("npmplus_dns_challenge");
+	});
+
+	logger.info(`[${migrateName}] certificate Table altered`);
 };
 
 /**

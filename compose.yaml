@@ -87,23 +87,18 @@ services:
 #      - "NGINX_TRUST_RSA_PKCS1=true" # enables rsa_pkcs1_sha512:rsa_pkcs1_sha384:rsa_pkcs1_sha256 sigalgs, default false, enable if your use a RSA key and your client doesn't support RSA-PSS sigalgs
 #      - "LOGROTATE=true" # Enables writing http access logs to /opt/npmplus/nginx/logs/access.log, stream access logs to /opt/npmplus/nginx/logs/stream.log and enables daily logrotation, default false
 #      - "LOGROTATIONS=7" # Set how often the access.log should be rotated until it is deleted, default 3
-#      - "TRUST_IP=10.0.0.0/8 192.168.1.5" # Space separated list of reverse proxy IPs/subnets to trust for the X-Forwarded-For header, so nginx will see the real client IPs, default empty
+#      - "LOGROTATE_MAXSIZE=1G" # Additionally rotates the logs (checked hourly) if they are bigger than this size (k, K, M or G suffix possible), default empty (disabled)
+#      - "TRUST_IP=10.0.0.0/8 192.168.1.5" # Space separated list of reverse proxy IPs/subnets to trust for the X-Forwarded-For header, so nginx will see the real client IPs (other X-Forwarded-* headers are ignored, so they should connect via https), default empty
 #      - "TRUST_CLOUDFLARE=true" # Enables fetching/whitelisting IPs from cloudflare, so nginx will see the real client IPs, default false
 #      - "CERTBOT_RUN_INTERVAL=72" # Set how many hours should be between certbot trying to renew your certs if needed, default 3
 #      - "ECH_ROTATION_INTERVAL=3" # Set how many hours should be between the runs of your ech cron script, default 1
 #      - "GOA=true" # Enables goaccess (and overrides LOGROTATE to true), served under /goaccess of the NPMplus web UI, only reachable for logged in admins, default false --- if you download the GeoLite2-Country.mmdb, GeoLite2-City.mmdb AND GeoLite2-ASN.mmdb file from MaxMind and place them in /opt/npmplus/goaccess/geoip it will automatically enable GeoIP in goaccess after restarting NPMplus (no need to change GOACLA below), you may also enable the geoipupdate container below (please change the timezone)
 #      - "GOACLA=--agent-list --real-os --double-decode --anonymize-ip --anonymize-level=2 --keep-last=7 --with-output-resolver --no-query-string" # Arguments that should be passed to goaccess, default: --agent-list --real-os --double-decode --anonymize-ip --anonymize-level=1 --keep-last=30 --with-output-resolver --no-query-string
-#      - "PHP83=true" # Activate PHP83, default false, supported, but not recommended, you should prefer to use a dedicated php-fpm container
-#      - "PHP83_APKS=php83-curl php83-openssl" # Add php extensions, also enables PHP83, see available packages here: https://pkgs.alpinelinux.org/packages?branch=v3.21&repo=community&arch=x86_64&name=php83-*, default none, requires PHP83
-#      - "PHP84=true" # Activate PHP84, default false, supported, but not recommended, you should prefer to use a dedicated php-fpm container
-#      - "PHP84_APKS=php84-curl php84-openssl" # Add php extensions, also enables PHP84, see available packages here: https://pkgs.alpinelinux.org/packages?branch=v3.21&repo=community&arch=x86_64&name=php84-*, default none, requires PHP84
-#      - "PHP85=true" # Activate PHP85, default false, supported, but not recommended, you should prefer to use a dedicated php-fpm container
-#      - "PHP85_APKS=php85-curl php85-openssl" # Add php extensions, also enables PHP85, see available packages here: https://pkgs.alpinelinux.org/packages?branch=v3.21&repo=community&arch=x86_64&name=php85-*, default none, requires PHP85
-#      - "PHP_APKS=php-pecl-apcu php-pecl-redis" # Add php extensions, see available packages here: https://pkgs.alpinelinux.org/packages?branch=v3.21&repo=community&arch=x86_64&name=php-*, default none, requires PHP83, PHP84 and/or PHP85, not recommended, please use PHP83_APKS, PHP84_APKS or PHP85_APKS
-#      - "INITIAL_ADMIN_EMAIL=<initial@email.tld>" # email for the initial admin user, created on first start only together with INITIAL_ADMIN_PASSWORD(_FILE), without them the setup wizard creates the account
-#      - "INITIAL_ADMIN_PASSWORD_FILE=/run/secrets/npmplus_initial_admin_password" # preferred: mount a root-readable secret file instead of putting a password in compose
-#      - "INITIAL_SETUP_TOKEN_FILE=/run/secrets/npmplus_initial_setup_token" # optional custom setup-wizard token, minimum 32 characters; otherwise NPMplus generates one
-#      - "INITIAL_DEFAULT_PAGE=444" # default page to set on first start of NPMplus for the initial user, default congratulations, can be one of: 404, 444, redirect, congratulations, forbidden or html
+#      - "INITIAL_ADMIN_EMAIL=<initial@email.tld>" # email of the initial admin user, only used together with INITIAL_ADMIN_PASSWORD on the initial NPMplus start, without both the setup wizard creates the user
+#      - "INITIAL_ADMIN_EMAIL_FILE=/run/secrets/initial_admin_email" # alternative to INITIAL_ADMIN_EMAIL, path to a file (like a docker secret) containing the email address, needs to be readable by PUID/PGID
+#      - "INITIAL_ADMIN_PASSWORD=<initial-password>" # password of the initial admin user, only used together with INITIAL_ADMIN_EMAIL on the initial NPMplus start, without both the setup wizard creates the user
+#      - "INITIAL_ADMIN_PASSWORD_FILE=/run/secrets/initial_admin_password" # alternative to INITIAL_ADMIN_PASSWORD, path to a file (like a docker secret) containing the password, needs to be readable by PUID/PGID
+#      - "INITIAL_DEFAULT_PAGE=444" # default page to set on initial start of NPMplus, default "congratulations", can be one of: 404, 444, redirect, congratulations or html
 #      - "DISABLE_GRAVATAR=true" # disables usage of gravatar images, users need to update theier profile for this to apply, default false
 #      - "COOKIE_SECRET_FILE=/run/secrets/npmplus_cookie_secret" # preferred: persistent cookie signing secret from a mounted secret file
 #      - "ENABLE_PRERUN=true" # see readme, default off
@@ -113,7 +108,7 @@ services:
 #      - "NGINX_LOAD_VHOST_TRAFFIC_STATUS_MODULE=true" # loads the virtual host traffic status module, requires manual configuration, default false
 #      - "OIDC_REDIRECT_DOMAIN=<domain-ip>[:<port>]" # redirect domain/ip (+ port) for oidc, without scheme and without path, redirect url will be https://$OIDC_REDIRECT_DOMAIN/api/oidc/callback
 #      - "OIDC_ISSUER_URL=https://..." # issuer url for oidc
-#      - "NODE_TLS_REJECT_UNAUTHORIZED=0" # if your issuer uses a self signed cert you may need to set this, but please note that this will disable cert verification for all requests done by the backend (not nginx), like to github for version checks, gravatar, reachability checks or cloudflare for IP updates
+#      - "NODE_EXTRA_CA_CERTS=/data/tls/trusted.crt" # if your issuer uses a self signed cert you may need to set this, mount your self signed cert into NPMplus and point his env to it
 #      - "OIDC_CLIENT_ID=..." # client id for oidc
 #      - "OIDC_CLIENT_SECRET_FILE=/run/secrets/npmplus_oidc_client_secret" # client secret for oidc from a mounted secret file
 #      - "OIDC_REQUIRE_VERIFIED_EMAIL=false" # requires the email sent by the OIDC Provider to be marked as verified, default true
