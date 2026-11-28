@@ -115,6 +115,9 @@ if ! git merge --no-ff upstream/develop -m 'merge upstream develop'; then
 
   body=$(mktemp)
   trap 'rm -f -- "$body"' EXIT
+  # The issue body is literal Markdown: its backticks are formatting, never command
+  # substitution, and the %s formats belong to printf.
+  # shellcheck disable=SC2016
   {
     echo 'Upstream `develop` cannot be merged into this fork without a human reconciliation merge, so this run published no proposal branch and no pull request.'
     echo
